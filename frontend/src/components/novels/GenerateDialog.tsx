@@ -51,13 +51,14 @@ function getAdaptiveSuggestions(novelId: string) {
   return BASE_SUGGESTIONS;
 }
 
-export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevHook, novelId }: {
+export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevHook, novelId, prefillDirection }: {
   open: boolean;
   onClose: () => void;
   onGenerate: (direction: string, qualityThreshold: number, revisionMode: string, model?: string) => void;
   chapterNumber: number;
   prevHook?: string;
   novelId: string;
+  prefillDirection?: string;
 }) {
   const [direction, setDirection] = useState('');
   const [memoryInput, setMemoryInput] = useState('');
@@ -113,10 +114,10 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
 
   useEffect(() => {
     if (open) {
-      setDirection('');
+      setDirection(prefillDirection || '');
       setTimeout(() => inputRef.current?.focus(), 100);
     }
-  }, [open]);
+  }, [open, prefillDirection]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

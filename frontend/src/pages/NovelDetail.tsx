@@ -11,6 +11,7 @@ import { SectionNav } from 'src/components/ui/section-nav';
 import { ChapterSearch } from 'src/components/novels/ChapterSearch';
 import { PlatformChecklist } from 'src/components/novels/PlatformChecklist';
 import { WordSprint } from 'src/components/novels/WordSprint';
+import { PomodoroTimer } from 'src/components/novels/PomodoroTimer';
 import { ChapterDNA } from 'src/components/novels/ChapterDNA';
 import { EmotionRecipe } from 'src/components/novels/EmotionRecipe';
 import { WritingDigest } from 'src/components/novels/WritingDigest';
@@ -55,8 +56,14 @@ export function NovelDetail({ mode }: Props) {
   const [publishing, setPublishing] = useState(false);
   const [cockpit, setCockpit] = useState<CockpitData | null>(null);
   const [showGenDialog, setShowGenDialog] = useState(false);
+  const [prefillDirection, setPrefillDirection] = useState('');
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [justCompleted, setJustCompleted] = useState(false);
+  const [suggestions, setSuggestions] = useState<{ title: string; hook: string; summary: string; tone: string }[] | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [coverSvg, setCoverSvg] = useState<string | null>(null);
+  const [coverPrompt, setCoverPrompt] = useState<string | null>(null);
+  const [loadingCover, setLoadingCover] = useState(false);
   const [novelNotes, setNovelNotes] = useState('');
   const [editingNotes, setEditingNotes] = useState(false);
   const [causalInput, setCausalInput] = useState('');
@@ -558,6 +565,46 @@ export function NovelDetail({ mode }: Props) {
     await handleGenerate();
   }
 
+  async function handleSuggestOutline() {
+    if (!id) return;
+    setLoadingSuggestions(true);
+    setSuggestions(null);
+    try {
+      const res = await fetch(`/api/novels/${id}/suggest-outline`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setSuggestions(data.suggestions || []);
+      if ((data.suggestions || []).length === 0) toast.info('AI 暂无建议');
+    } catch (e: unknown) {
+      toast.error('大纲建议失败: ' + (e as Error).message);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  }
+
+  async function handleGenerateCover() {
+    if (!id) return;
+    setLoadingCover(true);
+    try {
+      const res = await fetch(`/api/novels/${id}/generate-cover`, { method: 'POST' });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setCoverSvg(data.svg_cover || null);
+      setCoverPrompt(data.prompt || null);
+      toast.success('封面已生成');
+    } catch (e: unknown) {
+      toast.error('封面生成失败: ' + (e as Error).message);
+    } finally {
+      setLoadingCover(false);
+    }
+  }
+
+  function handleSelectSuggestion(s: { title: string; hook: string; summary: string; tone: string }) {
+    const dir = `标题：${s.title} | 钩子：${s.hook} | 基调：${s.tone}\n摘要：${s.summary}`;
+    setPrefillDirection(dir);
+    setShowGenDialog(true);
+  }
+
   async function handleClone() {
     if (!id || !cloneTitle.trim()) { toast.error('请输入新书名'); return; }
     setCloning(true);
@@ -707,6 +754,32 @@ export function NovelDetail({ mode }: Props) {
           } catch { return null; }
         })()}
       </p>
+
+      {/* Cover Image */}
+      <div className="flex items-center gap-3 mt-2">
+        <button
+          onClick={handleGenerateCover}
+          disabled={loadingCover}
+          className="text-[11px] px-2.5 py-1 rounded border border-border text-ink-muted hover:text-ink hover:border-accent/30 transition-colors disabled:opacity-50">
+          {loadingCover ? '⏳ 生成中...' : '🎨 生成封面'}
+        </button>
+        {coverPrompt && (
+          <span className="text-[10px] text-ink-subtle truncate max-w-[300px]" title={coverPrompt}>
+            💬 {coverPrompt.slice(0, 60)}{coverPrompt.length > 60 ? '...' : ''}
+          </span>
+        )}
+      </div>
+      {coverSvg && (
+        <div className="mt-2 mb-1 flex items-start gap-3">
+          <div
+            className="w-[100px] h-[150px] rounded-lg overflow-hidden border border-border shadow-sm flex-shrink-0"
+            dangerouslySetInnerHTML={{ __html: coverSvg }}
+          />
+          <button
+            onClick={() => { setCoverSvg(null); setCoverPrompt(null); }}
+            className="text-[10px] text-ink-subtle hover:text-ink mt-1">✕ 清除封面</button>
+        </div>
+      )}
 
       <div className="flex gap-8 my-6">
         <div><div className="font-heading text-[28px] font-semibold">{novel.total_chapters}</div><div className="text-xs text-ink-muted">章节</div></div>
@@ -1110,11 +1183,15 @@ export function NovelDetail({ mode }: Props) {
       {/* Generate with direction dialog */}
       <GenerateDialog
         open={showGenDialog}
-        onClose={() => setShowGenDialog(false)}
-        onGenerate={handleGenerateWithDirection}
+        onClose={() => { setShowGenDialog(false); setPrefillDirection(''); }}
+        onGenerate={(dir, threshold, mode, model) => {
+          setPrefillDirection('');
+          handleGenerateWithDirection(dir, threshold, mode, model);
+        }}
         chapterNumber={novel.total_chapters + 1}
         prevHook={novel.chapters?.filter(c => c.word_count > 0).pop()?.ending_hook}
         novelId={novel.id}
+        prefillDirection={prefillDirection}
       />
 
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -1215,6 +1292,9 @@ export function NovelDetail({ mode }: Props) {
             <Button size="sm" variant="outline" onClick={() => { setCloneTitle(novel?.title + '（副本）' || ''); setCloneGenre(novel?.genre || '玄幻'); setCloneName(''); setShowClone(true); }}>📋 复制开新书</Button>
             <Button size="sm" variant="outline" onClick={() => navigate(`/novels/${id}/world`)}>🌍 世界观编辑器</Button>
             <Button size="sm" variant="outline" onClick={() => navigate(`/novels/${id}/outline`)}>📋 章节大纲</Button>
+            <Button size="sm" variant="outline" onClick={handleSuggestOutline} disabled={loadingSuggestions}>
+              {loadingSuggestions ? '⏳ 分析中...' : '💡 大纲建议'}
+            </Button>
             <Button size="sm" variant="outline" className="text-success border-success/50 hover:bg-success-soft"
               onClick={async () => {
                 await fetch(`/api/novels/${id}/auto/start`, { method: 'POST' });
@@ -1233,6 +1313,34 @@ export function NovelDetail({ mode }: Props) {
         )}
       </div>
 
+      {/* Outline Suggestion Cards */}
+      {suggestions && suggestions.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl bg-gradient-to-r from-accent-soft/10 to-transparent border border-accent/10 animate-[fadeSlideIn_0.2s_ease-out]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-ink">💡 AI 大纲建议 — 点击卡片填入生成方向</span>
+            <button onClick={() => setSuggestions(null)} className="text-[10px] text-ink-muted hover:text-ink">✕</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => handleSelectSuggestion(s)}
+                className="p-2.5 rounded-lg bg-card border border-border hover:border-accent/40 hover:shadow-sm transition-all text-left group">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-[10px] font-semibold text-accent bg-accent-soft/30 px-1.5 py-0.5 rounded-full">
+                    {['A', 'B', 'C'][i] || i + 1}
+                  </span>
+                  <span className="text-xs font-medium text-ink group-hover:text-accent transition-colors">{s.title}</span>
+                </div>
+                <p className="text-[10px] text-ink-muted mb-1 line-clamp-2">{s.hook}</p>
+                <p className="text-[9px] text-ink-subtle line-clamp-2 mb-1">{s.summary}</p>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-paper/50 text-ink-subtle">{s.tone}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="flex gap-1 mb-4 flex-wrap">
         <button className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
@@ -1248,6 +1356,14 @@ export function NovelDetail({ mode }: Props) {
         <a href={`/api/novels/${id}/export-epub`}
           className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
           onClick={() => toast.success('EPUB 下载中...')}>📚 EPUB</a>
+        <a href={`/api/novels/${id}/export-pdf`}
+          className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
+          onClick={() => toast.success('PDF 下载中...')}>📕 PDF</a>
+        <a href={`/api/novels/${id}/export-mobi`}
+          className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
+          onClick={(e) => {
+            toast.info('MOBI 导出需要 Calibre...');
+          }}>📱 MOBI</a>
         <a href={`/api/novels/${id}/export-full`}
           className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
           onClick={() => toast.success('TXT 下载中...')}>📄 TXT</a>
@@ -1492,6 +1608,9 @@ export function NovelDetail({ mode }: Props) {
           </div>
         </div>
       )}
+
+      {/* Pomodoro floating timer */}
+      <PomodoroTimer />
     </div>
   );
 }

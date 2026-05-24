@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NovelCard } from 'src/components/novels/NovelCard';
+import { NovelCompare } from 'src/components/novels/NovelCompare';
 import { WritingCalendar } from 'src/components/novels/WritingCalendar';
 import { DailyPrompt } from 'src/components/novels/DailyPrompt';
+import { WritingGoal } from 'src/components/novels/WritingGoal';
 import { Button } from 'src/components/ui/button';
 import { Input } from 'src/components/ui/input';
 import { Textarea } from 'src/components/ui/textarea';
@@ -100,6 +102,7 @@ export function Dashboard() {
   const [genreFilter, setGenreFilter] = useState('');
   const [sortBy, setSortBy] = useState<'words' | 'chapters' | 'latest'>('latest');
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+  const [showCompare, setShowCompare] = useState(false);
 
   useEffect(() => {
     Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json())])
@@ -164,6 +167,9 @@ export function Dashboard() {
 
       {/* Daily writing prompt */}
       <DailyPrompt />
+
+      {/* Writing Goal Tracker */}
+      <WritingGoal />
 
       {/* Writing Calendar */}
       {novels.length > 0 && (
@@ -279,6 +285,9 @@ export function Dashboard() {
         <h2 className="font-heading text-xl font-semibold text-ink">我的小说</h2>
         <div className="flex gap-2">
           <Button size="sm" className="bg-accent hover:bg-accent-hover" onClick={() => setShowForm(!showForm)}>+ 创建新小说</Button>
+          {novels.length >= 2 && (
+            <Button size="sm" variant="outline" onClick={() => setShowCompare(true)}>📊 对比</Button>
+          )}
           <Button size="sm" variant="outline" onClick={handleDemo}>⚡ 一键 Demo</Button>
         </div>
       </div>
@@ -441,6 +450,11 @@ export function Dashboard() {
           );
         } catch { return null; }
       })()}
+
+      {/* Compare modal */}
+      {showCompare && novels.length >= 2 && (
+        <NovelCompare novels={novels} onClose={() => setShowCompare(false)} />
+      )}
 
     </div>
   );

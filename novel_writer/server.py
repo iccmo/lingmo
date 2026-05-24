@@ -835,6 +835,129 @@ def export_epub(novel_id: str):
                              headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fn}"})
 
 
+
+@app.get("/api/novels/{novel_id}/export-pdf")
+def export_pdf(novel_id: str):
+    """导出PDF电子书——先尝试 weasyprint/pdfkit，否则返回带打印CSS的HTML。"""
+    novel = db.get_novel(novel_id)
+    if not novel: raise HTTPException(404)
+    gen_chs = [c for c in novel.get("chapters",[]) if c.get("word_count",0) > 0]
+    if not gen_chs: raise HTTPException(400, "No chapters")
+
+    # Build HTML with print CSS for PDF
+    html_parts = [f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{novel['title']}</title>
+<style>
+  @page {{ size: A4; margin: 2cm; }}
+  body {{ font-family: "Noto Serif CJK SC", "Songti SC", "SimSun", serif; line-height: 2; font-size: 12pt; color: #333; }}
+  h1 {{ text-align: center; font-size: 18pt; margin-bottom: 0.5em; page-break-before: avoid; }}
+  h2 {{ margin-top: 2em; font-size: 14pt; page-break-before: always; page-break-after: avoid; }}
+  .synopsis {{ font-style: italic; color: #666; text-align: center; margin-bottom: 2em; }}
+  p {{ text-indent: 2em; margin: 0.5em 0; }}
+  @media print {{ body {{ font-size: 11pt; }} }}
+</style></head>
+<body>
+<h1>{novel['title']}</h1>
+<p class="synopsis">{novel.get('synopsis','')}</p>"""]
+    for ch in gen_chs:
+        content = ch.get("content","")
+        import re
+        content = re.sub(r'^#+\s*.*$', '', content, flags=re.MULTILINE).strip()
+        html_parts.append(f"<h2>第{ch['number']}章 {ch['title']}</h2>")
+        for para in content.split('\n'):
+            if para.strip():
+                html_parts.append(f"<p>{para.strip()}</p>")
+    html_parts.append("</body></html>")
+    html = '\n'.join(html_parts)
+
+    # Try weasyprint first, then pdfkit
+    pdf_bytes = None
+    try:
+        from weasyprint import HTML
+        pdf_bytes = HTML(string=html).write_pdf()
+    except ImportError:
+        pass
+
+    if pdf_bytes is None:
+        try:
+            import pdfkit
+            pdf_bytes = pdfkit.from_string(html, False)
+        except ImportError:
+            pass
+
+    if pdf_bytes:
+        from fastapi.responses import Response
+        fn_str = f"{novel['title']}_{len(gen_chs)}chapters.pdf"
+        return Response(pdf_bytes, media_type="application/pdf",
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fn_str}"})
+
+    # Fallback: return HTML with print CSS, browser can print-to-PDF
+    from fastapi.responses import PlainTextResponse
+    fn_str = f"{novel['title']}_{len(gen_chs)}chapters_pdf.html"
+    return PlainTextResponse(html, media_type="text/html; charset=utf-8",
+                             headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fn_str}"})
+
+
+@app.get("/api/novels/{novel_id}/export-mobi")
+def export_mobi(novel_id: str):
+    """导出MOBI电子书——需要Calibre的ebook-convert工具。"""
+    novel = db.get_novel(novel_id)
+    if not novel: raise HTTPException(404)
+    gen_chs = [c for c in novel.get("chapters",[]) if c.get("word_count",0) > 0]
+    if not gen_chs: raise HTTPException(400, "No chapters")
+
+    # Build HTML content (same structure as epub)
+    html_parts = [f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{novel['title']}</title>
+<style>body{{font-family:serif;line-height:1.8;margin:2em}}h1{{text-align:center}}h2{{margin-top:2em}}.synopsis{{font-style:italic;color:#666}}</style></head>
+<body>
+<h1>{novel['title']}</h1>
+<p class="synopsis">{novel.get('synopsis','')}</p>"""]
+    for ch in gen_chs:
+        content = ch.get("content","")
+        import re
+        content = re.sub(r'^#+\s*.*$', '', content, flags=re.MULTILINE).strip()
+        html_parts.append(f"<h2>第{ch['number']}章 {ch['title']}</h2>")
+        for para in content.split('\n'):
+            if para.strip():
+                html_parts.append(f"<p>{para.strip()}</p>")
+    html_parts.append("</body></html>")
+    html = '\n'.join(html_parts)
+
+    # Try calibre ebook-convert
+    import subprocess, tempfile, os
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
+            f.write(html)
+            html_path = f.name
+
+        mobi_path = html_path.replace('.html', '.mobi')
+        result = subprocess.run(
+            ['ebook-convert', html_path, mobi_path],
+            capture_output=True, text=True, timeout=60
+        )
+
+        if result.returncode == 0 and os.path.exists(mobi_path):
+            with open(mobi_path, 'rb') as f_mobi:
+                mobi_bytes = f_mobi.read()
+            os.unlink(html_path)
+            os.unlink(mobi_path)
+            from fastapi.responses import Response
+            fn_str = f"{novel['title']}_{len(gen_chs)}chapters.mobi"
+            return Response(mobi_bytes, media_type="application/x-mobipocket-ebook",
+                            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fn_str}"})
+        else:
+            os.unlink(html_path)
+            if os.path.exists(mobi_path):
+                os.unlink(mobi_path)
+    except FileNotFoundError:
+        pass
+
+    # Neither kindlegen nor calibre available
+    raise HTTPException(501, "Install Calibre (https://calibre-ebook.com) for MOBI export. Run: brew install calibre")
+
 @app.get("/api/analytics-dashboard")
 def analytics_dashboard():
     """生成分析看板：全局数据一览。"""
@@ -1280,15 +1403,104 @@ def _run_generation(novel_id: str):
         err_msg = str(e)[:200]
         err_type = type(e).__name__
         tb = traceback.format_exc()[-300:]
-        _set_status(novel_id, "error", f"生成失败 [{err_type}]: {err_msg}", 0)
-        db.log(novel_id, "error.critical", {
+        phase = f"chapter {(state.total_chapters + 1) if 'state' in dir() else 'unknown'}"
+
+        # Log first attempt failure
+        db.log(novel_id, "generation.attempt.failed", {
             "error": err_msg,
             "type": err_type,
-            "phase": f"chapter {(state.total_chapters + 1) if 'state' in dir() else 'unknown'}",
-            "traceback": tb,
+            "phase": phase,
+            "attempt": 1,
         })
-        print(f"[GEN ERROR] {novel_id}: {err_type}: {err_msg}", file=sys.stderr)
+        print(f"[GEN ERROR] {novel_id} attempt 1: {err_type}: {err_msg}", file=sys.stderr)
         print(f"[GEN TRACEBACK] {tb}", file=sys.stderr)
+
+        # Auto-recovery: retry ONCE after 5 seconds with simpler prompt
+        import time as _time
+        _set_status(novel_id, "generating", f"生成失败，5秒后自动重试… [{err_type}]", 5)
+        _time.sleep(5)
+
+        try:
+            _set_status(novel_id, "generating", "自动恢复中 — 使用简化模式重试…", 15)
+            db.log(novel_id, "generation.auto_recovery", {
+                "original_error": err_msg,
+                "original_type": err_type,
+                "phase": phase,
+            })
+
+            # Re-init generator (connection may have been broken)
+            from .generator import Generator
+            from .config import Config
+            provider = _get_provider(novel_id)
+            model = provider.get("models", "deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o"
+            cfg = Config(
+                openai_api_key=provider.get("api_key", ""),
+                openai_base_url=provider.get("base_url", ""),
+                model=model,
+            )
+            gen = Generator(cfg)
+            state = _load_state(novel_id)
+            if not state:
+                raise RuntimeError("State reload failed")
+
+            # Simpler prompt: strip complex context, just use genre + recent hook
+            simple_direction = f"写{state.genre}小说第{state.total_chapters + 1}章。保持风格一致。"
+            prev_chapter = None
+            try:
+                chs = [c for c in state.chapters if c.word_count > 0]
+                prev_chapter = chs[-1] if chs else None
+            except Exception:
+                pass
+            if prev_chapter:
+                simple_direction += f" 上章：{prev_chapter.title}。{prev_chapter.ending_hook}"
+
+            chapter, quality = gen.batch_generate(state, n=1, author_input=simple_direction)
+            body = chapter.content or chapter.summary
+
+            # Light de-AI only
+            try:
+                cleaned_body, de_ai_changes = gen.de_ai(body)
+                if de_ai_changes > 0:
+                    body = cleaned_body
+            except Exception:
+                pass
+
+            # Save chapter
+            cid = db.add_chapter(
+                novel_id=novel_id, number=chapter.number, title=chapter.title,
+                word_count=chapter.word_count, summary=chapter.summary,
+                content=body, ending_hook=chapter.ending_hook,
+                key_events=json.dumps(chapter.key_events) if chapter.key_events else "[]",
+                revelations=json.dumps(chapter.revelations) if chapter.revelations else "[]",
+                quality_score=quality.get("overall", 0.7), model_used=cfg.model,
+            )
+
+            _set_status(novel_id, "complete",
+                        f"第{chapter.number}章完成(自动恢复) — {chapter.word_count}字 — Q:{quality.get('overall', 0):.2f}",
+                        100)
+            db.log(novel_id, "generation.recovery_success", {
+                "chapter": chapter.number,
+                "words": chapter.word_count,
+                "quality": quality.get("overall", 0),
+            })
+            print(f"[GEN RECOVERED] {novel_id} ch{chapter.number} — {chapter.word_count}w — Q:{quality.get('overall', 0):.2f}")
+        except Exception as retry_e:
+            # Retry also failed — mark as error
+            retry_msg = str(retry_e)[:200]
+            retry_type = type(retry_e).__name__
+            retry_tb = traceback.format_exc()[-300:]
+
+            _set_status(novel_id, "error", f"重试也失败 [{retry_type}]: {retry_msg}", 0)
+            db.log(novel_id, "error.critical", {
+                "error": retry_msg,
+                "type": retry_type,
+                "phase": phase,
+                "traceback": retry_tb,
+                "auto_recovery_attempted": True,
+                "original_error": err_msg,
+            })
+            print(f"[GEN ERROR] {novel_id} retry failed: {retry_type}: {retry_msg}", file=sys.stderr)
+            print(f"[GEN RETRY TRACEBACK] {retry_tb}", file=sys.stderr)
 
 
 def _run_revise_opening(novel_id: str):
@@ -3114,6 +3326,178 @@ def delete_outline_item(novel_id: str, chapter_num: int):
         conn.execute("DELETE FROM chapters WHERE novel_id=? AND number=? AND word_count=0",
                      (novel_id, chapter_num))
     return {"ok": True}
+
+# ═══════════════ Outline Suggestions (AI) ═══════════════
+
+@app.post("/api/novels/{novel_id}/suggest-outline")
+def suggest_outline(novel_id: str):
+    """AI suggests 3 next-chapter directions based on current novel state."""
+    novel = db.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(404, "Novel not found")
+
+    # Gather context: recent chapters, synopsis, genre
+    chapters = novel.get("chapters", [])
+    gen_chapters = [c for c in chapters if c.get("word_count", 0) > 0]
+    recent_titles = [c.get("title", "") for c in gen_chapters[-5:]]
+    recent_hooks = [c.get("ending_hook", "") for c in gen_chapters[-3:] if c.get("ending_hook")]
+    synopsis = novel.get("synopsis", "")
+    genre = novel.get("genre", "玄幻")
+    next_ch = len(gen_chapters) + 1
+
+    prompt = f"""你是资深网文编辑。基于以下小说信息，建议第{next_ch}章的3个不同走向。
+
+小说类型：{genre}
+简介：{synopsis}
+最近章节：{' -> '.join(recent_titles) if recent_titles else '无'}
+{'上章钩子：' + '；'.join(recent_hooks) if recent_hooks else ''}
+
+请给出3个不同的下一章方向。每个方向20-40字，格式严格如下（每行一个方向，共3行）：
+标题：xxx | 钩子：xxx | 摘要：xxx | 基调：xxx
+"""
+
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        cfg = Config(
+            openai_api_key=provider.get("api_key", ""),
+            openai_base_url=provider.get("base_url", ""),
+            model=provider.get("models", "deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o",
+        )
+        gen = Generator(cfg)
+        raw = gen._call_llm_with_retry(
+            [{"role": "user", "content": prompt}],
+            max_tokens=256,
+        )
+    except Exception as e:
+        raise HTTPException(500, f"LLM call failed: {e}")
+
+    # Parse response into structured suggestions
+    suggestions = []
+    for line in raw.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = {}
+        for segment in line.split("|"):
+            segment = segment.strip()
+            if "：" in segment:
+                k, v = segment.split("：", 1)
+                parts[k] = v
+        if "标题" in parts:
+            suggestions.append({
+                "title": parts.get("标题", "").strip(),
+                "hook": parts.get("钩子", parts.get("钩子", "")).strip(),
+                "summary": parts.get("摘要", "").strip(),
+                "tone": parts.get("基调", "").strip(),
+            })
+        if len(suggestions) >= 3:
+            break
+
+    # Fallback: if parsing failed, return raw as single suggestion
+    if not suggestions:
+        suggestions = [{"title": f"第{next_ch}章", "hook": raw[:80], "summary": raw[:150], "tone": genre}]
+
+    return {"next_chapter": next_ch, "suggestions": suggestions[:3]}
+
+
+# ═══════════════ Cover Generation ═══════════════
+
+@app.post("/api/novels/{novel_id}/generate-cover")
+def generate_cover(novel_id: str):
+    """Generate an AI image prompt + placeholder SVG cover for the novel."""
+    novel = db.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(404, "Novel not found")
+
+    title = novel.get("title", "未命名")
+    synopsis = novel.get("synopsis", "")
+    genre = novel.get("genre", "玄幻")
+    author = novel.get("author", "AI")
+
+    # Generate image prompt via LLM
+    img_prompt = ""
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        cfg = Config(
+            openai_api_key=provider.get("api_key", ""),
+            openai_base_url=provider.get("base_url", ""),
+            model=provider.get("models", "deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o",
+        )
+        gen = Generator(cfg)
+        prompt_text = f"""你是一个小说封面设计师。为以下小说生成一个AI绘图提示词（英文，50词以内），用于生成封面图。
+
+小说名：《{title}》
+类型：{genre}
+简介：{synopsis}
+
+要求：风格适配{genre}类型，有意境，适合做封面。只输出英文提示词。"""
+        img_prompt = gen._call_llm_with_retry(
+            [{"role": "user", "content": prompt_text}],
+            max_tokens=128,
+        )
+    except Exception:
+        img_prompt = f"A mystical {genre} novel cover with atmospheric lighting, cinematic composition"
+
+    # Generate placeholder SVG cover with Chinese text
+    genre_colors = {
+        "玄幻": ("#1a1a2e", "#e94560"),
+        "都市": ("#2d3436", "#00b894"),
+        "悬疑": ("#0c0c0c", "#fdcb6e"),
+        "科幻": ("#0a192f", "#64ffda"),
+        "武侠": ("#2c1810", "#d4a574"),
+        "历史": ("#3e2723", "#ffcc80"),
+        "仙侠": ("#1a1a3e", "#a78bfa"),
+        "系统流": ("#1b1b2f", "#e94560"),
+        "官场": ("#1a1a1a", "#c0392b"),
+        "末世": ("#1c1c1c", "#ff6b6b"),
+    }
+    bg, accent = genre_colors.get(genre, ("#1a1a2e", "#e94560"))
+
+    # Escape text for SVG
+    import html
+    title_esc = html.escape(title)
+    author_esc = html.escape(author)
+    genre_esc = html.escape(genre)
+
+    # Truncate long titles for SVG display
+    display_title = title if len(title) <= 8 else title[:8] + "..."
+
+    svg_cover = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="400" height="600">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:{bg}"/>
+      <stop offset="100%" style="stop-color:{accent}33"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff10"/>
+      <stop offset="50%" style="stop-color:#ffffff00"/>
+      <stop offset="100%" style="stop-color:#00000020"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="600" fill="url(#bg)"/>
+  <rect width="400" height="600" fill="url(#shine)"/>
+  <line x1="30" y1="40" x2="37" y2="40" stroke="{accent}" stroke-width="0.5" opacity="0.3"/>
+  <line x1="28" y1="0" x2="28" y2="600" stroke="{accent}" stroke-width="0.3" opacity="0.1"/>
+  <line x1="372" y1="0" x2="372" y2="600" stroke="{accent}" stroke-width="0.3" opacity="0.1"/>
+  <rect x="35" y="180" width="330" height="2" fill="{accent}" opacity="0.3"/>
+  <rect x="35" y="420" width="330" height="1" fill="{accent}" opacity="0.15"/>
+  <text x="200" y="230" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="32" fill="{accent}" font-weight="bold" letter-spacing="4">{html.escape(display_title)}</text>
+  <text x="200" y="340" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="14" fill="#ffffff99" letter-spacing="8">{genre_esc}</text>
+  <text x="200" y="460" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="12" fill="#ffffff60" letter-spacing="3">{author_esc}</text>
+  <text x="200" y="560" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="10" fill="#ffffff30">AI Novel Writer</text>
+</svg>'''
+
+    return {
+        "prompt": img_prompt.strip(),
+        "svg_cover": svg_cover,
+        "title": title,
+        "genre": genre,
+    }
+
 
 # ═══════════════ V6: Clone Novel ═══════════════
 

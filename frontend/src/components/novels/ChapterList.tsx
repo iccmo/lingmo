@@ -6,6 +6,22 @@ import { MobileReadingMode } from 'src/components/novels/MobileReadingMode';
 import { ChapterDiff } from 'src/components/novels/ChapterDiff';
 import type { ChapterMeta } from 'src/types';
 
+/* ─── Chapter tags ─── */
+const TAG_OPTIONS = [
+  { key: '高潮', emoji: '🔥', label: '高潮', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+  { key: '过渡', emoji: '🌊', label: '过渡', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
+  { key: '伏笔', emoji: '🔮', label: '伏笔', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+  { key: '战斗', emoji: '⚔️', label: '战斗', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
+  { key: '日常', emoji: '☕', label: '日常', color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800' },
+  { key: '转折', emoji: '🔄', label: '转折', color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800' },
+  { key: '感情', emoji: '💕', label: '感情', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800' },
+];
+
+const TAG_EMOJI_MAP: Record<string, string> = {
+  '高潮': '🔥', '过渡': '🌊', '伏笔': '🔮', '战斗': '⚔️',
+  '日常': '☕', '转折': '🔄', '感情': '💕',
+};
+
 const GRADE_COLORS: Record<string, string> = {
   S: 'bg-gradient-to-r from-emerald-100 to-accent-soft text-emerald-800 border-emerald-300 dark:from-emerald-900/40 dark:to-accent-soft/20 dark:text-emerald-300 dark:border-emerald-700 font-bold',
   A: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:border-emerald-800',
@@ -154,6 +170,12 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     try { return new Set(JSON.parse(localStorage.getItem(`style-refs-${novelId}`) || '[]')); }
     catch { return new Set(); }
   });
+  // Chapter tags
+  const [chapterTags, setChapterTags] = useState<Record<number, string[]>>(() => {
+    try { return JSON.parse(localStorage.getItem(`chapter-tags-${novelId}`) || '{}'); }
+    catch { return {}; }
+  });
+  const [tagPickerChapter, setTagPickerChapter] = useState<number | null>(null);
 
   useEffect(() => {
     fetch(`/api/novels/${novelId}/publish-status`)
@@ -379,6 +401,42 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     toast.success(styleRefs.has(n) ? '已取消风格参考' : '已设为风格参考——后续生成将以本章为质量标杆');
   }
 
+  // Chapter tag operations
+  function saveTags(tags: Record<number, string[]>) {
+    setChapterTags(tags);
+    localStorage.setItem(`chapter-tags-${novelId}`, JSON.stringify(tags));
+  }
+
+  function toggleTag(chapterNum: number, tag: string) {
+    setChapterTags(prev => {
+      const current = prev[chapterNum] || [];
+      const next = current.includes(tag)
+        ? current.filter(t => t !== tag)
+        : [...current, tag];
+      const updated = { ...prev, [chapterNum]: next };
+      if (next.length === 0) delete updated[chapterNum];
+      localStorage.setItem(`chapter-tags-${novelId}`, JSON.stringify(updated));
+      return updated;
+    });
+  }
+
+  function openTagPicker(chapterNum: number) {
+    setTagPickerChapter(chapterNum);
+  }
+
+  // Close tag picker on click outside or scroll
+  useEffect(() => {
+    if (tagPickerChapter === null) return;
+    const handler = () => setTagPickerChapter(null);
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    window.addEventListener('scroll', handler, true);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handler);
+      window.removeEventListener('scroll', handler, true);
+    };
+  }, [tagPickerChapter]);
+
   function togglePin(n: number, e: MouseEvent) {
     e.stopPropagation();
     setPinned(prev => {
@@ -596,6 +654,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
             window.open(`/api/novels/${novelId}/chapters/${ch.number}/export`, '_blank');
           }},
           { icon: '📌', label: pinned.has(ch.number) ? '取消置顶' : '置顶', onClick: (e: MouseEvent) => togglePin(ch.number, e) },
+          { icon: '🏷️', label: '标签', onClick: () => openTagPicker(ch.number) },
           { icon: `${approvals[ch.number] === 'approved' ? '✅' : approvals[ch.number] === 'revise' ? '🔧' : '📝'}`, label: approvals[ch.number] === 'approved' ? '已审' : approvals[ch.number] === 'revise' ? '待改→草稿' : '草稿→已审', onClick: (e: MouseEvent) => cycleApproval(ch.number, e) },
           ...(onDelete ? [{
             icon: '🗑', label: '删除本章', danger: true as const,
@@ -719,6 +778,18 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                 {dialogueRatio(ch)!.label}
               </span>
             )}
+            {/* Chapter tags */}
+            {(chapterTags[ch.number] || []).map(tag => {
+              const tagInfo = TAG_OPTIONS.find(t => t.key === tag);
+              if (!tagInfo) return null;
+              return (
+                <span key={tag}
+                  className={`text-[9px] px-1 py-0.5 rounded border shrink-0 ${tagInfo.color}`}
+                  title={`标签: ${tag}`}>
+                  {tagInfo.emoji}
+                </span>
+              );
+            })}
             {publishedSet.has(ch.number) ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800 font-semibold shrink-0">✅ 已发布</span>
             ) : (
@@ -1011,6 +1082,63 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
             className="text-xs px-2.5 py-1 rounded-md border border-border text-ink-muted hover:text-ink transition-colors">
             取消
           </button>
+        </div>
+      )}
+
+      {/* Chapter tag picker overlay */}
+      {tagPickerChapter !== null && (
+        <div
+          className="fixed inset-0 z-[95] flex items-center justify-center"
+          onClick={e => { e.stopPropagation(); setTagPickerChapter(null); }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="bg-card border border-border rounded-xl shadow-xl p-4 w-[260px] animate-[fadeSlideIn_0.15s_ease-out]">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-semibold text-ink">
+                🏷️ 第{tagPickerChapter}章 · 标签
+              </h4>
+              <button
+                onClick={() => setTagPickerChapter(null)}
+                className="text-xs text-ink-muted hover:text-ink"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-1">
+              {TAG_OPTIONS.map(tag => {
+                const selected = (chapterTags[tagPickerChapter] || []).includes(tag.key);
+                return (
+                  <button
+                    key={tag.key}
+                    onClick={() => toggleTag(tagPickerChapter, tag.key)}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left transition-colors ${
+                      selected
+                        ? 'bg-accent-soft/50 border border-accent/20'
+                        : 'hover:bg-paper border border-transparent'
+                    }`}>
+                    <span className="text-base">{tag.emoji}</span>
+                    <span className={`flex-1 ${selected ? 'text-accent font-medium' : 'text-ink'}`}>
+                      {tag.label}
+                    </span>
+                    {selected && <span className="text-accent text-[10px]">✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            {(chapterTags[tagPickerChapter] || []).length > 0 && (
+              <button
+                onClick={() => {
+                  const updated = { ...chapterTags };
+                  delete updated[tagPickerChapter];
+                  saveTags(updated);
+                  setTagPickerChapter(null);
+                }}
+                className="w-full mt-3 text-[10px] text-ink-muted hover:text-red-500 transition-colors py-1.5">
+                清除所有标签
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
