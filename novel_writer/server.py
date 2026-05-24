@@ -45,6 +45,47 @@ def _set_status(novel_id: str, status: str, message: str = "", progress: int = 0
 def _get_status(novel_id: str) -> dict:
     return _gen_status.get(novel_id, {"status": "idle", "message": "", "progress": 0})
 
+
+# ═══════════════════ Generation Queue ═══════════════════
+import uuid
+_job_queue: dict[str, dict] = {}
+_job_lock = threading.Lock()
+
+
+def _get_queue_status(novel_id: str) -> dict | None:
+    """Return the active job for a novel, or None if no job queued/running."""
+    with _job_lock:
+        for job in _job_queue.values():
+            if job["novel_id"] == novel_id and job["status"] in ("queued", "running"):
+                return {
+                    "job_id": job["job_id"],
+                    "status": job["status"],
+                    "progress": job["progress"],
+                    "last_error": job.get("last_error"),
+                }
+    return None
+
+
+def _run_queue_job(job: dict):
+    """Run a batch generation job in a background thread, updating queue status."""
+    novel_id = job["novel_id"]
+    count = job["count"]
+    quality_threshold = job.get("quality_threshold", 0.8)
+    try:
+        with _job_lock:
+            job["status"] = "running"
+        # Set the quality threshold for _run_batch_generation
+        _gen_directions[novel_id + "_qthreshold"] = str(quality_threshold)
+        _run_batch_generation(novel_id, count)
+        with _job_lock:
+            job["status"] = "done"
+            job["progress"]["current"] = job["progress"]["total"]
+    except Exception as e:
+        with _job_lock:
+            job["status"] = "error"
+            job["last_error"] = str(e)[:500]
+
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -1169,10 +1210,38 @@ def trigger_generate_batch(novel_id: str, data: dict, background: BackgroundTask
         raise HTTPException(404)
     count = data.get("count", 5)
     count = max(1, min(count, 20))  # cap at 20
-    background.add_task(_run_batch_generation, novel_id, count)
+    quality_threshold = float(data.get("quality_threshold", 0.8))
+
+    # Check if a job is already queued/running for this novel
+    existing = _get_queue_status(novel_id)
+    if existing:
+        raise HTTPException(409, f"已有任务进行中: {existing['job_id']} (状态: {existing['status']})")
+
+    job_id = uuid.uuid4().hex[:12]
     ch_count = len(db.get_novel(novel_id).get("chapters", []))
-    return {"status": "generating_batch", "novel_id": novel_id,
-            "count": count, "next_chapter": ch_count + 1}
+    job = {
+        "job_id": job_id,
+        "novel_id": novel_id,
+        "status": "queued",
+        "progress": {"current": 0, "total": count},
+        "count": count,
+        "quality_threshold": quality_threshold,
+        "last_error": None,
+    }
+    with _job_lock:
+        _job_queue[job_id] = job
+    thread = threading.Thread(target=_run_queue_job, args=(job,), daemon=True)
+    thread.start()
+    return {"job_id": job_id, "status": "queued", "count": count, "next_chapter": ch_count + 1}
+
+
+@app.get("/api/novels/{novel_id}/generate/queue-status")
+def generate_queue_status(novel_id: str):
+    """Get the current batch generation queue status for a novel."""
+    queue_status = _get_queue_status(novel_id)
+    if not queue_status:
+        return {"job_id": None, "status": "idle", "progress": {"current": 0, "total": 0}, "last_error": None}
+    return queue_status
 
 
 def _run_generation(novel_id: str):
@@ -2008,7 +2077,11 @@ def _run_generation_classic(novel_id: str):
 
 
 def _run_batch_generation(novel_id: str, count: int):
-    """V4: Batch generate n chapters continuously — each sees previous chapter full text."""
+    """V5: Batch generate n chapters sequentially. Supports:
+    - Queue progress tracking via _job_queue
+    - Smart context window: auto-summarize old chapters when novel exceeds 30 chapters
+    - Cost tracking via cost_logs + chapters table
+    """
     try:
         from .generator import Generator
         from .config import Config
@@ -2045,15 +2118,33 @@ def _run_batch_generation(novel_id: str, count: int):
         except Exception:
             pass
 
+        # Smart context window: generate chapter summaries for novels with 30+ chapters
+        _ensure_smart_context(novel_id, gen, state)
+
         # RAG context (reuse across batch)
         rag_context = gen.retrieve_relevant_context(
             query=state.plot.current_arc or state.plot.premise,
             novel_id=novel_id, top_k=5,
         )
 
+        # Inject chapter summaries into RAG context if available
+        existing_summaries = db.get_chapter_summaries(novel_id)
+        if existing_summaries:
+            summary_text = "【前情摘要】\n" + "\n".join(
+                f"第{s['chapter_num']}章: {s['summary_text']}" for s in existing_summaries
+            )
+            if rag_context:
+                rag_context = summary_text + "\n\n" + rag_context
+            else:
+                rag_context = summary_text
+
         for i, outline_item in enumerate(outline[:count]):
             target_num = outline_item["number"]
-            _set_status(novel_id, "generating", f"正在生成第{target_num}章...", ((i + 1) * 100) // count)
+            progress_pct = ((i + 1) * 100) // count
+            _set_status(novel_id, "generating", f"正在生成第{target_num}章...", progress_pct)
+
+            # Update queue job progress
+            _update_job_progress(novel_id, i, count)
 
             chapter, quality = gen.batch_generate(state, n=2, rag_context=rag_context,
                                                    outline=outline, style=style)
@@ -2073,6 +2164,7 @@ def _run_batch_generation(novel_id: str, count: int):
                 print(f"[BATCH ERROR] {novel_id} ch{target_num}: generate returned empty content (tried {retries+1} times), skipping slot {target_num}")
                 db.log(novel_id, "chapter.empty_skipped", {"target_num": target_num, "retries": retries})
                 _set_status(novel_id, "error", f"第{target_num}章生成失败（内容为空），已跳过", 0)
+                _update_job_progress(novel_id, i + 1, count, f"第{target_num}章生成失败（内容为空）")
                 continue
 
             # Self-edit pass
@@ -2088,9 +2180,11 @@ def _run_batch_generation(novel_id: str, count: int):
                 detail = final_quality.get("judge_detail", {})
                 print(f"[BATCH] {novel_id} ch{chapter.number} judge: {final_quality['grade']}({final_quality['overall']}) — {detail.get('biggest_issue', '')}")
 
+            # Cost tracking is handled internally by Generator._save_cost_log
+
             # CRITICAL: use outline slot number (target_num), NOT chapter.number.
-            # batch_generate(n=2) internally increments state.total_chapters for each
-            # version it generates, so chapter.number may not match the outline slot.
+            # Pass cost info from generator if available
+            usage = getattr(gen, '_last_usage', None) or {}
             cid = db.add_chapter(
                 novel_id=novel_id, number=target_num, title=chapter.title,
                 word_count=len(cleaned_body), summary=chapter.summary,
@@ -2098,6 +2192,9 @@ def _run_batch_generation(novel_id: str, count: int):
                 key_events=json.dumps(chapter.key_events),
                 revelations=json.dumps(chapter.revelations),
                 quality_score=final_quality['overall'], model_used=cfg.model,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                cost=round(usage.get("cost", 0), 6),
             )
             try:
                 gen.store_chapter_embedding(cid, novel_id, chapter.summary)
@@ -2132,13 +2229,114 @@ def _run_batch_generation(novel_id: str, count: int):
             })
             print(f"[BATCH] {novel_id} ch{target_num}/{state.total_chapters} — {len(cleaned_body)}w — Q:{quality['grade']}({quality['overall']})")
 
+            # After generating a chapter beyond 30, generate its summary for future context
+            if target_num > 30 and len(cleaned_body) > 100:
+                try:
+                    _generate_single_chapter_summary(novel_id, gen, target_num, cleaned_body[:1000])
+                except Exception as e:
+                    print(f"[BATCH] summary gen failed for ch{target_num}: {e}")
+
         _set_status(novel_id, "complete", f"批量生成完成：{count}章", 100)
+        _update_job_progress(novel_id, count, count)
 
     except Exception as e:
         err_msg = str(e)[:200]
         _set_status(novel_id, "error", f"批量生成失败: {err_msg}", 0)
+        _update_job_progress(novel_id, 0, 0, err_msg)
         db.log(novel_id, "error.critical", {"error": err_msg})
         print(f"[BATCH ERROR] {novel_id}: {err_msg}", file=sys.stderr)
+
+
+def _update_job_progress(novel_id: str, current: int, total: int, error: str = ""):
+    """Update the queue job progress for a novel."""
+    with _job_lock:
+        for job in _job_queue.values():
+            if job["novel_id"] == novel_id and job["status"] in ("queued", "running"):
+                job["progress"]["current"] = current
+                job["progress"]["total"] = total
+                if error:
+                    job["last_error"] = error
+                break
+
+
+def _ensure_smart_context(novel_id: str, gen, state):
+    """Smart context window: for novels with 30+ total chapters, summarize older
+    chapters so context fits within LLM limits. Generates summaries on-demand and
+    stores them in chapter_summaries table for reuse.
+
+    The --skip-summaries flag can be passed via environment variable for testing.
+    """
+    import os
+    if os.environ.get("SKIP_SUMMARIES"):
+        return
+
+    total = state.total_chapters
+    if total < 30:
+        return
+
+    # Summarize chapters 1..max(5, total-25) if summaries don't exist
+    summarize_up_to = max(5, total - 25)
+    if db.has_chapter_summaries(novel_id, summarize_up_to):
+        return  # Already have summaries
+
+    print(f"[CONTEXT] Smart context: summarizing chapters 1..{summarize_up_to} for {novel_id}")
+
+    # Get chapters that need summaries
+    for ch_num in range(1, summarize_up_to + 1):
+        # Skip if summary already exists
+        existing = db.get_chapter_summaries(novel_id, [ch_num])
+        if existing:
+            continue
+
+        ch = db.get_chapter(novel_id, ch_num)
+        if not ch or not ch.get("content"):
+            continue
+
+        content = ch["content"][:1000]
+        summary = _generate_summary_with_llm(gen, novel_id, ch_num, content)
+        if summary:
+            db.save_chapter_summary(novel_id, ch_num, summary)
+            print(f"[CONTEXT] Summarized ch{ch_num}: {summary[:60]}...")
+
+    print(f"[CONTEXT] Smart context summaries complete for {novel_id}")
+
+
+def _generate_single_chapter_summary(novel_id: str, gen, chapter_num: int, content: str):
+    """Generate a summary for a single chapter and store it."""
+    summary = _generate_summary_with_llm(gen, novel_id, chapter_num, content)
+    if summary:
+        db.save_chapter_summary(novel_id, chapter_num, summary)
+
+
+def _generate_summary_with_llm(gen, novel_id: str, chapter_num: int, content: str) -> str:
+    """Generate a one-sentence summary for a chapter using the LLM."""
+    try:
+        result = gen._call_llm_with_retry([
+            {"role": "system", "content": "你是一位小说编辑。用一句话概括以下章节的核心事件和人物变化（不超过50字）。"},
+            {"role": "user", "content": content[:1000]}
+        ], max_tokens=128)
+        summary = result.strip()
+        # Track cost of summary generation
+        usage = getattr(gen, '_last_usage', None)
+        if usage:
+            _record_chapter_cost(novel_id, chapter_num, usage.get("model", ""),
+                usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0), usage.get("cost", 0), purpose="summarize")
+        return summary
+    except Exception as e:
+        print(f"[CONTEXT] Failed to summarize ch{chapter_num}: {e}")
+        return ""
+
+
+def _record_chapter_cost(novel_id: str, chapter_number: int, model: str,
+                          prompt_tokens: int, completion_tokens: int,
+                          total_tokens: int, cost: float, purpose: str = "generate"):
+    """Record API cost for a chapter generation or summary call."""
+    try:
+        db.log_cost(novel_id, chapter_number, model,
+                    prompt_tokens, completion_tokens, total_tokens, cost, purpose)
+    except Exception:
+        pass  # Cost logging is non-critical
 
 
 def _load_state(novel_id: str):
@@ -3763,6 +3961,21 @@ def chapter_continuity(novel_id: str):
 def get_costs(novel_id: str = ""):
     """Get cost summary for a novel or all novels."""
     return db.get_cost_summary(novel_id)
+
+
+@app.get("/api/costs/summary")
+def costs_summary():
+    """Get full cost summary with by-novel breakdown for dashboard display."""
+    summary = db.get_cost_summary()
+    # Compute chapter-level costs from chapters table as a fallback if cost_logs is empty
+    if summary["total_cost"] == 0:
+        with db.conn() as c:
+            rows = c.execute("""SELECT novel_id, COUNT(*) as chapters,
+                SUM(cost) as cost FROM chapters WHERE cost > 0 GROUP BY novel_id""").fetchall()
+            if rows:
+                summary["by_novel"] = [dict(r) for r in rows]
+                summary["total_cost"] = round(sum(r["cost"] for r in rows), 4)
+    return summary
 
 
 @app.post("/api/novels/{novel_id}/optimize-prompt")

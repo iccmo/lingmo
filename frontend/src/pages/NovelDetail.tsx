@@ -83,6 +83,12 @@ export function NovelDetail({ mode }: Props) {
     stopAtChapters: 100,
     stopAtQuality: 0.70,
   }));
+  // Batch generation
+  const [showBatchDialog, setShowBatchDialog] = useState(false);
+  const [batchCount, setBatchCount] = useState(5);
+  const [batchThreshold, setBatchThreshold] = useState(0.8);
+  const [batchStatus, setBatchStatus] = useState<{ job_id: string; status: string; progress: { current: number; total: number }; last_error: string | null } | null>(null);
+  const [batchPolling, setBatchPolling] = useState(false);
 
   const loadNovel = useCallback(() => {
     if (!id) return;
@@ -581,6 +587,40 @@ export function NovelDetail({ mode }: Props) {
       setLoadingSuggestions(false);
     }
   }
+
+  async function handleBatchGenerate() {
+    if (!id) return;
+    try {
+      const res = await api.novels.generateBatch(id, batchCount, batchThreshold);
+      toast.success(`批量生成已启动: ${res.count}章 (Job: ${res.job_id})`);
+      setBatchStatus({ job_id: res.job_id, status: 'queued', progress: { current: 0, total: batchCount }, last_error: null });
+      setBatchPolling(true);
+      setShowBatchDialog(false);
+    } catch (e: unknown) {
+      toast.error('批量生成失败: ' + (e as Error).message);
+    }
+  }
+
+  // Batch queue polling
+  useEffect(() => {
+    if (!batchPolling || !id) return;
+    const timer = setInterval(async () => {
+      try {
+        const s = await api.novels.queueStatus(id);
+        setBatchStatus(s);
+        if (s.status === 'done' || s.status === 'error' || s.status === 'idle') {
+          setBatchPolling(false);
+          if (s.status === 'done') {
+            toast.success('批量生成完成！');
+            loadNovel();
+          } else if (s.status === 'error') {
+            toast.error(s.last_error || '批量生成失败');
+          }
+        }
+      } catch { /* ignore polling errors */ }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [batchPolling, id, loadNovel]);
 
   async function handleGenerateCover() {
     if (!id) return;
@@ -1194,6 +1234,48 @@ export function NovelDetail({ mode }: Props) {
         prefillDirection={prefillDirection}
       />
 
+      {/* Batch Generate Dialog */}
+      {showBatchDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowBatchDialog(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 animate-[fadeSlideIn_0.2s_ease-out]"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-heading text-lg font-semibold text-ink mb-1">📚 批量生成</h3>
+            <p className="text-xs text-ink-muted mb-4">一次生成多章大纲中的章节。生成期间可继续浏览。</p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-ink block mb-1.5">生成章数</label>
+                <select value={batchCount} onChange={e => setBatchCount(Number(e.target.value))}
+                  className="w-full rounded-lg border border-input bg-paper text-ink text-sm px-3 py-2">
+                  {[1, 2, 3, 5, 10, 20].map(n => <option key={n} value={n}>{n} 章</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-ink block mb-1.5">质量门槛</label>
+                <select value={batchThreshold} onChange={e => setBatchThreshold(Number(e.target.value))}
+                  className="w-full rounded-lg border border-input bg-paper text-ink text-sm px-3 py-2">
+                  <option value={0.65}>0.65 宽松</option>
+                  <option value={0.80}>0.80 标准</option>
+                  <option value={0.85}>0.85 严格</option>
+                  <option value={0.90}>0.90 极严</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setShowBatchDialog(false)}
+                className="flex-1 py-2 rounded-lg border border-input text-ink-muted text-sm hover:bg-paper transition-colors">
+                取消
+              </button>
+              <button onClick={handleBatchGenerate}
+                className="flex-1 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors">
+                开始生成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2 mb-6 flex-wrap">
         {mode === 'auto' ? (
           <>
@@ -1289,6 +1371,16 @@ export function NovelDetail({ mode }: Props) {
               disabled={!!genStatus && genStatus.status !== 'error' && genStatus.status !== 'complete'}>
               ⚡ 快速生成 <span className="text-[9px] opacity-50 ml-1">Shift+G</span>
             </Button>
+            <Button size="sm" variant="outline" className="text-xs"
+              onClick={() => setShowBatchDialog(true)} title="批量生成多章"
+              disabled={!!genStatus && genStatus.status !== 'error' && genStatus.status !== 'complete'}>
+              📚 批量生成
+            </Button>
+            {batchStatus && batchStatus.status !== 'idle' && (
+              <span className="text-[10px] text-ink-muted self-center px-2 py-1 bg-paper rounded">
+                📚 {batchStatus.status === 'queued' ? '排队中' : batchStatus.status === 'running' ? `生成中 ${batchStatus.progress.current}/${batchStatus.progress.total}` : batchStatus.status === 'done' ? '完成' : '失败'}
+              </span>
+            )}
             <Button size="sm" variant="outline" onClick={() => { setCloneTitle(novel?.title + '（副本）' || ''); setCloneGenre(novel?.genre || '玄幻'); setCloneName(''); setShowClone(true); }}>📋 复制开新书</Button>
             <Button size="sm" variant="outline" onClick={() => navigate(`/novels/${id}/world`)}>🌍 世界观编辑器</Button>
             <Button size="sm" variant="outline" onClick={() => navigate(`/novels/${id}/outline`)}>📋 章节大纲</Button>

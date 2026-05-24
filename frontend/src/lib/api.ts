@@ -34,6 +34,11 @@ export const api = {
     get:       (id: string) => get<NovelDetail>(`/novels/${id}`),
     create:    (d: Record<string, unknown>) => post<NovelSummary>('/novels', d),
     generate:  (id: string) => post(`/novels/${id}/generate`),
+    generateBatch: (id: string, count: number, qualityThreshold: number) =>
+      post<{ job_id: string; status: string; count: number; next_chapter: number }>(
+        `/novels/${id}/generate-batch`, { count, quality_threshold: qualityThreshold }),
+    queueStatus: (id: string) => get<{ job_id: string | null; status: string; progress: { current: number; total: number }; last_error: string | null }>(
+      `/novels/${id}/generate/queue-status`),
     publish:   (id: string) => post<PublishResult>(`/novels/${id}/publish`),
     draft:     (id: string, input: string) => post<{ directions: DraftOption[] }>(`/novels/${id}/draft`, { input }),
     expand:    (id: string, chosenId: string, draft?: { direction: string; preview: string; hook: string }, edits?: string) =>
@@ -43,6 +48,9 @@ export const api = {
     autoStart: (id: string) => post(`/novels/${id}/auto/start`),
     autoStop:  (id: string) => post(`/novels/${id}/auto/stop`),
     autoOnce:  (id: string) => post(`/novels/${id}/auto/once`),
+  },
+  costs: {
+    summary: () => get<{ total_cost: number; total_tokens: number; total_calls: number; by_novel: { novel_id: string; title: string; cost: number; chapters: number }[]; by_model: { model: string; calls: number; total_cost: number }[] }>('/costs/summary'),
   },
   status: () => get<SystemStatus>('/status'),
 };

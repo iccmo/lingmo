@@ -25,6 +25,23 @@ class Database:
                 conn.execute("ALTER TABLE novels ADD COLUMN provider_id TEXT DEFAULT 'openai'")
             except:
                 pass  # Column already exists
+            # V9-V10: Create cost_logs and chapter_summaries tables if schema didn't run
+            try:
+                conn.execute("""CREATE TABLE IF NOT EXISTS cost_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, novel_id TEXT NOT NULL,
+                    chapter_number INTEGER NOT NULL DEFAULT 0, model TEXT NOT NULL DEFAULT '',
+                    prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
+                    total_tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
+                    purpose TEXT NOT NULL DEFAULT 'generate', created_at TEXT NOT NULL DEFAULT (datetime('now')))""")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_cost_logs_novel ON cost_logs(novel_id)")
+                conn.execute("""CREATE TABLE IF NOT EXISTS chapter_summaries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, novel_id TEXT NOT NULL,
+                    chapter_num INTEGER NOT NULL, summary_text TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(novel_id, chapter_num))""")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id)")
+            except:
+                pass
 
     @contextmanager
     def conn(self):
@@ -342,17 +359,58 @@ class Database:
                     SUM(prompt_tokens) as pt, SUM(completion_tokens) as ct,
                     SUM(total_tokens) as tt, SUM(cost) as total_cost
                     FROM cost_logs WHERE novel_id=? GROUP BY model""", (novel_id,)).fetchall()
+                by_novel_rows = c.execute("""SELECT cl.novel_id, n.title,
+                    SUM(cl.cost) as cost, COUNT(*) as chapters
+                    FROM cost_logs cl JOIN novels n ON n.id=cl.novel_id
+                    WHERE cl.novel_id=? GROUP BY cl.novel_id""", (novel_id,)).fetchall()
             else:
                 rows = c.execute("""SELECT model, COUNT(*) as calls,
                     SUM(prompt_tokens) as pt, SUM(completion_tokens) as ct,
                     SUM(total_tokens) as tt, SUM(cost) as total_cost
                     FROM cost_logs GROUP BY model""").fetchall()
+                by_novel_rows = c.execute("""SELECT cl.novel_id, n.title,
+                    SUM(cl.cost) as cost, COUNT(*) as chapters
+                    FROM cost_logs cl JOIN novels n ON n.id=cl.novel_id
+                    GROUP BY cl.novel_id ORDER BY cost DESC""").fetchall()
         return {
             "by_model": [dict(r) for r in rows],
+            "by_novel": [dict(r) for r in by_novel_rows],
             "total_cost": round(sum(r["total_cost"] for r in rows), 4),
             "total_tokens": sum(r["tt"] for r in rows),
             "total_calls": sum(r["calls"] for r in rows),
         }
+
+    # ═══════════════════ Chapter Summaries ═══════════════════
+
+    def save_chapter_summary(self, novel_id: str, chapter_num: int, summary_text: str):
+        """Save or update a chapter summary for smart context window."""
+        with self.conn() as c:
+            c.execute("""INSERT OR REPLACE INTO chapter_summaries (novel_id, chapter_num, summary_text, created_at)
+                VALUES (?, ?, ?, datetime('now'))""",
+                (novel_id, chapter_num, summary_text))
+
+    def get_chapter_summaries(self, novel_id: str, chapter_nums: list[int] | None = None) -> list[dict]:
+        """Get chapter summaries for a novel. Optionally filter by chapter numbers."""
+        with self.conn() as c:
+            if chapter_nums:
+                placeholders = ",".join("?" for _ in chapter_nums)
+                rows = c.execute(f"""SELECT * FROM chapter_summaries
+                    WHERE novel_id=? AND chapter_num IN ({placeholders})
+                    ORDER BY chapter_num""",
+                    (novel_id, *chapter_nums)).fetchall()
+            else:
+                rows = c.execute("""SELECT * FROM chapter_summaries
+                    WHERE novel_id=? ORDER BY chapter_num""",
+                    (novel_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def has_chapter_summaries(self, novel_id: str, up_to_chapter: int) -> bool:
+        """Check if summaries exist for chapters 1..up_to_chapter."""
+        with self.conn() as c:
+            count = c.execute("""SELECT COUNT(*) FROM chapter_summaries
+                WHERE novel_id=? AND chapter_num BETWEEN 1 AND ?""",
+                (novel_id, up_to_chapter)).fetchone()[0]
+        return count >= up_to_chapter
 
     # ═══════════════════ Model Providers ═══════════════════
 

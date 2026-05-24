@@ -103,11 +103,14 @@ export function Dashboard() {
   const [sortBy, setSortBy] = useState<'words' | 'chapters' | 'latest'>('latest');
   const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
   const [showCompare, setShowCompare] = useState(false);
+  const [costSummary, setCostSummary] = useState<{ total_cost: number; total_tokens: number; total_calls: number; by_novel: { novel_id: string; title: string; cost: number; chapters: number }[]; by_model: { model: string; calls: number; total_cost: number }[] } | null>(null);
+  const [showCostBreakdown, setShowCostBreakdown] = useState(false);
 
   useEffect(() => {
-    Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json())])
-      .then(([n, s, providers]) => {
+    Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json()), api.costs.summary().catch(() => null)])
+      .then(([n, s, providers, costs]) => {
         setNovels(n); setStatus(s);
+        setCostSummary(costs);
         const hasKey = providers?.some((p: {api_key: string}) => p.api_key !== '');
         if (!hasKey) toast.info('💡 前往设置页配置 API Key 即可开始创作');
       })
@@ -218,6 +221,53 @@ export function Dashboard() {
                 {novels.filter(n=>n.total_chapters>0).length}
               </div>
               <div className="text-[11px] text-ink-muted mt-1">有内容的书</div>
+            </div>
+          )}
+          {costSummary && costSummary.total_cost > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowCostBreakdown(!showCostBreakdown)}
+                className="bg-paper border border-border rounded-lg px-5 py-3 min-w-[100px] hover:border-amber-300 transition-colors cursor-pointer text-left w-full"
+              >
+                <div className="font-heading text-[28px] font-semibold text-amber-600 leading-none">
+                  ${costSummary.total_cost.toFixed(4)}
+                </div>
+                <div className="text-[11px] text-ink-muted mt-1">API 花费</div>
+              </button>
+              {showCostBreakdown && (
+                <div className="absolute top-full mt-2 right-0 z-20 bg-card border border-border rounded-xl shadow-xl p-4 min-w-[260px] animate-[fadeSlideIn_0.15s_ease-out]"
+                  onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-xs font-semibold text-ink">💰 花费明细</h4>
+                    <button onClick={() => setShowCostBreakdown(false)} className="text-[10px] text-ink-muted hover:text-ink">✕</button>
+                  </div>
+                  {costSummary.by_novel && costSummary.by_novel.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-[10px] font-medium text-ink-muted uppercase tracking-wide mb-1.5">按小说</p>
+                      {costSummary.by_novel.map(n => (
+                        <div key={n.novel_id} className="flex items-center justify-between py-1 text-[11px]">
+                          <span className="text-ink truncate max-w-[150px]">{n.title || n.novel_id}</span>
+                          <span className="text-amber-600 font-mono">${n.cost.toFixed(4)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {costSummary.by_model && costSummary.by_model.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-medium text-ink-muted uppercase tracking-wide mb-1.5">按模型</p>
+                      {costSummary.by_model.map(m => (
+                        <div key={m.model} className="flex items-center justify-between py-1 text-[11px]">
+                          <span className="text-ink">{m.model}</span>
+                          <span className="text-amber-600 font-mono">${m.total_cost.toFixed(4)} ({m.calls}次)</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-border mt-3 pt-2 text-[10px] text-ink-subtle">
+                    总调用 {costSummary.total_calls} 次 · 总 Token {costSummary.total_tokens.toLocaleString()}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

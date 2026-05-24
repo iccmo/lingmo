@@ -281,3 +281,29 @@ CREATE TABLE IF NOT EXISTS audio_progress (
     position_sec REAL NOT NULL DEFAULT 0,
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- V9: Cost tracking log
+CREATE TABLE IF NOT EXISTS cost_logs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_number  INTEGER NOT NULL DEFAULT 0,
+    model           TEXT NOT NULL DEFAULT '',
+    prompt_tokens   INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens    INTEGER NOT NULL DEFAULT 0,
+    cost            REAL NOT NULL DEFAULT 0,
+    purpose         TEXT NOT NULL DEFAULT 'generate',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cost_logs_novel ON cost_logs(novel_id);
+
+-- V10: Chapter summaries for smart context window
+CREATE TABLE IF NOT EXISTS chapter_summaries (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    summary_text    TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(novel_id, chapter_num)
+);
+CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id);

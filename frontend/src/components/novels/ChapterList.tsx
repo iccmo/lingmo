@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import { ContextMenu } from 'src/components/ui/context-menu';
 import { MobileReadingMode } from 'src/components/novels/MobileReadingMode';
 import { ChapterDiff } from 'src/components/novels/ChapterDiff';
+import { AudioTextSync } from 'src/components/novels/AudioTextSync';
+import { useAudio } from 'src/lib/AudioContext';
 import type { ChapterMeta } from 'src/types';
 
 /* ─── Chapter tags ─── */
@@ -100,6 +102,26 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     if (status === 'revise') return { icon: '🔧', label: '待改', cls: 'text-amber-500' };
     return null;
   }
+
+  // ── Audio text sync ──
+  const { positionSec, progress: audioProgress, playing: audioPlaying, paused: audioPaused, current: audioCurrent } = useAudio();
+
+  // Estimate audio duration from progress ratio (same formula as MiniPlayer)
+  const estimatedDuration = useMemo(() => {
+    if (audioProgress > 0 && positionSec > 0) {
+      return Math.round(positionSec / (audioProgress / 100));
+    }
+    return 0;
+  }, [positionSec, audioProgress]);
+
+  // Check if the currently playing chapter matches the expanded one
+  const isAudioSyncing =
+    expanded !== null &&
+    audioCurrent !== null &&
+    audioCurrent.novelId === novelId &&
+    audioCurrent.chapterNum === expanded &&
+    audioPlaying &&
+    !audioPaused;
 
   async function saveEdit() {
     if (!expanded || !editContent.trim()) return;
@@ -948,15 +970,30 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                   onKeyDown={e => e.stopPropagation()}
                   placeholder="编辑章节内容..." />
               ) : content ? (
-                content.split('\n').map((line, i) => {
-                  const trimmed = line.trim();
-                  if (!trimmed) return <br key={i} />;
-                  if (trimmed === '---' || trimmed === '***' || trimmed === '___') return <hr key={i} />;
-                  if (trimmed.startsWith('# ')) return <h1 key={i}>{highlightText(trimmed.replace(/^# /, ''), searchTerm)}</h1>;
-                  if (trimmed.startsWith('## ')) return <h2 key={i}>{highlightText(trimmed.replace(/^## /, ''), searchTerm)}</h2>;
-                  if (trimmed.startsWith('> ')) return <blockquote key={i}><p>{highlightText(trimmed.replace(/^> /, ''), searchTerm)}</p></blockquote>;
-                  return <p key={i}>{highlightText(trimmed, searchTerm)}</p>;
-                })
+                isAudioSyncing ? (
+                  <div className="px-2">
+                    <div className="flex items-center gap-2 mb-3 text-[10px] text-accent animate-pulse">
+                      <span>🔊</span>
+                      <span>正在同步朗读 — 当前句子高亮显示</span>
+                    </div>
+                    <AudioTextSync
+                      content={content}
+                      positionSec={positionSec}
+                      duration={estimatedDuration}
+                      isPlaying={isAudioSyncing}
+                    />
+                  </div>
+                ) : (
+                  content.split('\n').map((line, i) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) return <br key={i} />;
+                    if (trimmed === '---' || trimmed === '***' || trimmed === '___') return <hr key={i} />;
+                    if (trimmed.startsWith('# ')) return <h1 key={i}>{highlightText(trimmed.replace(/^# /, ''), searchTerm)}</h1>;
+                    if (trimmed.startsWith('## ')) return <h2 key={i}>{highlightText(trimmed.replace(/^## /, ''), searchTerm)}</h2>;
+                    if (trimmed.startsWith('> ')) return <blockquote key={i}><p>{highlightText(trimmed.replace(/^> /, ''), searchTerm)}</p></blockquote>;
+                    return <p key={i}>{highlightText(trimmed, searchTerm)}</p>;
+                  })
+                )
               ) : loadingContent ? (
                 <div className="space-y-3 py-4">
                   {[100, 85, 92, 60, 95, 78].map((w, i) => (
