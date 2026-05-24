@@ -40,12 +40,28 @@ export function AudioPlayer({ novelId, chapters, onChapterChange }: Props) {
     }
   }, [novelId, onChapterChange]);
 
+  // Pick best available Chinese voice
+  function getBestVoice(): SpeechSynthesisVoice | null {
+    const voices = speechSynthesis.getVoices();
+    // Prefer Chinese voices in this order
+    const preferred = ['Tingting', 'Sinji', 'Meijia', 'Yue', 'Hanhan', 'Zhiwei'];
+    for (const name of preferred) {
+      const v = voices.find(v => v.name.includes(name) && v.lang.startsWith('zh'));
+      if (v) return v;
+    }
+    // Fallback: any Chinese voice
+    return voices.find(v => v.lang.startsWith('zh')) || null;
+  }
+
   // Play when content loads
   useEffect(() => {
     if (!contentLoaded || !content) return;
     const utter = new SpeechSynthesisUtterance(content);
     utter.lang = 'zh-CN';
     utter.rate = speed;
+    utter.pitch = 1.0;
+    const bestVoice = getBestVoice();
+    if (bestVoice) utter.voice = bestVoice;
     utter.onboundary = (e) => {
       if (e.charIndex !== undefined) {
         setProgress(Math.round((e.charIndex / content.length) * 100));
