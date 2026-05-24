@@ -16,6 +16,9 @@ interface DeepMetrics {
   povConsistency: number;
   timelineGaps: number;
   toolPersonWarnings: { character: string; issue: string }[];
+  bodyReactionLines: string[];     // sentences that trigger physical reader response
+  unreliableDetails: string[];     // small details that seem inconsistent (delayed reveals)
+  timeTraces: string[];            // environmental time markers (not explicit time jumps)
   suggestions: string[];
 }
 
@@ -180,6 +183,49 @@ function analyzeDeep(text: string): DeepMetrics {
     suggestions.push('✅ 角色均有个人时刻，不是情节的工具人');
   }
 
+  // ---- Body-Reaction Sentences ----
+  const bodyReactionLines: string[] = [];
+  for (const s of sentences) {
+    const t = s.trim();
+    if (t.length < 10 || t.length > 150) continue;
+    // Physical reactions that readers feel: stomach, breath, heart, skin
+    if (/胃.*收缩|呼吸.*停|深吸|屏住|心跳.*漏|血.*凉|后背.*凉|汗毛.*竖|头皮.*麻|鼻子.*酸/.test(t)) {
+      bodyReactionLines.push(t.slice(0, 60));
+    }
+  }
+  if (bodyReactionLines.length === 0) suggestions.push('缺少让读者身体有反应的句子——加入胃收紧、呼吸停滞、汗毛竖立等身体细节');
+  else if (bodyReactionLines.length >= 2) suggestions.push(`✅ 有${bodyReactionLines.length}处身体反应句，读者会感同身受`);
+
+  // ---- Unreliable Details (delayed-reveal seeds) ----
+  const unreliableDetails: string[] = [];
+  for (const s of sentences) {
+    const t = s.trim();
+    if (t.length < 10 || t.length > 120) continue;
+    // Small contradictions or details that hint at hidden meaning
+    if (/数字.*不对|时间.*记错了|明明.*却|说.*但|其实|看起来.*实际上|表面.*真正/.test(t)) {
+      unreliableDetails.push(t.slice(0, 60));
+    }
+  }
+  if (unreliableDetails.length === 0 && sentences.length > 20) {
+    suggestions.push('缺少不可靠细节——埋一个微小的矛盾或疑点，让读者在后面突然意识到');
+  }
+
+  // ---- Time Traces (environmental time passage) ----
+  const timeTraces: string[] = [];
+  for (const s of sentences) {
+    const t = s.trim();
+    if (t.length < 8 || t.length > 100) continue;
+    // Environmental changes that mark time without stating it
+    if (/花.*枯|光.*暗|茶.*凉|灰.*积|叶.*落|蜡.*尽|锈|霉|旧|褪色|斑驳/.test(t)) {
+      timeTraces.push(t.slice(0, 60));
+    }
+  }
+  if (timeTraces.length === 0 && sentences.length > 30) {
+    suggestions.push('缺少无痕时间流逝——用花枯了、茶凉了、灰积了暗示时间，而非写「三天后」');
+  } else if (timeTraces.length >= 1) {
+    suggestions.push(`✅ 有${timeTraces.length}处环境时间痕迹，时间在缝隙里流过`);
+  }
+
   // ---- Golden lines ----
   const goldenLines: string[] = [];
   for (const s of sentences) {
@@ -219,6 +265,9 @@ function analyzeDeep(text: string): DeepMetrics {
     povConsistency,
     timelineGaps,
     toolPersonWarnings,
+    bodyReactionLines,
+    unreliableDetails,
+    timeTraces,
     suggestions: suggestions.slice(0, 6),
   };
 }
@@ -294,6 +343,9 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
               { label: 'POV稳定', value: String(metrics.povConsistency || 100), good: 85, bad: 55, tip: '视角切换频率' },
               { label: '时间标记', value: String(metrics.timelineGaps || 0), good: 8, bad: 15, tip: '时间跳跃次数' },
               { label: '角色人化', value: metrics.toolPersonWarnings.length === 0 ? '✅' : `${metrics.toolPersonWarnings.length}⚠️`, good: 0.1, bad: 2, tip: '工具人警告数' },
+              { label: '身体共鸣', value: String(metrics.bodyReactionLines.length), good: 2, bad: 0.1, tip: '读者身体有反应的句子' },
+              { label: '不可靠细节', value: String(metrics.unreliableDetails.length), good: 1, bad: 0.1, tip: '延迟引爆的疑点' },
+              { label: '时间痕迹', value: String(metrics.timeTraces.length), good: 1, bad: 0.1, tip: '环境暗示的时间流逝' },
             ].map(m => (
               <div key={m.label} className="p-3 rounded-lg bg-paper border border-border">
                 <div className="text-[10px] text-ink-muted mb-0.5">{m.label}</div>
@@ -327,6 +379,41 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Body reaction lines */}
+          {metrics.bodyReactionLines.length > 0 && (
+            <div className="pt-3 border-t border-border">
+              <p className="text-xs font-semibold text-ink mb-2">🫀 身体反应句</p>
+              {metrics.bodyReactionLines.map((l, i) => (
+                <p key={i} className="text-[10px] text-emerald-600 dark:text-emerald-400 leading-relaxed mb-1">「{l}」</p>
+              ))}
+            </div>
+          )}
+          {metrics.bodyReactionLines.length === 0 && (
+            <div className="pt-3 border-t border-border">
+              <p className="text-[10px] text-amber-500">⚠️ 无身体反应句——读者缺少生理共鸣</p>
+            </div>
+          )}
+
+          {/* Unreliable details */}
+          {metrics.unreliableDetails.length > 0 && (
+            <div className="pt-3 border-t border-border">
+              <p className="text-xs font-semibold text-ink mb-2">🪤 不可靠细节</p>
+              {metrics.unreliableDetails.map((l, i) => (
+                <p key={i} className="text-[10px] text-purple-600 dark:text-purple-400 leading-relaxed mb-1">「{l}」</p>
+              ))}
+            </div>
+          )}
+
+          {/* Time traces */}
+          {metrics.timeTraces.length > 0 && (
+            <div className="pt-3 border-t border-border">
+              <p className="text-xs font-semibold text-ink mb-2">⏳ 无痕时间流逝</p>
+              {metrics.timeTraces.map((l, i) => (
+                <p key={i} className="text-[10px] text-sky-600 dark:text-sky-400 leading-relaxed mb-1">「{l}」</p>
+              ))}
             </div>
           )}
 
