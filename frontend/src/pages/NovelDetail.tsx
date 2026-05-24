@@ -21,6 +21,7 @@ import { CharacterSoul } from 'src/components/novels/CharacterSoul';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
 import { NovelArchitect } from 'src/components/novels/NovelArchitect';
 import { QualityWorkflow } from 'src/components/novels/QualityWorkflow';
+import { AudioPlayer } from 'src/components/novels/AudioPlayer';
 import { MasterworkLab } from 'src/components/novels/MasterworkLab';
 import { WriterStats } from 'src/components/novels/WriterStats';
 import { GenerationPipeline } from 'src/components/novels/GenerationPipeline';
@@ -1386,6 +1387,11 @@ export function NovelDetail({ mode }: Props) {
           const el = document.querySelector(`[data-chapter="${num}"]`);
           if (el) (el as HTMLElement).click();
         }}
+      />
+
+      <AudioPlayer
+        novelId={novel.id}
+        chapters={novel.chapters.map((c: any) => ({ number: c.number, title: c.title, word_count: c.word_count || 0 }))}
       />
 
       <ScrollToTop />
