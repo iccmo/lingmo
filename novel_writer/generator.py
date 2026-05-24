@@ -4,15 +4,12 @@ import json
 import random
 import re
 import time
-from dataclasses import dataclass, field, asdict
-from typing import Optional
+from dataclasses import dataclass, field
 
 from openai import OpenAI
-from openai.types.chat import ChatCompletion
 
 from .config import Config, config
-from .story_state import StoryState, ChapterMeta
-
+from .story_state import ChapterMeta, StoryState
 
 # ==================== 数据结构 ====================
 
@@ -379,13 +376,6 @@ WRITER_VOICES: dict[str, WriterVoice] = {
         dialogue_style="natural",
         special_rule="可以打破线性时间。第一人称和第三人称可以在同一章切换。有些段落可以是主角的日记/梦境/未寄出的信。结尾不一定有答案——留一个问题比给一个答案更有力。"
     ),
-    "莫言": WriterVoice(
-        name="莫言", description="魔幻现实主义，用泥土和血肉写史诗",
-        narrative_distance="omniscient", sentence_rhythm="flowing",
-        unsaid_ratio=0.2, moral_complexity="gray", imagery_density="rich",
-        dialogue_style="stylized",
-        special_rule="把最残忍的事用最华丽的语言写出来。感官描写极致——气味、温度、触感比视觉重要。一个村庄就是一个宇宙。肮脏和神圣共存，不区分。"
-    ),
     "张爱玲": WriterVoice(
         name="张爱玲", description="都市情感解剖师，一句话戳穿所有体面",
         narrative_distance="close", sentence_rhythm="varied",
@@ -541,8 +531,8 @@ _PINYIN_TONE: dict[str, str] = {
     "渡":"4","落":"4","照":"4","断":"4","暮":"4","度":"4","静":"4","漱":"4","抱":"4",
     "陆":"4","谢":"4","卫":"4","段":"4","宋":"4","季":"4","叶":"4","傅":"4","念":"4",
     "慕":"4","霍":"4","晏":"4","令":"4","上":"4","夏":"4","杜":"4","若":"4","素":"4",
-    "宁":"4","靖":"4","黛":"4","映":"4","见":"4","抱":"4","慎":"4","正":"4","信":"4",
-    "梦":"4","境":"4","镜":"4","劲":"4","净":"4","靖":"4","境":"4",
+    "宁":"4","靖":"4","黛":"4","映":"4","见":"4","慎":"4","正":"4","信":"4",
+    "梦":"4","境":"4","镜":"4","劲":"4","净":"4","靖":"4",
 }
 
 
@@ -601,7 +591,7 @@ class Generator:
             timeout=300.0,
             max_retries=2,
         )
-        self.fallback_client: Optional[OpenAI] = None  # DeepSeek 等备选
+        self.fallback_client: OpenAI | None = None  # DeepSeek 等备选
         self._fallback_model: str = ""
 
     def _init_fallback(self):
@@ -1054,7 +1044,7 @@ AI写作的典型特征：
             style = _get_style_for_genre(genre)
             style.writer_voice = voice_key
             # Build minimal state
-            from .story_state import StoryState, World, Plot
+            from .story_state import Plot, StoryState, World
             state = StoryState(novel_id="ab_test", title="AB测试", author="AI",
                 synopsis=synopsis, genre=genre,
                 world=World(name="测试世界", era="当代", geography="", power_system=""),
@@ -1138,7 +1128,7 @@ AI写作的典型特征：
 
         if not best_chapter:
             # Fallback: generate one more time without classic filter
-            print(f"[CLASSIC] ⚠️ 5次尝试未达经典标准，降级为普通生成")
+            print("[CLASSIC] ⚠️ 5次尝试未达经典标准，降级为普通生成")
             chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style)
             body = self._self_edit(chapter.content or chapter.summary, state, style)
             chapter.content, _ = self.de_ai(body)
@@ -1362,7 +1352,7 @@ AI写作的典型特征：
             elif '……' in prev.ending_hook or '...' in prev.ending_hook:
                 guidance = f"上章以沉默/留白结尾（信任度{prev_trust}→{min(10,prev_trust+2)}）。本章多给内心戏和对话，让读者靠近角色。留白堆积到一定程度必须炸。"
             else:
-                guidance = f"上章结尾中性。本章必须制造一个清晰的情感方向——焦虑或满足，不能持平。"
+                guidance = "上章结尾中性。本章必须制造一个清晰的情感方向——焦虑或满足，不能持平。"
         else:
             guidance = "首次生成。专注建立核心冲突：主角想要什么？什么阻止他？读者需要担心什么？"
 
@@ -2383,7 +2373,7 @@ AI写作的典型特征：
         first_line = text.strip().split("\n")[0]
         first_line = re.sub(r'^#+\s*', '', first_line).strip()
         # 如果第一行是 "第X章：标题" 则只取标题部分
-        m2 = re.search(rf"第\d+[章節]\s*[：:\s]*(.+)", first_line)
+        m2 = re.search(r"第\d+[章節]\s*[：:\s]*(.+)", first_line)
         if m2:
             return m2.group(1).strip()
         if len(first_line) < 60:

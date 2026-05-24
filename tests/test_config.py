@@ -1,6 +1,8 @@
 """Config tests"""
 import os
+
 from novel_writer.config import Config, validate
+
 
 def test_config_defaults():
     c = Config()

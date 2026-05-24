@@ -1,10 +1,14 @@
 """Integration tests — full pipeline"""
-import pytest, json, os
+import os
+
+import pytest
 from starlette.testclient import TestClient
-from novel_writer.server import app
+
+from novel_writer.config import Config
 from novel_writer.database import Database
 from novel_writer.generator import Generator
-from novel_writer.config import Config
+from novel_writer.server import app
+
 
 @pytest.fixture
 def client():
@@ -59,7 +63,7 @@ def test_error_handling(client):
 
 def test_generator_quality_scoring():
     """V3: Quality scoring produces valid output"""
-    from novel_writer.story_state import StoryState, World, Plot, Character
+    from novel_writer.story_state import Character, Plot, StoryState, World
     state = StoryState(novel_id="q",title="q",author="AI",synopsis="",genre="玄幻",
         world=World(name="",era="",geography="",power_system=""),
         characters=[Character(id="p",name="叶凡",role="主角",personality="",background="",current_power_level="")],

@@ -1,6 +1,4 @@
 """FastAPI endpoint tests — isolated per test via tmp_path fixture"""
-import os
-import tempfile
 import pytest
 from fastapi.testclient import TestClient
 

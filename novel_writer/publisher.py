@@ -1,12 +1,14 @@
 """平台发布器 — Playwright 自动化发布到 番茄小说"""
-import json, time, asyncio, os
+import asyncio
+import json
+import os
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
-from .database import Database
 from .config import Config, config
+from .database import Database
 
 SELECTORS_PATH = Path(__file__).parent.parent / "data" / "selectors.json"
 
@@ -48,7 +50,7 @@ class BasePlatform(ABC):
     author_url: str
 
     @abstractmethod
-    async def login(self, page, storage_state_path: Optional[str] = None) -> bool: ...
+    async def login(self, page, storage_state_path: str | None = None) -> bool: ...
 
     @abstractmethod
     async def upload_chapter(self, page, title: str, body: str, chapter_num: int = 0) -> PublishResult: ...
@@ -75,7 +77,7 @@ class FanqiePlatform(BasePlatform):
             ctx = await browser.new_context(viewport={"width": 1280, "height": 800})
         return browser, ctx
 
-    async def login(self, page, storage_state_path: Optional[str] = None) -> bool:
+    async def login(self, page, storage_state_path: str | None = None) -> bool:
         if storage_state_path and Path(storage_state_path).exists():
             storage = json.loads(Path(storage_state_path).read_text())
             await page.context.add_cookies(storage.get("cookies", []))
@@ -197,7 +199,7 @@ class FanqiePlatform(BasePlatform):
                         if el and await el.is_visible():
                             await el.click()
                             await asyncio.sleep(1)
-                            print(f"[PUBLISH] ✅ Selected '否'")
+                            print("[PUBLISH] ✅ Selected '否'")
                             break
                     except:
                         pass

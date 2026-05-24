@@ -1,17 +1,18 @@
 """Pipeline integration tests: generate, score_quality, de_ai, batch_generate, scheduler."""
-import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock, call
 
-from novel_writer.generator import Generator, DraftOption
 from novel_writer.config import Config
+from novel_writer.generator import Generator
 from novel_writer.story_state import ChapterMeta
-
 from tests.fixtures.sample_state import (
-    build_sample_state, sample_outline, sample_rag_context,
-    high_quality_body, low_quality_body,
+    build_sample_state,
+    high_quality_body,
+    low_quality_body,
+    sample_outline,
+    sample_rag_context,
 )
-
 
 # ═══════════════════ Helpers ═══════════════════
 
@@ -248,8 +249,8 @@ def test_batch_generate_varying_temperature(gen):
 @patch('novel_writer.scheduler.Database')
 def test_scheduler_run_once_full_pipeline(_mock_db_cls):
     """scheduler.run_once calls generate, score_quality, de_ai, store_chapter_embedding."""
-    from novel_writer.scheduler import Scheduler
     from novel_writer.config import Config as Cfg
+    from novel_writer.scheduler import Scheduler
 
     sched = Scheduler(Cfg())
     _mock_db_cls.return_value = sched.db
@@ -294,8 +295,8 @@ def test_scheduler_run_once_full_pipeline(_mock_db_cls):
 @patch('novel_writer.scheduler.Database')
 def test_scheduler_run_once_retry_on_low_quality(_mock_db_cls):
     """scheduler.run_once retries batch_generate when quality < 0.5."""
-    from novel_writer.scheduler import Scheduler
     from novel_writer.config import Config as Cfg
+    from novel_writer.scheduler import Scheduler
 
     sched = Scheduler(Cfg())
     _mock_db_cls.return_value = sched.db

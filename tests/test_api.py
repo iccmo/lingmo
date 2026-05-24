@@ -1,6 +1,10 @@
 """API endpoint tests"""
-import pytest, tempfile, os
+import os
+import tempfile
+
+import pytest
 from starlette.testclient import TestClient
+
 
 @pytest.fixture
 def client(monkeypatch):

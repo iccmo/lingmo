@@ -1,6 +1,4 @@
 """系统集成自检 — 验证核心管线路径"""
-import pytest
-import json, os
 
 def test_styleprofile_creation():
     """所有24种体裁的StyleProfile都能正常创建"""
@@ -62,7 +60,7 @@ def test_soul_statement_injection():
 def test_central_question_injection():
     """核心追问注入 — 含自动推导"""
     from novel_writer.generator import Generator, StyleProfile
-    from novel_writer.story_state import StoryState, World, Plot
+    from novel_writer.story_state import Plot, StoryState, World
     s = StyleProfile(thought_system="权力即流变，制度比人可靠")
     st = StoryState('t','t','','','玄幻',World('','','',''),characters=[],plot=Plot('','','o',1))
     result = Generator._central_question_injection(s, st)
@@ -78,7 +76,7 @@ def test_writer_voice_context():
 def test_emotion_budget():
     """情绪预算生成"""
     from novel_writer.generator import Generator, StyleProfile
-    from novel_writer.story_state import StoryState, World, Plot
+    from novel_writer.story_state import Plot, StoryState, World
     s = StyleProfile()
     st = StoryState('t','','','','玄幻',World('','','',''),characters=[],plot=Plot('','','o',1))
     result = Generator._emotion_budget_context(st, s)

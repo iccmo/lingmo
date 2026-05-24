@@ -21,14 +21,19 @@
     pip install playwright
     playwright install chromium
 """
-import argparse, asyncio, json, sys, time, os
+import argparse
+import asyncio
+import json
+import os
+import sys
+import time
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from novel_writer.publisher import FanqiePlatform, PublishResult
 from novel_writer.database import Database
+from novel_writer.publisher import FanqiePlatform, PublishResult
 
 # ── Config ──────────────────────────────────────────────────────
 
@@ -271,7 +276,7 @@ async def main():
 
     # ── Summary ──
     print(f"\n{'='*60}")
-    print(f"📊 发布总结")
+    print("📊 发布总结")
     print(f"   成功: {sum(1 for r in results if r.success)}/{len(results)}")
     if not args.dry_run:
         show_status()

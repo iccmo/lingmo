@@ -1,10 +1,11 @@
 """FastAPI Web 后端 — REST API + Database"""
 
-import json, sys, re
+import json
+import re
+import sys
 from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +34,7 @@ def _get_provider(novel_id: str = None):
 
 # ═══════════════════ Generation Status ═══════════════════
 import threading
+
 _gen_status: dict[str, dict] = {}
 _gen_lock = threading.Lock()
 
@@ -48,6 +50,7 @@ def _get_status(novel_id: str) -> dict:
 
 # ═══════════════════ Generation Queue ═══════════════════
 import uuid
+
 _job_queue: dict[str, dict] = {}
 _job_lock = threading.Lock()
 
@@ -147,7 +150,7 @@ def create_novel(data: dict):
     )
     # Auto-assign initial style profile based on genre
     try:
-        from .generator import StyleProfile, STYLE_POOL, GENRE_TO_STYLE, _get_style_for_genre, asdict
+        from .generator import GENRE_TO_STYLE, STYLE_POOL, asdict
         style_key = GENRE_TO_STYLE.get(data.get("genre", "玄幻"), "玄幻")
         base_style = STYLE_POOL.get(style_key)
         if base_style:
@@ -281,8 +284,8 @@ def quality_report(novel_id: str):
 
     # Title candidates
     try:
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -372,7 +375,7 @@ def classic_assessment(novel_id: str):
         "threshold": threshold,
         "recommendation": "✅ 经典潜质达标，可以继续" if passed else
                          f"❌ 建议推倒重来（均分{avg_q:.2f}<{threshold}）" if avg_q < threshold else
-                         f"⚠️ 部分指标不达标，建议针对性修改",
+                         "⚠️ 部分指标不达标，建议针对性修改",
     }
 
 
@@ -395,8 +398,8 @@ def extract_narrative_dna(data: dict):
     gen_chs = [c for c in novel.get("chapters",[]) if c.get("word_count",0) > 0]
     if len(gen_chs) < 3: raise HTTPException(400, "源小说至少3章")
 
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(source_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -407,8 +410,8 @@ def extract_narrative_dna(data: dict):
     dna = gen.extract_narrative_dna(samples, target_genre)
 
     # Save DNA to file
-    from pathlib import Path
     import json as _json
+    from pathlib import Path
     (Path("data")/"narrative_dna").mkdir(exist_ok=True)
     (Path("data")/"narrative_dna"/f"{source_id}.json").write_text(_json.dumps(dna, ensure_ascii=False, indent=2))
 
@@ -529,7 +532,7 @@ def algorithm_optimize(novel_id: str):
         hooks = [c.get("ending_hook","") for c in gen_chs[-5:]]
         strong_hooks = sum(1 for h in hooks if len(h) > 30 and ('？' in h or '！' in h or '……' in h))
         if strong_hooks < 3:
-            issues.append("最近5章有{0}章结尾钩子偏弱——追读率会下降，算法会减少推荐".format(5-strong_hooks))
+            issues.append(f"最近5章有{5-strong_hooks}章结尾钩子偏弱——追读率会下降，算法会减少推荐")
 
     # 5. Interaction bait (评论区活跃=加权)
     tips.append("每5章在结尾加一句'读者提问'——如'你觉得他做得对吗？评论区见'——提升互动率=算法加权")
@@ -586,23 +589,13 @@ def preview_chapter(novel_id: str):
     """章节预览：生成200字样本展示风格和声音，不消耗完整生成费用。"""
     novel = db.get_novel(novel_id)
     if not novel: raise HTTPException(404)
-    from .generator import Generator
     from .config import Config
-    from .story_state import StoryState, World, Plot
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
     gen = Generator(cfg)
-    state = _load_state(novel_id) or StoryState(novel_id=novel_id, title=novel["title"], author=novel["author"],
-        synopsis=novel.get("synopsis",""), genre=novel["genre"],
-        world=World(name="", era="", geography="", power_system=""),
-        characters=[], plot=Plot(premise=novel.get("synopsis",""), main_arc="", current_arc="开篇", arc_chapter_start=1), chapters=[])
-    style = None
-    try:
-        from .generator import StyleProfile
-        sd = db.get_style_profile(novel_id)
-        if sd: style = StyleProfile(**{k:v for k,v in sd.items() if k in StyleProfile.__dataclass_fields__})
-    except: pass
+    _load_state(novel_id)  # Note: load and discard, state is not needed for preview
     sample = gen._call_llm_with_retry([
         {"role":"system","content":"你是小说家。写200字的章节开头——展示风格、声音和节奏。这是给编辑看的样本，不需要完整章节。"},
         {"role":"user","content": f"书名：{novel['title']}\n简介：{novel.get('synopsis','')}\n请写200字开篇样本。"}
@@ -717,8 +710,9 @@ def novel_farm(data: dict, background: BackgroundTasks):
                         char_key="protagonist", name=name, role="主角")
         # Set writer voice
         voice = seed.get("voice", "爆款网文")
-        from .generator import STYLE_POOL, GENRE_TO_STYLE, _get_style_for_genre
         from dataclasses import asdict
+
+        from .generator import _get_style_for_genre
         style = _get_style_for_genre(seed.get("genre","玄幻"))
         style.novel_id = nid
         style.writer_voice = voice
@@ -798,8 +792,8 @@ def generate_packaging(novel_id: str):
     titles = [c.get("title","") for c in gen_chs[:5]]
     total_words = novel.get("total_words",0)
 
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -981,7 +975,9 @@ def export_mobi(novel_id: str):
     html = '\n'.join(html_parts)
 
     # Try calibre ebook-convert
-    import subprocess, tempfile, os
+    import os
+    import subprocess
+    import tempfile
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False, encoding='utf-8') as f:
             f.write(html)
@@ -1109,8 +1105,8 @@ def chapter_diffs(novel_id: str):
 def ask_novel(novel_id: str, q: str = ""):
     """向自己的小说提问——基于RAG检索最相关的章节回答。"""
     if not q: raise HTTPException(400, "q required")
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1169,8 +1165,8 @@ def fact_check_chapter(novel_id: str, chapter_num: int):
     ch = db.get_chapter(novel_id, chapter_num)
     if not ch: raise HTTPException(404)
     novel = db.get_novel(novel_id)
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1261,8 +1257,8 @@ def _run_generation(novel_id: str):
     """V3: Full generation pipeline with quality scoring, de-AI, and RAG"""
     try:
         _set_status(novel_id, "generating", "正在构思章节…（生成中，约需60秒）", 10)
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         model_override = _gen_directions.pop(novel_id + "_model", "")
         model = model_override or (provider.get("models", "deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1511,8 +1507,8 @@ def _run_generation(novel_id: str):
             })
 
             # Re-init generator (connection may have been broken)
-            from .generator import Generator
             from .config import Config
+            from .generator import Generator
             provider = _get_provider(novel_id)
             model = provider.get("models", "deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o"
             cfg = Config(
@@ -1589,8 +1585,8 @@ def _run_revise_opening(novel_id: str):
     """Background: revise opening chapters with full-book knowledge."""
     try:
         _set_status(novel_id, "revising", "正在基于结局重写前3章…")
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1618,8 +1614,8 @@ def _run_revise_opening(novel_id: str):
 
 def _run_humanize(novel_id: str, chapter_num: int):
     """Background: deep humanize a chapter."""
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1638,8 +1634,8 @@ def _run_revise_chapter(novel_id: str, chapter_num: int, critique: str):
     """Background: revise a chapter based on natural language critique."""
     try:
         _set_status(novel_id, "revising", f"正在根据批评重写第{chapter_num}章…")
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1666,9 +1662,10 @@ def _run_revise_chapter(novel_id: str, chapter_num: int, critique: str):
 
 def _run_autonomous(novel_id: str, target_chapters: int = 30):
     """全自动成书：A/B→生成→管线→书名→报告→导出"""
-    from .generator import Generator, StyleProfile, WRITER_VOICES, STYLE_POOL, GENRE_TO_STYLE
     from dataclasses import asdict
+
     from .config import Config
+    from .generator import GENRE_TO_STYLE, STYLE_POOL, Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1736,8 +1733,8 @@ def _run_autonomous(novel_id: str, target_chapters: int = 30):
                 with db.conn() as c:
                     c.execute("UPDATE novels SET synopsis=? WHERE id=?", (packaging["blurb"], novel_id))
             # Save packaging data
-            from pathlib import Path
             import json as _json
+            from pathlib import Path
             pkg_dir = Path("data") / "packaging"
             pkg_dir.mkdir(exist_ok=True)
             (pkg_dir / f"{novel_id}.json").write_text(_json.dumps(packaging, ensure_ascii=False, indent=2))
@@ -1752,9 +1749,11 @@ def _run_autonomous(novel_id: str, target_chapters: int = 30):
 
 def _run_evolve(novel_id: str):
     """进化模式：迭代推倒→重来，直到经典潜质达标。max 3次，有成本追踪和死胡同检测。"""
-    from .generator import Generator, StyleProfile, WRITER_VOICES, STYLE_POOL, GENRE_TO_STYLE
+    import random as _rd
+    import time as _t
+
     from .config import Config
-    import time as _t, random as _rd
+    from .generator import GENRE_TO_STYLE, STYLE_POOL, WRITER_VOICES, Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1833,8 +1832,8 @@ def _run_evolve(novel_id: str):
 
 def _run_world_bible(novel_id: str):
     """Background: generate complete world bible from synopsis."""
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1864,7 +1863,8 @@ def _run_world_bible(novel_id: str):
 只输出JSON。"""}
         ], max_tokens=2048)
 
-        import json as _json, re
+        import json as _json
+        import re
         json_match = re.search(r'\{[\s\S]*\}', bible)
         if json_match:
             data = _json.loads(json_match.group(0))
@@ -1892,8 +1892,8 @@ def _run_world_bible(novel_id: str):
 
 def _run_final_polish(novel_id: str):
     """出版前终极打磨——全本一致性+首尾呼应+重复短语清理。"""
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1918,7 +1918,8 @@ def _run_final_polish(novel_id: str):
     # Phase 2: Find and flag repetitive phrases across the book
     _set_status(novel_id, "polishing", "扫描全本重复短语…")
     all_text = " ".join(c.get("content","") for c in gen_chs)
-    import re, collections
+    import collections
+    import re
     phrases = re.findall(r'[一-鿿]{2,4}', all_text[:50000])
     freq = collections.Counter(phrases)
     overused = [(p, c) for p, c in freq.most_common(20) if c > len(gen_chs) * 3]
@@ -1930,8 +1931,8 @@ def _run_final_polish(novel_id: str):
 
 def _run_polish(novel_id: str):
     """Background: polish all chapters — fix micro-issues."""
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -1954,7 +1955,7 @@ def _run_polish(novel_id: str):
         _set_status(novel_id, "polishing", f"精修第{ch['number']}章 ({i+1}/{total})...")
         content = ch.get("content","")
         if not content: continue
-        polish_prompt = f"""精修以下章节——只做微调，不改剧情：
+        polish_prompt = """精修以下章节——只做微调，不改剧情：
 
 1. 修正角色称呼不一致（如果同一角色在本章内被叫了不同名字，统一）
 2. 平滑场景切换处的过渡（如果两段之间跳得太快，加半句过渡）
@@ -1974,16 +1975,16 @@ def _run_polish(novel_id: str):
 
 def _run_ab_test(synopsis: str, genre: str, voices: list[str] | None = None):
     """Background: run A/B test across multiple writer voices."""
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(None)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
     gen = Generator(cfg)
     result = gen.ab_test_opening(synopsis, genre, voices)
     # Save results to a log file
-    from pathlib import Path
     import json as _json
+    from pathlib import Path
     log_dir = Path("data") / "ab_tests"
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"ab_{int(__import__('time').time())}.json"
@@ -1996,8 +1997,8 @@ def _run_ab_test(synopsis: str, genre: str, voices: list[str] | None = None):
 
 def _run_pipeline(novel_id: str):
     """自主出版管线：生成→回修→弱章重写→质量报告"""
-    from .generator import Generator, StyleProfile
     from .config import Config
+    from .generator import Generator, StyleProfile
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -2056,8 +2057,8 @@ def _run_generation_classic(novel_id: str):
     """经典模式：使用 generate_chapter_classic，多版本淘汰制。"""
     try:
         _set_status(novel_id, "generating", "经典模式：正在多版本筛选…（约需3-5分钟）", 10)
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -2096,8 +2097,8 @@ def _run_batch_generation(novel_id: str, count: int):
     - Cost tracking via cost_logs + chapters table
     """
     try:
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(
             openai_api_key=provider.get("api_key", ""),
@@ -2354,7 +2355,7 @@ def _record_chapter_cost(novel_id: str, chapter_number: int, model: str,
 
 def _load_state(novel_id: str):
     """Temporary: load state from DB for generator compatibility"""
-    from .story_state import StoryState, World, Plot, Character, ChapterMeta
+    from .story_state import ChapterMeta, Character, Plot, StoryState, World
     novel = db.get_novel(novel_id)
     if not novel:
         return None
@@ -2428,6 +2429,7 @@ def _run_publish(novel_id: str, chapter_number: int):
     """Background task: publish chapter to platform"""
     try:
         import asyncio
+
         from .publisher import Publisher
         pub = Publisher()
         result = asyncio.run(pub.publish(novel_id, chapter_number))
@@ -2578,8 +2580,8 @@ def freshness_check(novel_id: str):
     genre = novel.get("genre","")
     gen_chs = [c for c in novel.get("chapters",[]) if c.get("word_count",0) > 0]
 
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -2978,7 +2980,11 @@ def audio_load():
 
 async def _generate_tts_async(text: str, voice: str, rate: str, output_path: str):
     """Generate TTS audio: edge_tts → ffmpeg → MP3 file."""
-    import edge_tts, tempfile, subprocess, os
+    import os
+    import subprocess
+    import tempfile
+
+    import edge_tts
 
     communicate = edge_tts.Communicate(text, voice, rate=rate)
     tmp_raw = tempfile.NamedTemporaryFile(delete=False, suffix=".adts")
@@ -3024,7 +3030,12 @@ async def chapter_tts_dramatic(novel_id: str, chapter_num: int, voice: str = "zh
                           headers={"Content-Disposition": f"inline; filename=ch{chapter_num}_dramatic.mp3"})
 
     try:
-        import edge_tts, tempfile, subprocess, os, re
+        import os
+        import re
+        import subprocess
+        import tempfile
+
+        import edge_tts
 
         # Parse text into segments
         segments: list[tuple[str, str, str]] = []  # (text, pitch, rate)
@@ -3182,8 +3193,8 @@ def test_provider(provider_id: str):
 def _run_draft(novel_id: str, author_input: str):
     """Background: generate draft directions"""
     try:
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -3198,8 +3209,8 @@ def _run_draft(novel_id: str, author_input: str):
 def _run_expand(novel_id: str, chosen_id: str, direction: str, preview: str, hook: str, edits: str):
     """Background: expand selected draft to full chapter"""
     try:
-        from .generator import Generator, DraftOption
         from .config import Config
+        from .generator import DraftOption, Generator
         provider = _get_provider(novel_id)
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                      model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -3256,6 +3267,7 @@ def generate_status(novel_id: str):
 async def generate_stream_sse(novel_id: str):
     """Server-Sent Events stream for real-time generation status."""
     import asyncio
+
     from fastapi.responses import StreamingResponse
 
     async def event_stream():
@@ -3427,7 +3439,7 @@ def update_world(novel_id: str, data: dict):
 def update_character(novel_id: str, char_key: str, data: dict):
     """Update a character"""
     with db.conn() as conn:
-        row = conn.execute("SELECT id FROM characters WHERE novel_id=? AND char_key=?", 
+        row = conn.execute("SELECT id FROM characters WHERE novel_id=? AND char_key=?",
                           (novel_id, char_key)).fetchone()
         if not row:
             raise HTTPException(404, "Character not found")
@@ -3499,7 +3511,7 @@ def get_outline(novel_id: str):
     return {
         "outline": [{"number": r["number"], "title": r["title"], "summary": r["summary"]} for r in outline_rows],
         "recent_chapters": [{"number": r["number"], "title": r["title"], "summary": r["summary"]} for r in gen_rows],
-        "next_number": (max([r["number"] for r in outline_rows], default=0) 
+        "next_number": (max([r["number"] for r in outline_rows], default=0)
                         if outline_rows else (gen_rows[0]["number"] + 1 if gen_rows else 1)),
     }
 
@@ -3568,8 +3580,8 @@ def suggest_outline(novel_id: str):
 """
 
     try:
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(
             openai_api_key=provider.get("api_key", ""),
@@ -3630,8 +3642,8 @@ def generate_cover(novel_id: str):
     # Generate image prompt via LLM
     img_prompt = ""
     try:
-        from .generator import Generator
         from .config import Config
+        from .generator import Generator
         provider = _get_provider(novel_id)
         cfg = Config(
             openai_api_key=provider.get("api_key", ""),
@@ -3927,8 +3939,8 @@ def get_foreshadowing_audit(novel_id: str):
     """Get foreshadowing audit: open, stale, recovered stats."""
     if not db.get_novel(novel_id):
         raise HTTPException(404, "Novel not found")
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
                  model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
@@ -4082,8 +4094,8 @@ def proofread_chapter(novel_id: str, chapter_num: int):
     if not content:
         raise HTTPException(400, "Chapter has no content")
 
-    from .generator import Generator
     from .config import Config
+    from .generator import Generator
     provider = _get_provider(novel_id)
     cfg = Config(
         openai_api_key=provider.get("api_key", ""),

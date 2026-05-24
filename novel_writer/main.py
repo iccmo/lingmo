@@ -1,7 +1,8 @@
 """Novel Writer CLI — 统一入口"""
 
-import sys, argparse
-from .config import config, validate
+import argparse
+
+from .config import validate
 from .database import Database
 from .scheduler import Scheduler
 
@@ -66,7 +67,7 @@ def cmd_status(args):
     """查看进度"""
     db = Database()
     novels = db.list_novels()
-    print(f"\n  📊 系统状态\n")
+    print("\n  📊 系统状态\n")
     total_ch = sum(n.get("total_chapters", 0) for n in novels)
     total_w = sum(n.get("total_words", 0) for n in novels)
     print(f"  小说: {len(novels)} 本 | 章节: {total_ch} | 字数: {total_w:,}")

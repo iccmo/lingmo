@@ -1,5 +1,6 @@
 """Database CRUD tests — isolated per test via tmp_path fixture"""
 import pytest
+
 from novel_writer.database import Database
 
 

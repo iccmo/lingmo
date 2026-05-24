@@ -1,11 +1,9 @@
 """故事状态管理器 — 持久化世界观、人物、情节进度"""
 
 import json
-import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -69,13 +67,13 @@ class StoryState:
     genre: str
     world: World
     characters: list[Character] = field(default_factory=list)
-    plot: Optional[Plot] = None
+    plot: Plot | None = None
     chapters: list[ChapterMeta] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
 
     # --- 辅助访问 ---
     @property
-    def protagonist(self) -> Optional[Character]:
+    def protagonist(self) -> Character | None:
         for c in self.characters:
             if c.role == "主角":
                 return c
@@ -90,7 +88,7 @@ class StoryState:
         return sum(ch.word_count for ch in self.chapters)
 
     @property
-    def latest_chapter(self) -> Optional[ChapterMeta]:
+    def latest_chapter(self) -> ChapterMeta | None:
         return self.chapters[-1] if self.chapters else None
 
     # --- 上下文摘要（注入 prompt） ---
@@ -180,11 +178,11 @@ class StateManager:
             ids.append(f.stem)
         return sorted(ids)
 
-    def load(self, novel_id: str) -> Optional[StoryState]:
+    def load(self, novel_id: str) -> StoryState | None:
         path = self.novel_path(novel_id)
         if not path.exists():
             return None
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return StoryState.from_dict(json.load(f))
 
     def save(self, state: StoryState):

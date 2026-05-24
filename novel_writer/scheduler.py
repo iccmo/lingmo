@@ -1,10 +1,10 @@
 """调度器 — 模式 A 全自动定时执行"""
-import time, signal, sys
+import signal
+import time
 from datetime import datetime, timedelta
-from typing import Optional
 
-from .database import Database
 from .config import Config, config
+from .database import Database
 
 
 class Scheduler:
@@ -43,7 +43,7 @@ class Scheduler:
     def run_once(self, novel_id: str) -> str:
         """Manual trigger: run one generate cycle"""
         from .generator import Generator
-        from .story_state import StoryState, World, Plot, Character, ChapterMeta
+        from .story_state import ChapterMeta, Character, Plot, StoryState, World
 
         novel = self.db.get_novel(novel_id)
         if not novel:

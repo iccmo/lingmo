@@ -1,11 +1,10 @@
 """数据库访问层 — SQLite + WAL"""
 
-import json
 import datetime
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -23,7 +22,7 @@ class Database:
             # V4: Add provider_id column if not exists
             try:
                 conn.execute("ALTER TABLE novels ADD COLUMN provider_id TEXT DEFAULT 'openai'")
-            except:
+            except Exception:
                 pass  # Column already exists
             # V9-V10: Create cost_logs and chapter_summaries tables if schema didn't run
             try:
@@ -40,7 +39,7 @@ class Database:
                     created_at TEXT NOT NULL DEFAULT (datetime('now')),
                     UNIQUE(novel_id, chapter_num))""")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id)")
-            except:
+            except Exception:
                 pass
 
     @contextmanager
@@ -86,7 +85,7 @@ class Database:
                     :personality,:background,:power_level,:secrets)""", cdef)
         return self.get_novel(kw["id"])
 
-    def get_novel(self, novel_id: str) -> Optional[dict]:
+    def get_novel(self, novel_id: str) -> dict | None:
         with self.conn() as c:
             row = c.execute("SELECT * FROM active_novels WHERE id=?", (novel_id,)).fetchone()
             if not row:
@@ -108,7 +107,6 @@ class Database:
             d["latest_chapter"] = {"number": latest["number"], "title": latest["title"],
                                     "generated_at": latest["generated_at"]} if latest else None
             # Character relations
-            char_map = {ch["id"]: ch["name"] for ch in d["characters"]}
             rels = c.execute("""SELECT cr.*, c1.name as c1_name, c2.name as c2_name
                 FROM character_relations cr
                 JOIN characters c1 ON c1.id=cr.char_1_id
@@ -179,7 +177,7 @@ class Database:
             c.execute("UPDATE novels SET updated_at=datetime('now') WHERE id=?", (novel_id,))
             return cur.lastrowid
 
-    def get_chapter(self, novel_id: str, number: int) -> Optional[dict]:
+    def get_chapter(self, novel_id: str, number: int) -> dict | None:
         with self.conn() as c:
             row = c.execute("SELECT * FROM chapters WHERE novel_id=? AND number=?",
                             (novel_id, number)).fetchone()
@@ -213,7 +211,7 @@ class Database:
                 VALUES (?,?,?,datetime('now'))""",
                 (novel_id, kw.get("is_running", 0), kw.get("next_run_at")))
 
-    def get_scheduler_state(self, novel_id: str) -> Optional[dict]:
+    def get_scheduler_state(self, novel_id: str) -> dict | None:
         with self.conn() as c:
             row = c.execute("SELECT * FROM scheduler_state WHERE novel_id=?", (novel_id,)).fetchone()
             return dict(row) if row else None
@@ -233,7 +231,7 @@ class Database:
                 VALUES (?,?,?,datetime('now'))""",
                 (platform, json.dumps(data), 1 if data else 0))
 
-    def get_auth(self, platform: str) -> Optional[dict]:
+    def get_auth(self, platform: str) -> dict | None:
         with self.conn() as c:
             row = c.execute("SELECT * FROM platform_auth WHERE platform=?", (platform,)).fetchone()
             if not row:
@@ -244,7 +242,7 @@ class Database:
 
     # ═══════════════════ Logging ═══════════════════
 
-    def log(self, novel_id: Optional[str], event: str, detail: dict):
+    def log(self, novel_id: str | None, event: str, detail: dict):
         with self.conn() as c:
             c.execute("INSERT INTO run_logs (novel_id,event,detail) VALUES (?,?,?)",
                       (novel_id, event, json.dumps(detail)))
@@ -328,7 +326,8 @@ class Database:
         with self.conn() as c:
             ch = c.execute("SELECT id FROM chapters WHERE novel_id=? AND number=?",
                           (novel_id, chapter_num)).fetchone()
-            if not ch: return
+            if not ch:
+                return
             ver = (c.execute("SELECT COALESCE(MAX(version),0)+1 FROM chapter_versions WHERE chapter_id=?",
                             (ch["id"],)).fetchone()[0])
             c.execute("INSERT INTO chapter_versions (chapter_id, content, word_count, version, reason) VALUES (?,?,?,?,?)",
@@ -339,7 +338,8 @@ class Database:
         with self.conn() as c:
             ch = c.execute("SELECT id FROM chapters WHERE novel_id=? AND number=?",
                           (novel_id, chapter_num)).fetchone()
-            if not ch: return []
+            if not ch:
+                return []
             rows = c.execute("""SELECT id, word_count, version, reason, created_at
                               FROM chapter_versions WHERE chapter_id=? ORDER BY version DESC""",
                             (ch["id"],)).fetchall()
@@ -428,7 +428,7 @@ class Database:
                 result.append(d)
             return result
 
-    def get_provider(self, provider_id: str) -> Optional[dict]:
+    def get_provider(self, provider_id: str) -> dict | None:
         with self.conn() as c:
             row = c.execute(
                 "SELECT * FROM model_providers WHERE id=?", (provider_id,)

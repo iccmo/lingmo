@@ -1,6 +1,8 @@
 """Database CRUD tests"""
 import pytest
+
 from novel_writer.database import Database
+
 
 @pytest.fixture
 def db(tmp_path):

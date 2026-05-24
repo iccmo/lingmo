@@ -1,8 +1,10 @@
 """TEST.md UT-GEN-01 ~ UT-QC-04"""
 import pytest
-from novel_writer.generator import Generator
+
 from novel_writer.config import Config
+from novel_writer.generator import Generator
 from novel_writer.story_state import ChapterMeta
+
 
 @pytest.fixture
 def gen():

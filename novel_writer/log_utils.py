@@ -1,13 +1,14 @@
 """结构化日志 — JSON 格式输出到 stderr，所有模块共用"""
 
-import json, sys, time
-from datetime import datetime, timezone
+import json
+import sys
+from datetime import UTC, datetime
 
 
 def log_event(event: str, **kwargs):
     """输出结构化 JSON 日志到 stderr"""
     entry = {
-        "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
         "event": event,
         **kwargs
     }

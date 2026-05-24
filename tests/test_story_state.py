@@ -1,7 +1,8 @@
 """TEST.md UT-SS-01 ~ UT-SS-11"""
 import json
-import pytest
-from novel_writer.story_state import StateManager, StoryState, World, Plot, Character, ChapterMeta
+
+from novel_writer.story_state import ChapterMeta, Plot, StoryState, World
+
 
 def test_save_and_load(state_manager, minimal_state):
     """UT-SS-01: Save and load State"""

@@ -1,6 +1,6 @@
 """Pre-built StoryState fixtures for pipeline tests."""
 
-from novel_writer.story_state import StoryState, World, Plot, Character, ChapterMeta
+from novel_writer.story_state import ChapterMeta, Character, Plot, StoryState, World
 
 
 def build_sample_state(total_chapters: int = 5) -> StoryState:
