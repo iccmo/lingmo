@@ -1,4 +1,4 @@
-"""Novel Writer CLI — 统一入口"""
+"""Lingmo CLI — 统一入口"""
 
 import argparse
 
@@ -100,7 +100,7 @@ def cmd_serve(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Novel Writer — AI 小说创作引擎")
+    parser = argparse.ArgumentParser(description="灵墨 — AI 创作伴侣")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("init", help="创建新小说")

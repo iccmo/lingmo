@@ -265,7 +265,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     if (playing && !paused && currentRef.current) {
       document.title = `🔊 ${currentRef.current.novelTitle} · 第${currentRef.current.chapterNum}章`;
     }
-    return () => { document.title = '小说工坊'; };
+    return () => { document.title = '灵墨'; };
   }, [playing, paused, current]);
 
   // ── Recently played history ──
@@ -1050,7 +1050,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     navigator.mediaSession.metadata = new (window as any).MediaMetadata({
       title: `${current.novelTitle} · 第${current.chapterNum}章`,
       artist: current.chapterTitle || current.novelTitle,
-      album: '小说工坊',
+      album: '灵墨',
     });
     navigator.mediaSession.setActionHandler('play', () => {
       if (audioRef.current?.paused) { audioRef.current.play(); setPaused(false); }

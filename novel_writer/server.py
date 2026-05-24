@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .database import Database
 
-app = FastAPI(title="Novel Writer", version="0.2.0")
+app = FastAPI(title="Lingmo", version="0.2.0")
 db = Database()
 
 
@@ -3711,7 +3711,7 @@ def generate_cover(novel_id: str):
   <text x="200" y="230" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="32" fill="{accent}" font-weight="bold" letter-spacing="4">{html.escape(display_title)}</text>
   <text x="200" y="340" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="14" fill="#ffffff99" letter-spacing="8">{genre_esc}</text>
   <text x="200" y="460" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="12" fill="#ffffff60" letter-spacing="3">{author_esc}</text>
-  <text x="200" y="560" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="10" fill="#ffffff30">AI Novel Writer</text>
+  <text x="200" y="560" text-anchor="middle" font-family="SimSun, STSong, serif" font-size="10" fill="#ffffff30">AI Lingmo</text>
 </svg>'''
 
     return {

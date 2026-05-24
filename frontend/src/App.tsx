@@ -54,7 +54,7 @@ function Footer() {
 
   return (
     <footer className="h-8 bg-card/50 border-t border-border flex items-center justify-between px-4 shrink-0">
-      <span className="text-[10px] text-ink-subtle">Novel Workshop · AI 写作引擎</span>
+      <span className="text-[10px] text-ink-subtle">灵墨 · AI 创作伴侣</span>
       <span className="flex items-center gap-1.5 text-[10px] text-ink-subtle">
         <span className={`relative flex h-1.5 w-1.5 ${online ? '' : 'opacity-40'}`}>
           {online ? (

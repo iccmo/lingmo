@@ -42,9 +42,9 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
       <div className="flex items-center gap-3">
         <span className="text-lg">✧</span>
         <span className="font-heading text-lg text-ink font-semibold tracking-tight">
-          小说<span className="text-accent">工坊</span>
+          <span className="text-accent">灵墨</span>
         </span>
-        <span className="hidden sm:inline text-[11px] text-ink-subtle border-l border-border pl-3">AI 写作引擎</span>
+        <span className="hidden sm:inline text-[11px] text-ink-subtle border-l border-border pl-3">AI 创作伴侣</span>
         {crumb && (
           <span className="hidden md:flex items-center gap-1.5 text-[11px] text-ink-subtle border-l border-border pl-3 ml-1">
             <span className="text-ink-muted">/</span>

@@ -2,7 +2,7 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ── Novel Writer · Writer's Atelier ── */
+/* ── 灵墨 · Lingmo ── */
 @theme {
   --font-heading: "Crimson Text", Georgia, "Noto Serif SC", serif;
   --font-editor: "Crimson Text", Georgia, "KaiTi", "STKaiti", serif;

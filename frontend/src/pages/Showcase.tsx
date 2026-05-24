@@ -155,7 +155,7 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
       }`}>
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <span className="font-heading text-xl font-bold tracking-tight">
-            ✧ <span className="text-accent">小说工坊</span>
+            ✧ <span className="text-accent">灵墨</span>
           </span>
           <div className="flex items-center gap-3">
             <a href="#features" className="text-sm text-ink-muted hover:text-ink transition-colors hidden sm:inline">功能</a>
@@ -467,15 +467,15 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
       <footer className="border-t border-border py-10 px-6">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-ink-subtle">
           <div className="flex items-center gap-2">
-            <span className="font-heading text-base font-semibold text-ink">✧ 小说工坊</span>
-            <span className="text-ink-subtle">AI 写作引擎</span>
+            <span className="font-heading text-base font-semibold text-ink">✧ 灵墨</span>
+            <span className="text-ink-subtle">AI 创作伴侣</span>
           </div>
           <div className="flex gap-6">
             <span>番茄小说适配</span>
             <span>起点中文网适配</span>
             <span>纵横中文网适配</span>
           </div>
-          <span>© 2026 Novel Workshop</span>
+          <span>© 2026 灵墨</span>
         </div>
       </footer>
     </div>

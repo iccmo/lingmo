@@ -1,4 +1,4 @@
-# Novel Writer — 开发实施规格
+# 灵墨 — 开发实施规格
 
 **版本**: 2.0 | **日期**: 2026-05-18 | **对应 PRD**: [PRD.md](PRD.md)
 
@@ -401,7 +401,7 @@ uvicorn novel_writer.server:app \
 
 ```ini
 [Unit]
-Description=Novel Writer
+Description=Lingmo
 After=network.target
 
 [Service]

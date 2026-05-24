@@ -1,6 +1,6 @@
-# Novel Writer — UI/UX 设计系统
+# 灵墨 — UI/UX 设计系统
 
-**设计方向**: Writer's Atelier（作家工坊）
+**设计方向**: 灵墨（Lingmo）
 
 ---
 
