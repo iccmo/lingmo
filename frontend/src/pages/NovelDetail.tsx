@@ -459,10 +459,18 @@ export function NovelDetail({ mode }: Props) {
       }
     } catch {}
 
-    // 9. Character personification — every character gets a personal moment
-    parts.push('【角色人格化】每个出场的角色必须至少有一个「不属于剧本」的瞬间——不是为了推动情节才做的动作，而是这个人才会有的自然流露。比如：反派在等待时下意识地整理袖口、路人在关键时刻犹豫了一下。');
+    // 9. Literary quality injections — four rules that separate good from great
+    parts.push(`【文学深度注入 · 四条铁律】
 
-    // 10. Style reference chapters
+1. 对话的30%应该无用。不是说废话——是说只有这两个人才会说的话。一个人说了反话，一个人没听懂，一个人说到一半停了。真实的人不会在对话里交代信息，他们会绕圈子、会撒谎、会咽回去。
+
+2. 至少一个角色在本章中失去冷静。不是愤怒——是那种「明知道不该做但还是做了」的瞬间。理性的崩塌比理性的胜利更有力量。
+
+3. 叙事声音必须和灵魂矛盾一致。如果灵魂是沉默↔表达，叙事就该克制留白不解释。如果是肉体↔精神，叙事就该感官粗粝身体化。不要用一个通用的声音写所有故事。
+
+4. 至少有一段话没有功能——不推进情节、不塑造人物、不埋伏笔。它只是好看。写光线照在灰尘上的样子。写一杯茶凉了的过程。写一个人走路时的节奏。这段文字存在的唯一理由是：读者会在心里记住它。`);
+
+    // 11. Style reference chapters
     try {
       const refs: number[] = JSON.parse(localStorage.getItem(`style-refs-${novelId}`) || '[]');
       if (refs.length > 0) {
@@ -470,7 +478,7 @@ export function NovelDetail({ mode }: Props) {
       }
     } catch {}
 
-    // 11. User direction (appended last so it takes precedence)
+    // 12. User direction (appended last so it takes precedence)
     if (userDirection) parts.push(`【本章方向】${userDirection}`);
 
     return parts.join('\n\n');
