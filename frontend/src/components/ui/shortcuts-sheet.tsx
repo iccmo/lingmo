@@ -1,13 +1,23 @@
 import { useEffect, useState } from 'react';
 
 const SHORTCUTS = [
-  { keys: ['Ctrl', 'G'], desc: '生成下一章', section: '创作' },
-  { keys: ['Ctrl', 'K'], desc: '命令面板', section: '全局' },
+  { keys: ['Ctrl', 'G'], desc: '弹出生成对话框', section: '创作' },
+  { keys: ['Shift', 'G'], desc: '快速生成（跳过对话框）', section: '创作' },
+  { keys: ['Ctrl', 'Shift', 'F'], desc: '全文搜索', section: '浏览' },
   { keys: ['J'], desc: '下一章', section: '浏览' },
   { keys: ['K'], desc: '上一章', section: '浏览' },
-  { keys: ['Esc'], desc: '关闭弹窗 / 退出', section: '全局' },
+  { keys: ['Ctrl', 'F'], desc: '章内搜索', section: '浏览' },
+  { keys: ['Space'], desc: '暂停 / 播放', section: '听书' },
+  { keys: ['←'], desc: '后退 15s', section: '听书' },
+  { keys: ['→'], desc: '快进 15s', section: '听书' },
+  { keys: ['↑'], desc: '音量 +5%', section: '听书' },
+  { keys: ['↓'], desc: '音量 -5%', section: '听书' },
+  { keys: ['N'], desc: '下一章', section: '听书' },
+  { keys: ['P'], desc: '上一章', section: '听书' },
+  { keys: ['M'], desc: '静音切换', section: '听书' },
+  { keys: ['Ctrl', 'K'], desc: '命令面板', section: '全局' },
   { keys: ['?'], desc: '显示快捷键', section: '全局' },
-  { keys: ['⌘', '↵'], desc: '确认生成（在方向弹窗中）', section: '创作' },
+  { keys: ['Esc'], desc: '关闭弹窗', section: '全局' },
 ];
 
 export function ShortcutsSheet() {

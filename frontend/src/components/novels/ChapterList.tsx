@@ -1,8 +1,9 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import { ContextMenu } from 'src/components/ui/context-menu';
 import { MobileReadingMode } from 'src/components/novels/MobileReadingMode';
+import { ChapterDiff } from 'src/components/novels/ChapterDiff';
 import type { ChapterMeta } from 'src/types';
 
 const GRADE_COLORS: Record<string, string> = {
@@ -207,6 +208,32 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     setSelected(new Set());
   }, [chapters.length]);
 
+  // Auto-scroll to last-read chapter on mount, or auto-expand from MiniPlayer
+  useEffect(() => {
+    if (chapters.length === 0) return;
+    try {
+      const autoExpand = sessionStorage.getItem(`auto-expand-${novelId}`);
+      if (autoExpand) {
+        const num = parseInt(autoExpand);
+        sessionStorage.removeItem(`auto-expand-${novelId}`);
+        const target = chapters.find(c => c.number === num);
+        if (target) {
+          setTimeout(() => toggleChapter(num), 400);
+          setTimeout(() => {
+            document.querySelector(`[data-chapter="${num}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          }, 600);
+          return;
+        }
+      }
+      const lastRead = JSON.parse(localStorage.getItem(`last-read-${novelId}`) || 'null');
+      if (lastRead?.chapter) {
+        setTimeout(() => {
+          document.querySelector(`[data-chapter="${lastRead.chapter}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, 300);
+      }
+    } catch {}
+  }, [novelId, chapters.length]);
+
   // Derived: sorted chapters (pinned first)
   const sortedChapters = [...chapters].sort((a, b) => {
     const aPinned = pinned.has(a.number) ? 0 : 1;
@@ -214,6 +241,32 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     if (aPinned !== bPinned) return aPinned - bPinned;
     return a.number - b.number;
   });
+
+  // ---- Virtual scroll ----
+  const ROW_HEIGHT = 48;
+  const OVERSCAN = 5;
+  const [scrollTop, setScrollTop] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
+  const handleListScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    setScrollTop(e.currentTarget.scrollTop);
+  }, []);
+
+  const containerHeight = listRef.current?.clientHeight || window.innerHeight * 0.7;
+  let startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  let endIdx = Math.min(
+    sortedChapters.length,
+    Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN,
+  );
+
+  // Always include the expanded chapter so its content area stays rendered
+  if (expanded !== null) {
+    const expIdx = sortedChapters.findIndex((c) => c.number === expanded);
+    if (expIdx !== -1) {
+      startIdx = Math.min(startIdx, expIdx);
+      endIdx = Math.max(endIdx, expIdx + 1);
+    }
+  }
+  // ---- End virtual scroll ----
 
   const writableChapters = sortedChapters.filter(c => c.word_count > 0);
 
@@ -498,7 +551,11 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
         )}
       </div>
 
-      {sortedChapters.map((ch, i) => {
+      <div ref={listRef} className="max-h-[70vh] overflow-y-auto" onScroll={handleListScroll}>
+        {/* Top spacer for virtual scroll */}
+        <div style={{ height: startIdx * ROW_HEIGHT }} />
+        {sortedChapters.slice(startIdx, endIdx).map((ch, indexInSlice) => {
+        const i = startIdx + indexInSlice;
         // Check if this chapter starts a new arc
         const arc = arcs.find(a => a.startChapter === ch.number);
         const prevArc = arcs.find(a => a.startChapter <= ch.number && arcs[arcs.indexOf(a) + 1]?.startChapter > ch.number) || arcs[arcs.length - 1];
@@ -514,6 +571,18 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
           if (!needsAttention) return null;
         }
         const ctxItems = [
+          { icon: '✏️', label: '编辑', onClick: () => {
+            toggleChapter(ch.number);
+            setTimeout(() => enterEditMode(), 500);
+          }},
+          { icon: '🔄', label: '重写本章', onClick: () => {
+            if (onRegenerate) {
+              setExpanded(ch.number);
+              setFeedbackInput('');
+              setRewriteFocus('');
+            }
+          }},
+          { icon: '⭐', label: styleRefs.has(ch.number) ? '取消风格参考' : '设为风格参考', onClick: (e: MouseEvent) => toggleStyleRef(ch.number, e) },
           { icon: '🧹', label: '去AI味', onClick: async () => {
             toast.success('已触发去AI味');
             await fetch(`/api/novels/${novelId}/chapters/${ch.number}/humanize`, { method: 'POST' });
@@ -526,6 +595,8 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
           { icon: '⬇', label: '导出 TXT', onClick: () => {
             window.open(`/api/novels/${novelId}/chapters/${ch.number}/export`, '_blank');
           }},
+          { icon: '📌', label: pinned.has(ch.number) ? '取消置顶' : '置顶', onClick: (e: MouseEvent) => togglePin(ch.number, e) },
+          { icon: `${approvals[ch.number] === 'approved' ? '✅' : approvals[ch.number] === 'revise' ? '🔧' : '📝'}`, label: approvals[ch.number] === 'approved' ? '已审' : approvals[ch.number] === 'revise' ? '待改→草稿' : '草稿→已审', onClick: (e: MouseEvent) => cycleApproval(ch.number, e) },
           ...(onDelete ? [{
             icon: '🗑', label: '删除本章', danger: true as const,
             onClick: () => onDelete(ch.number),
@@ -558,7 +629,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
             {/* Hover preview tooltip */}
             {ch.summary && !expanded && (
               <div className="absolute left-4 right-4 -top-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                <div className="bg-ink text-white text-[11px] rounded-lg px-3 py-2 shadow-xl leading-relaxed max-w-md">
+                <div className="bg-ink text-white dark:text-black text-[11px] rounded-lg px-3 py-2 shadow-xl leading-relaxed max-w-md">
                   {ch.summary.slice(0, 100)}{ch.summary.length > 100 ? '...' : ''}
                   <div className="text-[9px] text-white/50 mt-1">{ch.word_count.toLocaleString()}字 · {ch.ending_hook ? '🎣 ' + ch.ending_hook.slice(0, 30) : '无钩子'}</div>
                 </div>
@@ -658,6 +729,25 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                 {gradeForScore(ch.quality_score)} {ch.quality_score.toFixed(2)}
               </span>
             )}
+            {/* Version history badge */}
+            {ch.word_count > 0 && (() => {
+              try {
+                const versions = JSON.parse(localStorage.getItem(`chapter-versions-${novelId}`) || '{}');
+                const chVersions = versions[String(ch.number)];
+                if (chVersions && chVersions.length > 0) {
+                  return (
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleChapter(ch.number); }}
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800 font-semibold shrink-0 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                      title={`${chVersions.length} 个历史版本`}
+                    >
+                      📜 {chVersions.length}
+                    </button>
+                  );
+                }
+              } catch {}
+              return null;
+            })()}
             {/* Per-chapter actions on hover (hidden in select mode) */}
             {!selectMode && (
               <span className="hidden group-hover:flex gap-1 ml-auto shrink-0">
@@ -824,6 +914,23 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                     placeholder:text-ink-subtle focus:outline-none focus:border-accent" />
               </div>
 
+              {/* Chapter version diff */}
+              {content && content !== '正文尚未生成' && (() => {
+                try {
+                  const versions = JSON.parse(localStorage.getItem(`chapter-versions-${novelId}`) || '{}');
+                  if (versions[String(ch.number)]?.length > 0) {
+                    return (
+                      <ChapterDiff
+                        novelId={novelId}
+                        chapterNum={ch.number}
+                        currentContent={content}
+                      />
+                    );
+                  }
+                } catch {}
+                return null;
+              })()}
+
               {/* Quick feedback regenerate */}
               {content && content !== '正文尚未生成' && (
                 <div className="mt-6 pt-4 border-t border-border">
@@ -872,6 +979,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
         </div>
       );
     })}
+        {/* Bottom spacer for virtual scroll */}
+        <div style={{ height: (sortedChapters.length - endIdx) * ROW_HEIGHT }} />
+      </div>
 
       {/* Mobile reading mode */}
       {mobileChapter !== null && (

@@ -20,6 +20,7 @@ export function QuickActions() {
       { icon: '📋', label: '章节大纲', onClick: () => navigate(`/novels/${novelId}/outline`) },
       { icon: '🌍', label: '世界观', onClick: () => navigate(`/novels/${novelId}/world`) },
     ] : []),
+    { icon: '🎧', label: '听书', onClick: () => navigate('/listen') },
     { icon: '⚙️', label: '设置', onClick: () => navigate('/settings') },
   ];
 
@@ -39,7 +40,7 @@ export function QuickActions() {
       )}
       <button onClick={() => setOpen(!open)}
         className={`w-11 h-11 rounded-full shadow-lg flex items-center justify-center text-lg transition-all duration-200 ${
-          open ? 'bg-ink text-white rotate-45' : 'bg-accent text-white hover:bg-accent-hover hover:scale-105'
+          open ? 'bg-ink text-white dark:text-black rotate-45' : 'bg-accent text-white hover:bg-accent-hover hover:scale-105'
         }`}>
         {open ? '+' : '⚡'}
       </button>

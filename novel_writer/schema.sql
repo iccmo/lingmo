@@ -240,3 +240,44 @@ CREATE TABLE IF NOT EXISTS style_profiles (
     FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE
 );
 
+
+-- V8: Audio player persistent storage (replaces localStorage)
+CREATE TABLE IF NOT EXISTS audio_bookmarks (
+    id            TEXT PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    novel_title   TEXT NOT NULL DEFAULT '',
+    chapter_num   INTEGER NOT NULL,
+    chapter_title TEXT NOT NULL DEFAULT '',
+    position      INTEGER NOT NULL DEFAULT 0,
+    note          TEXT NOT NULL DEFAULT '',
+    tag           TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audio_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS audio_playlist (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id      TEXT NOT NULL,
+    novel_title   TEXT NOT NULL DEFAULT '',
+    chapter_num   INTEGER NOT NULL,
+    chapter_title TEXT NOT NULL DEFAULT '',
+    sort_order    INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS audio_stats (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    stat_key      TEXT NOT NULL UNIQUE,
+    stat_value    TEXT NOT NULL DEFAULT '0',
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audio_progress (
+    novel_id    TEXT PRIMARY KEY REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num INTEGER NOT NULL,
+    position_sec REAL NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);

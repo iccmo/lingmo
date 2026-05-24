@@ -71,6 +71,20 @@ export function GenerationPipeline({ genStatus, onRetry }: {
   const isComplete = genStatus.status === 'complete';
   const active = isError || isComplete ? -1 : gatePhase(genStatus.progress);
 
+  // Desktop notification on complete
+  useEffect(() => {
+    if (!isComplete) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      new Notification('章节生成完成', {
+        body: genStatus.message.slice(0, 100),
+        icon: '/favicon.ico',
+      });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+  }, [isComplete]);
+
   // Elapsed time
   const [elapsed, setElapsed] = useState(0);
   const startTime = useRef(Date.now());
@@ -192,12 +206,34 @@ export function GenerationPipeline({ genStatus, onRetry }: {
             </div>
           )}
 
-          {/* Status message */}
-          <p className="text-[11px] text-ink-muted text-center">
-            {genStatus.message}
-            {genStatus.message.includes('重写') && (
-              <span className="text-amber-500 ml-2">质量未达标，正在优化中...</span>
-            )}
+          {/* Status message + retry counter */}
+          <p className="text-[11px] text-ink-muted text-center flex items-center justify-center gap-2 flex-wrap">
+            <span>{genStatus.message}</span>
+            {genStatus.message.includes('重写') && (() => {
+              const match = genStatus.message.match(/第(\d+)次/);
+              const retryNum = match ? parseInt(match[1]) : 1;
+              const maxRetries = 3;
+              return (
+                <span className="inline-flex items-center gap-1">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                    retryNum >= maxRetries ? 'bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400'
+                    : retryNum >= 2 ? 'bg-amber-100 text-amber-600 dark:bg-amber-950 dark:text-amber-400'
+                    : 'bg-sky-100 text-sky-600 dark:bg-sky-950 dark:text-sky-400'
+                  }`}>
+                    重试 {retryNum}/{maxRetries}
+                  </span>
+                  {genStatus.overall !== undefined && genStatus.overall > 0 && (
+                    <span className={`text-[10px] tabular-nums font-mono ${
+                      (genStatus.overall || 0) >= 0.8 ? 'text-emerald-500'
+                      : (genStatus.overall || 0) >= 0.65 ? 'text-amber-500'
+                      : 'text-red-500'
+                    }`}>
+                      Q={(genStatus.overall || 0).toFixed(2)}
+                    </span>
+                  )}
+                </span>
+              );
+            })()}
           </p>
         </div>
       )}

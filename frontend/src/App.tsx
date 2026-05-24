@@ -1,25 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { Toaster } from 'src/components/ui/sonner';
 import { Header } from 'src/components/layout/Header';
 import { Sidebar } from 'src/components/layout/Sidebar';
 import { Dashboard } from 'src/pages/Dashboard';
-import { NovelDetail } from 'src/pages/NovelDetail';
-import { Settings } from 'src/pages/Settings';
-import { Logs } from 'src/pages/Logs';
-import { MemoryBank } from 'src/pages/MemoryBank';
-import { Editor } from 'src/pages/Editor';
-import { WorldEditor } from 'src/pages/WorldEditor';
-import { Outline } from 'src/pages/Outline';
-import { Foreshadowing } from 'src/pages/Foreshadowing';
-import { Stats } from 'src/pages/Stats';
 import { Showcase } from 'src/pages/Showcase';
 import { CommandPalette } from 'src/components/ui/command-palette';
 import { ErrorBoundary } from 'src/components/ui/error-boundary';
 import { ShortcutsSheet } from 'src/components/ui/shortcuts-sheet';
 import { QuickActions } from 'src/components/ui/quick-actions';
 import { TopLoader } from 'src/components/ui/top-loader';
+import { AudioProvider } from 'src/lib/AudioContext';
+import { MiniPlayer } from 'src/components/novels/MiniPlayer';
 import type { AppMode } from 'src/types';
+
+// Lazy-loaded routes
+const NovelDetail = lazy(() => import('src/pages/NovelDetail'));
+const Settings = lazy(() => import('src/pages/Settings'));
+const Logs = lazy(() => import('src/pages/Logs'));
+const MemoryBank = lazy(() => import('src/pages/MemoryBank'));
+const Editor = lazy(() => import('src/pages/Editor'));
+const WorldEditor = lazy(() => import('src/pages/WorldEditor'));
+const Outline = lazy(() => import('src/pages/Outline'));
+const Foreshadowing = lazy(() => import('src/pages/Foreshadowing'));
+const Stats = lazy(() => import('src/pages/Stats'));
+const ListenPage = lazy(() => import('src/pages/ListenPage'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <div className="skeleton h-8 w-40 rounded" />
+    </div>
+  );
+}
 
 function Footer() {
   const [online, setOnline] = useState(true);
@@ -68,6 +81,7 @@ function AppLayout({ mode, setMode, dark, toggleDark, sidebarOpen, toggleSidebar
   toggleSidebar: () => void;
 }) {
   return (
+    <AudioProvider>
     <div className="h-screen flex flex-col font-[family-name:var(--font-ui)] bg-paper">
       <TopLoader />
       <Header mode={mode} onModeChange={setMode} dark={dark} onDarkToggle={toggleDark}
@@ -79,12 +93,14 @@ function AppLayout({ mode, setMode, dark, toggleDark, sidebarOpen, toggleSidebar
         <div className={`shrink-0 overflow-hidden transition-all duration-300 ease-in-out
           lg:relative ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50 lg:static' : ''}
           ${sidebarOpen ? 'w-[200px] min-w-[200px]' : 'w-0 min-w-0'}`}>
-          <Sidebar onNovelSelect={() => { if (window.innerWidth < 1024) toggleSidebar(); }} />
+          <Sidebar onNovelSelect={() => { if (window.innerWidth < 1024) toggleSidebar(); }} onClose={toggleSidebar} />
         </div>
-        <main className="flex-1 overflow-y-auto px-6 py-6 sm:px-8 lg:px-12 lg:py-10" id="main-content">
+        <main className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 md:px-8 lg:px-12 lg:py-10" id="main-content">
           <ErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/listen" element={<ListenPage />} />
             <Route path="/novels/:id" element={<NovelDetail mode={mode} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/logs" element={<Logs />} />
@@ -95,15 +111,18 @@ function AppLayout({ mode, setMode, dark, toggleDark, sidebarOpen, toggleSidebar
             <Route path="/novels/:id/outline" element={<Outline />} />
             <Route path="/novels/:id/foreshadowing" element={<Foreshadowing />} />
           </Routes>
+          </Suspense>
           </ErrorBoundary>
         </main>
       </div>
       <Footer />
+      <MiniPlayer />
       <CommandPalette />
       <ShortcutsSheet />
       <QuickActions />
       <Toaster duration={3000} />
     </div>
+    </AudioProvider>
   );
 }
 
@@ -119,9 +138,20 @@ function AppContent() {
   const [entered, setEntered] = useState(() => sessionStorage.getItem('session') === 'active');
 
   function toggleDark() {
-    const next = !dark;
-    setDark(next);
-    localStorage.setItem('dark', String(next));
+    const saved = localStorage.getItem('dark');
+    if (saved === null || saved === 'false') {
+      // light → dark
+      setDark(true);
+      localStorage.setItem('dark', 'true');
+    } else if (saved === 'true') {
+      // dark → auto
+      setDark(window.matchMedia('(prefers-color-scheme: dark)').matches);
+      localStorage.setItem('dark', 'auto');
+    } else {
+      // auto → light
+      setDark(false);
+      localStorage.setItem('dark', 'false');
+    }
   }
   function toggleSidebar() {
     const next = !sidebarOpen;
@@ -140,10 +170,46 @@ function AppContent() {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => {
-      if (localStorage.getItem('dark') === null) setDark(e.matches);
+      const saved = localStorage.getItem('dark');
+      if (saved === null || saved === 'auto') setDark(e.matches);
     };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
+  }, []);
+
+  // Load settings from server DB on mount (merge with localStorage, server wins)
+  useEffect(() => {
+    fetch('/api/settings').then(r => r.json()).then(data => {
+      if (data && typeof data === 'object') {
+        Object.entries(data).forEach(([k, v]) => {
+          if (!localStorage.getItem(k) && v) {
+            localStorage.setItem(k, v as string);
+          }
+        });
+        // Apply dark mode from server if available
+        if (data.dark === 'true' && !dark) setDark(true);
+        if (data.dark === 'false' && dark) setDark(false);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Periodic settings sync to server
+  useEffect(() => {
+    const sync = () => {
+      const settings: Record<string, string> = {};
+      ['dark', 'tts-voice', 'audio-volume', 'audio-autocontinue', 'audio-playmode', 'audio-eq', 'sidebar'].forEach(k => {
+        const v = localStorage.getItem(k);
+        if (v) settings[k] = v;
+      });
+      fetch('/api/settings/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      }).catch(() => {});
+    };
+    sync();
+    const interval = setInterval(sync, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   // Showcase at /showcase or / (landing page when not entered)

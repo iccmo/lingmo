@@ -18,6 +18,7 @@ import { PlotNetwork } from 'src/components/novels/PlotNetwork';
 import { CreativeLab } from 'src/components/novels/CreativeLab';
 import { SoulWorkshop } from 'src/components/novels/SoulWorkshop';
 import { CharacterSoul } from 'src/components/novels/CharacterSoul';
+import { CharacterGraph } from 'src/components/novels/CharacterGraph';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
 import { NovelArchitect } from 'src/components/novels/NovelArchitect';
 import { QualityWorkflow } from 'src/components/novels/QualityWorkflow';
@@ -234,82 +235,83 @@ export function NovelDetail({ mode }: Props) {
     return () => window.removeEventListener('beforeunload', handler);
   }, [genStatus]);
 
-  // P0: Poll generation status
+  // P0: SSE stream generation status (replaces polling)
   useEffect(() => {
     if (!polling || !id) return;
-    const timer = setInterval(async () => {
-      try {
-        const r = await fetch(`/api/novels/${id}/generate/status`);
-        const s: GenStatus = await r.json();
-        setGenStatus(s);
-        if (s.status === 'complete' || s.status === 'error') {
-          setPolling(false);
-          if (s.status === 'complete') {
-            toast.success(s.message);
-            setJustCompleted(true);
-            // Track session stats
-            setSessionChapters(prev => prev + 1);
-            if (s.overall) setSessionScores(prev => [...prev, s.overall].slice(-20));
-            // Save quality breakdown
-            if (s.quality_detail) {
-              try {
-                const details = JSON.parse(localStorage.getItem(`quality-details-${id}`) || '{}');
-                const chNum = novel?.total_chapters ? novel.total_chapters + 1 : 1;
-                details[String(chNum)] = s.quality_detail;
-                localStorage.setItem(`quality-details-${id}`, JSON.stringify(details));
-                // Save novel state snapshot for context continuity
-                try {
-                  const stateData = await api.novels.get(id);
-                  const genChs = (stateData?.chapters || []).filter((c: any) => c.word_count > 0);
-                  // Load existing state to preserve causal chain
-                  const existingState = JSON.parse(localStorage.getItem(`novel-state-${id}`) || '{"causalChain":[],"worldState":""}');
-                  const novelState = {
-                    chapters: genChs.slice(-5).map((c: any) => ({ chapter: c.number, title: c.title, summary: c.summary || '' })),
-                    lastUpdated: Date.now(),
-                    causalChain: existingState.causalChain || [],
-                    worldState: existingState.worldState || '',
-                  };
-                  // Append auto-extracted causal events if available
-                  if (s.causal_events) {
-                    const entries = s.causal_events.split('\n').filter(Boolean).slice(0, 3);
-                    for (const entry of entries) {
-                      const parts = entry.split('→').map((p: string) => p.trim());
-                      if (parts.length >= 2) {
-                        novelState.causalChain.push({ cause: parts[0], pending: parts[1] });
-                      }
-                    }
-                    if (novelState.causalChain.length > 20) novelState.causalChain = novelState.causalChain.slice(-20);
-                  }
-                  localStorage.setItem(`novel-state-${id}`, JSON.stringify(novelState));
-                } catch {}
-              } catch {}
-            }
-            if (Notification.permission === 'granted') {
-              new Notification('章节生成完成', { body: s.message, icon: '/favicon.ico' });
-            }
-            // Log daily words: the new chapter's word count is (new total - old total)
-            const prevWords = novel?.total_words || 0;
-            setTimeout(async () => {
-              await loadNovel();
-              const updated = await api.novels.get(id);
-              const diff = (updated?.total_words || 0) - prevWords;
-              if (diff > 0) logDailyWords(diff);
-              setGenStatus(null);
-              // Auto-expand latest chapter
-              const latest = updated?.chapters?.filter((c: {word_count: number}) => c.word_count > 0).pop();
-              if (latest) {
-                setTimeout(() => {
-                  const el = document.querySelector(`[data-chapter="${latest.number}"]`);
-                  el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-                  (el as HTMLElement)?.click();
-                }, 500);
+    const es = new EventSource(`/api/novels/${id}/generate/stream`);
+
+    const handleComplete = async (s: GenStatus) => {
+      setPolling(false);
+      toast.success(s.message);
+      setJustCompleted(true);
+      setSessionChapters(prev => prev + 1);
+      if (s.overall) setSessionScores(prev => [...prev, s.overall].slice(-20));
+      if (s.quality_detail) {
+        try {
+          const details = JSON.parse(localStorage.getItem(`quality-details-${id}`) || '{}');
+          const chNum = novel?.total_chapters ? novel.total_chapters + 1 : 1;
+          details[String(chNum)] = s.quality_detail;
+          localStorage.setItem(`quality-details-${id}`, JSON.stringify(details));
+          try {
+            const stateData = await api.novels.get(id);
+            const genChs = (stateData?.chapters || []).filter((c: any) => c.word_count > 0);
+            const existingState = JSON.parse(localStorage.getItem(`novel-state-${id}`) || '{"causalChain":[],"worldState":""}');
+            const novelState = {
+              chapters: genChs.slice(-5).map((c: any) => ({ chapter: c.number, title: c.title, summary: c.summary || '' })),
+              lastUpdated: Date.now(),
+              causalChain: existingState.causalChain || [],
+              worldState: existingState.worldState || '',
+            };
+            if (s.causal_events) {
+              const entries = s.causal_events.split('\n').filter(Boolean).slice(0, 3);
+              for (const entry of entries) {
+                const parts = entry.split('→').map((p: string) => p.trim());
+                if (parts.length >= 2) novelState.causalChain.push({ cause: parts[0], pending: parts[1] });
               }
-            }, 1000);
-          }
+              if (novelState.causalChain.length > 20) novelState.causalChain = novelState.causalChain.slice(-20);
+            }
+            localStorage.setItem(`novel-state-${id}`, JSON.stringify(novelState));
+          } catch {}
+        } catch {}
+      }
+      if (Notification.permission === 'granted') {
+        new Notification('章节生成完成', { body: s.message, icon: '/favicon.ico' });
+      }
+      const prevWords = novel?.total_words || 0;
+      setTimeout(async () => {
+        await loadNovel();
+        const updated = await api.novels.get(id);
+        const diff = (updated?.total_words || 0) - prevWords;
+        if (diff > 0) logDailyWords(diff);
+        setGenStatus(null);
+        const latest = updated?.chapters?.filter((c: {word_count: number}) => c.word_count > 0).pop();
+        if (latest) {
+          setTimeout(() => {
+            const el = document.querySelector(`[data-chapter="${latest.number}"]`);
+            el?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            (el as HTMLElement)?.click();
+          }, 500);
         }
-      } catch { setPolling(false); }
-    }, 1200);  // faster polling for smoother live preview
-    return () => clearInterval(timer);
+      }, 1000);
+    };
+
+    es.onmessage = (event) => {
+      try {
+        const s: GenStatus = JSON.parse(event.data);
+        setGenStatus(s);
+        if (s.status === 'complete') handleComplete(s);
+        if (s.status === 'error') { setPolling(false); toast.error(s.message); }
+      } catch {}
+    };
+
+    es.onerror = () => {
+      es.close();
+      setPolling(false);
+    };
+
+    return () => {
+      es.close();
+    };
   }, [polling, id, loadNovel]);
 
   function handleGenerate() {
@@ -950,6 +952,25 @@ export function NovelDetail({ mode }: Props) {
 
             {/* Character Soul */}
             <div id="section-characters"><CharacterSoul novelId={novel.id} /></div>
+
+            {/* Character Relationship Graph */}
+            {novel.characters && novel.characters.length > 0 && (
+              <div id="section-character-graph" className="p-4 bg-card border border-border rounded-xl">
+                <h3 className="font-heading text-base font-semibold text-ink mb-3">🕸️ 角色关系图</h3>
+                <CharacterGraph
+                  characters={novel.characters.map((c) => ({
+                    name: c.name,
+                    role: c.role,
+                    char_key: c.char_key,
+                  }))}
+                  relations={(novel.character_relations || []).map((r) => ({
+                    c1_name: r.c1_name,
+                    c2_name: r.c2_name,
+                    relation: r.relation_type,
+                  }))}
+                />
+              </div>
+            )}
 
             {/* Writing Digest */}
             <div id="section-digest"><WritingDigest chapters={novel.chapters} novelId={novel.id} /></div>

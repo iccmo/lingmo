@@ -34,6 +34,8 @@ export function CommandPalette() {
       action: () => navigate('/settings') },
     { id: 'nav-logs', label: '运行日志', icon: '☰', section: '导航',
       action: () => navigate('/logs') },
+    { id: 'nav-listen', label: '听书', icon: '🎧', section: '导航', shortcut: 'G L',
+      action: () => navigate('/listen'), keywords: 'audio tts listen' },
     // Quick open novels
     ...novels.slice(0, 8).map((n): Command => ({
       id: `novel-${n.id}`,

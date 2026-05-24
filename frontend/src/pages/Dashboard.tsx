@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NovelCard } from 'src/components/novels/NovelCard';
 import { WritingCalendar } from 'src/components/novels/WritingCalendar';
@@ -10,6 +10,86 @@ import { Card, CardContent } from 'src/components/ui/card';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import type { NovelSummary, SystemStatus } from 'src/types';
+
+interface LastRead {
+  novelId: string;
+  novelTitle: string;
+  chapter: number;
+  title: string;
+  timestamp: number;
+}
+
+/* ─── Writing trend bar chart ─── */
+function WritingTrend() {
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  const days: { date: string; dayOfWeek: string; words: number; isToday: boolean }[] = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = `daily-words-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const words = parseInt(localStorage.getItem(key) || '0', 10) || 0;
+    const today = new Date();
+    days.push({
+      date: key,
+      dayOfWeek: dayNames[d.getDay()],
+      words,
+      isToday: d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate(),
+    });
+  }
+
+  const maxWords = Math.max(...days.map(d => d.words), 1);
+  const total = days.reduce((s, d) => s + d.words, 0);
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+          📈 写作趋势
+        </h3>
+        <span className="text-[10px] text-ink-subtle">{total.toLocaleString()} 字 / 近7日</span>
+      </div>
+      <div className="flex items-end gap-1.5 h-36 p-4 pt-7 pb-5 bg-card border border-border rounded-xl">
+        {days.map((d, i) => {
+          const heightPct = maxWords > 0 ? (d.words / maxWords) * 100 : 0;
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1 group min-w-0">
+              {/* Word count tooltip on hover */}
+              <span
+                className="text-[10px] font-medium text-accent opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
+              >
+                {d.words.toLocaleString()}字
+              </span>
+              {/* Bar */}
+              <div
+                className={`w-full rounded-t-md transition-all duration-300 group-hover:brightness-110 ${
+                  d.isToday ? 'ring-1 ring-accent/30' : ''
+                }`}
+                style={{
+                  height: `${Math.max(heightPct, 2)}%`,
+                  minHeight: '4px',
+                  background: d.words > 0
+                    ? `linear-gradient(180deg, var(--color-accent), ${d.isToday ? 'var(--color-accent-hover)' : 'var(--color-accent)'})`
+                    : 'var(--color-border)',
+                  opacity: d.words > 0 ? 1 : 0.4,
+                }}
+                title={`${d.words.toLocaleString()} 字`}
+              />
+              {/* Day label */}
+              <span
+                className={`text-[10px] mt-1 whitespace-nowrap ${
+                  d.isToday ? 'text-accent font-semibold' : 'text-ink-muted'
+                }`}
+              >
+                {d.isToday ? '今' : `周${d.dayOfWeek}`}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -136,6 +216,51 @@ export function Dashboard() {
           )}
         </div>
       )}
+
+      {/* Writing Trend Chart */}
+      {novels.length > 0 && <WritingTrend />}
+
+      {/* Continue last reading */}
+      {(() => {
+        // Find the most recently read chapter across all novels
+        let latest: LastRead | null = null;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key || !key.startsWith('last-read-')) continue;
+          try {
+            const data: LastRead = JSON.parse(localStorage.getItem(key) || '');
+            if (!latest || data.timestamp > latest.timestamp) latest = data;
+          } catch {}
+        }
+        if (!latest || !novels.find(n => n.id === latest!.novelId)) return null;
+        const novel = novels.find(n => n.id === latest!.novelId)!;
+        const timeAgo = Date.now() - latest.timestamp;
+        const agoStr = timeAgo < 60000 ? '刚刚'
+          : timeAgo < 3600000 ? `${Math.floor(timeAgo / 60000)}分钟前`
+          : timeAgo < 86400000 ? `${Math.floor(timeAgo / 3600000)}小时前`
+          : `${Math.floor(timeAgo / 86400000)}天前`;
+
+        return (
+          <button
+            onClick={() => navigate(`/novels/${latest!.novelId}`)}
+            className="w-full text-left mb-6 p-4 rounded-xl bg-gradient-to-r from-accent-soft/20 to-card border border-accent/10 hover:border-accent/30 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-ink-subtle uppercase tracking-wider mb-0.5">📖 继续上次</p>
+                <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors">{novel.title}</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  第{latest.chapter}章 {latest.title || ''}
+                  <span className="text-ink-subtle ml-2">{agoStr}</span>
+                </p>
+              </div>
+              <span className="shrink-0 px-3 py-1.5 bg-accent text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                继续 →
+              </span>
+            </div>
+          </button>
+        );
+      })()}
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)}

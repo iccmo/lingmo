@@ -289,7 +289,7 @@ export function SoulWorkshop({ novelId, chapters }: { novelId: string; chapters?
                 <input value={c.depth} onChange={e => updateContradiction(i, 'depth', e.target.value)}
                   placeholder="内在：会为流浪猫停下" className="flex-1 text-xs rounded border border-input bg-card px-2 py-1.5" />
                 <button onClick={() => removeContradiction(i)}
-                  className="text-xs text-red-400 hover:text-red-600 px-1">×</button>
+                  className="text-xs text-red-400 hover:text-red-600 dark:hover:text-red-400 px-1">×</button>
               </div>
             ))}
             {profile.contradictions.length === 0 && (

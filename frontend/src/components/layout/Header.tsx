@@ -1,4 +1,4 @@
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ModeToggle } from './ModeToggle';
 import type { AppMode } from 'src/types';
 
@@ -26,6 +26,7 @@ function breadcrumbLabel(pathname: string): string {
 
 export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, onSidebarToggle }: Props) {
   const location = useLocation();
+  const navigate = useNavigate();
   const crumb = breadcrumbLabel(location.pathname);
 
   function handleChange(newMode: AppMode) {
@@ -52,13 +53,17 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
         )}
       </div>
       <div className="flex items-center gap-2">
+        <button onClick={() => navigate('/listen')} className="text-base sm:text-sm text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          title="听书">
+          🎧
+        </button>
         <button onClick={onSidebarToggle} className="text-sm text-ink-muted hover:text-ink transition-colors px-1.5"
           title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
           {sidebarOpen ? '◁' : '▷'}
         </button>
         <ModeToggle mode={mode} onChange={handleChange} />
-        <button onClick={onDarkToggle} className="text-sm text-ink-muted hover:text-ink transition-colors px-2">
-          {dark ? '☀️' : '🌙'}
+        <button onClick={onDarkToggle} className="text-sm text-ink-muted hover:text-ink transition-colors px-2" title={dark ? '当前暗色 · 点切换自动' : '当前亮色 · 点切换暗色'}>
+          {dark ? '🌙' : localStorage.getItem('dark') === 'auto' ? '🔄' : '☀️'}
         </button>
         <span className="text-border mx-0.5">|</span>
         <button onClick={() => {

@@ -395,7 +395,7 @@ export function WorldEditor() {
                       </div>
                       <div className="flex gap-1 ml-2">
                         <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => startEditChar(c)}>编辑</Button>
-                        <Button size="sm" variant="ghost" className="text-xs h-7 text-red-500 hover:text-red-600" onClick={() => deleteChar(c.char_key)}>删除</Button>
+                        <Button size="sm" variant="ghost" className="text-xs h-7 text-red-500 hover:text-red-600 dark:hover:text-red-400" onClick={() => deleteChar(c.char_key)}>删除</Button>
                       </div>
                     </div>
                   </CardContent>
@@ -452,7 +452,7 @@ export function WorldEditor() {
                       </div>
                       <div className="flex gap-1 ml-2">
                         <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => startEditFaction(f)}>编辑</Button>
-                        <Button size="sm" variant="ghost" className="text-xs h-7 text-red-500 hover:text-red-600" onClick={() => deleteFaction(f.id)}>删除</Button>
+                        <Button size="sm" variant="ghost" className="text-xs h-7 text-red-500 hover:text-red-600 dark:hover:text-red-400" onClick={() => deleteFaction(f.id)}>删除</Button>
                       </div>
                     </div>
                   </CardContent>

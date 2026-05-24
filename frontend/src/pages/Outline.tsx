@@ -202,12 +202,12 @@ export function Outline() {
                         />
                       </div>
                       <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {generated && <Badge className="text-[9px] bg-emerald-50 text-emerald-600 border-emerald-200">已生成</Badge>}
+                        {generated && <Badge className="text-[9px] bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800">已生成</Badge>}
                         <button className="text-xs h-7 px-2 text-ink-subtle hover:text-ink transition-colors"
                           onClick={() => moveItem(i, -1)} disabled={i === 0}>↑</button>
                         <button className="text-xs h-7 px-2 text-ink-subtle hover:text-ink transition-colors"
                           onClick={() => moveItem(i, 1)} disabled={i === items.length - 1}>↓</button>
-                        <button className="text-xs h-7 px-2 text-red-400 hover:text-red-600 transition-colors"
+                        <button className="text-xs h-7 px-2 text-red-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
                           onClick={() => removeItem(i)}>×</button>
                       </div>
                     </div>

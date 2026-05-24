@@ -229,7 +229,7 @@ export function NovelArchitect({ novelId, chapters, totalChapters, onContextRead
                   </span>
                 </div>
                 <span className="text-[9px] text-ink-subtle">{act.goal.slice(0, 20)}</span>
-                <button onClick={() => removeAct(act.id)} className="text-[9px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100">×</button>
+                <button onClick={() => removeAct(act.id)} className="text-[9px] text-red-400 hover:text-red-600 dark:hover:text-red-400 opacity-0 group-hover:opacity-100">×</button>
               </div>
             );
           })}

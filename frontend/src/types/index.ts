@@ -20,9 +20,31 @@ export interface ChapterMeta {
   generated_at: string;
 }
 
+export interface CharacterRelation {
+  char_1_id?: number;
+  char_2_id?: number;
+  c1_name: string;
+  c2_name: string;
+  relation_type: string;
+}
+
+export interface NovelCharacter {
+  id?: number;
+  char_key: string;
+  name: string;
+  role: string;
+  personality?: string;
+  background?: string;
+  power_level?: string;
+  secrets?: string;
+  status?: string;
+}
+
 export interface NovelDetail extends NovelSummary {
   chapters: ChapterMeta[];
   world: { name: string; era: string; power_system: string };
+  characters?: NovelCharacter[];
+  character_relations?: CharacterRelation[];
 }
 
 export interface DraftOption {

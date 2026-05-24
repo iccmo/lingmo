@@ -6,9 +6,10 @@ import { api } from 'src/lib/api';
 
 interface Props {
   onNovelSelect?: (id: string) => void;
+  onClose?: () => void;
 }
 
-export function Sidebar({ onNovelSelect }: Props) {
+export function Sidebar({ onNovelSelect, onClose }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const [novels, setNovels] = useState<NovelSummary[]>([]);
@@ -32,12 +33,20 @@ export function Sidebar({ onNovelSelect }: Props) {
 
   return (
     <aside className="w-[200px] min-w-[200px] bg-card/50 border-r border-border flex flex-col overflow-y-auto py-4">
+      {/* Mobile close button */}
+      {onClose && (
+        <button onClick={onClose}
+          className="lg:hidden flex items-center justify-center w-7 h-7 rounded-full border border-border text-ink-muted hover:text-ink hover:bg-paper absolute top-2 right-2 z-10"
+          aria-label="关闭侧栏">
+          ✕
+        </button>
+      )}
       <div className="px-4 mb-1">
         <p className="text-[10px] font-semibold text-ink-subtle uppercase tracking-widest px-2">导航</p>
       </div>
       <button
         onClick={() => navigate('/')}
-        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[13px] transition-colors text-left ${
+        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left ${
           isActive('/') ? 'bg-accent-soft text-accent font-medium' : 'text-ink hover:bg-paper'
         }`}
       >
@@ -45,7 +54,7 @@ export function Sidebar({ onNovelSelect }: Props) {
       </button>
       <button
         onClick={() => navigate('/settings')}
-        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[13px] transition-colors text-left ${
+        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left ${
           isActive('/settings') ? 'bg-accent-soft text-accent font-medium' : 'text-ink hover:bg-paper'
         }`}
       >
@@ -53,7 +62,7 @@ export function Sidebar({ onNovelSelect }: Props) {
       </button>
       <button
         onClick={() => navigate('/logs')}
-        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[13px] transition-colors text-left ${
+        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left ${
           isActive('/logs') ? 'bg-accent-soft text-accent font-medium' : 'text-ink hover:bg-paper'
         }`}
       >
@@ -61,16 +70,24 @@ export function Sidebar({ onNovelSelect }: Props) {
       </button>
       <button
         onClick={() => navigate('/stats')}
-        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[13px] transition-colors text-left ${
+        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left ${
           location.pathname === '/stats' ? 'bg-accent-soft text-accent font-medium' : 'text-ink hover:bg-paper'
         }`}
       >
         📊 统计
       </button>
+      <button
+        onClick={() => navigate('/listen')}
+        className={`flex items-center gap-2.5 px-3 py-2 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left ${
+          location.pathname === '/listen' ? 'bg-accent-soft text-accent font-medium' : 'text-ink hover:bg-paper'
+        }`}
+      >
+        🎧 听书
+      </button>
       <Separator className="my-3 mx-4 w-auto" />
 
       <div className="px-4 py-2">
-        <p className="text-[11px] font-semibold text-ink-subtle uppercase tracking-wider px-2 py-1">我的小说</p>
+        <p className="text-[10px] sm:text-[11px] font-semibold text-ink-subtle uppercase tracking-wider px-2 py-1">我的小说</p>
       </div>
       {novels.map(n => {
         const novelPath = `/novels/${n.id}`;
@@ -85,7 +102,7 @@ export function Sidebar({ onNovelSelect }: Props) {
                 navigate(novelPath);
                 onNovelSelect?.(n.id);
               }}
-              className={`flex items-center gap-2 px-3 py-1.5 mx-3 rounded-md text-[13px] transition-colors text-left w-full ${
+              className={`flex items-center gap-2 px-3 py-1.5 mx-3 rounded-md text-[12px] sm:text-[13px] transition-colors text-left w-full ${
                 active ? 'bg-accent-soft text-accent font-medium' : inNovel ? 'text-ink hover:bg-paper' : 'text-ink-muted hover:text-ink hover:bg-paper'
               }`}
             >
@@ -110,7 +127,7 @@ export function Sidebar({ onNovelSelect }: Props) {
             </button>
             <button
               onClick={() => navigate(`${novelPath}/memory`)}
-              className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[11px] transition-colors text-left w-full ml-4 ${
+              className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[10px] sm:text-[11px] transition-colors text-left w-full ml-4 ${
                 memActive ? 'text-accent font-medium' : 'text-ink-subtle hover:text-ink'
               }`}
             >
@@ -118,7 +135,7 @@ export function Sidebar({ onNovelSelect }: Props) {
             </button>
             <button
               onClick={() => navigate(`${novelPath}/foreshadowing`)}
-              className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[11px] transition-colors text-left w-full ml-4 ${
+              className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[10px] sm:text-[11px] transition-colors text-left w-full ml-4 ${
                 foreshadowActive ? 'text-accent font-medium' : 'text-ink-subtle hover:text-ink'
               }`}
             >

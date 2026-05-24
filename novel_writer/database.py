@@ -1,6 +1,7 @@
 """数据库访问层 — SQLite + WAL"""
 
 import json
+import datetime
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -397,3 +398,75 @@ class Database:
                 kw.setdefault("models", "[]")
                 c.execute("""INSERT INTO model_providers (id,name,base_url,api_key,models)
                     VALUES (:id,:name,:base_url,:api_key,:models)""", kw)
+
+
+
+    # ═══════════════════ Audio Data ═══════════════════
+
+    def save_audio_progress(self, novel_id: str, chapter_num: int, position_sec: float):
+        with self.conn() as c:
+            c.execute("""INSERT INTO audio_progress (novel_id, chapter_num, position_sec, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(novel_id) DO UPDATE SET
+                    chapter_num=excluded.chapter_num, position_sec=excluded.position_sec,
+                    updated_at=datetime('now')""",
+                (novel_id, chapter_num, position_sec))
+
+    def get_audio_progress(self, novel_id: str) -> dict | None:
+        with self.conn() as c:
+            row = c.execute("SELECT * FROM audio_progress WHERE novel_id=?", (novel_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_all_audio_progress(self) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM audio_progress ORDER BY updated_at DESC").fetchall()]
+
+    def save_audio_bookmarks(self, bookmarks: list[dict]):
+        with self.conn() as c:
+            c.execute("DELETE FROM audio_bookmarks")
+            for b in bookmarks:
+                c.execute("""INSERT OR REPLACE INTO audio_bookmarks
+                    (id, novel_id, novel_title, chapter_num, chapter_title, position, note, tag, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (b.get('id'), b.get('novelId'), b.get('novelTitle', ''),
+                     b.get('chapterNum', 0), b.get('chapterTitle', ''),
+                     b.get('position', 0), b.get('note', ''), b.get('tag', ''),
+                     b.get('createdAt', datetime.datetime.now().isoformat())))
+
+    def load_audio_bookmarks(self) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM audio_bookmarks ORDER BY created_at DESC").fetchall()]
+
+    def save_audio_setting(self, key: str, value: str):
+        with self.conn() as c:
+            c.execute("INSERT OR REPLACE INTO audio_settings (key, value) VALUES (?, ?)", (key, value))
+
+    def load_audio_settings(self) -> dict:
+        with self.conn() as c:
+            rows = c.execute("SELECT key, value FROM audio_settings").fetchall()
+            return {r['key']: r['value'] for r in rows}
+
+    def save_audio_playlist(self, items: list[dict]):
+        with self.conn() as c:
+            c.execute("DELETE FROM audio_playlist")
+            for i, item in enumerate(items):
+                c.execute("""INSERT INTO audio_playlist (novel_id, novel_title, chapter_num, chapter_title, sort_order)
+                    VALUES (?, ?, ?, ?, ?)""",
+                    (item.get('novelId'), item.get('novelTitle', ''), item.get('chapterNum', 0),
+                     item.get('chapterTitle', ''), i))
+
+    def load_audio_playlist(self) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM audio_playlist ORDER BY sort_order").fetchall()]
+
+    def save_audio_stats(self, stats: dict):
+        with self.conn() as c:
+            for k, v in stats.items():
+                c.execute("INSERT OR REPLACE INTO audio_stats (stat_key, stat_value, updated_at) VALUES (?, ?, datetime('now'))",
+                    (k, str(v)))
+
+    def load_audio_stats(self) -> dict:
+        with self.conn() as c:
+            rows = c.execute("SELECT stat_key, stat_value FROM audio_stats").fetchall()
+            return {r['stat_key']: r['stat_value'] for r in rows}
+

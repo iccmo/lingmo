@@ -40,6 +40,30 @@ const STATS = [
   { value: 5, suffix: '关', label: '质量保证' },
 ];
 
+const HIGHLIGHTS = [
+  {
+    icon: '🤖',
+    title: 'AI 生成',
+    desc: '从一句话简介到完整小说，AI 自动生成章节。支持 14 种作家声音与 24 种题材风格，一键批量创作。',
+    gradient: 'from-violet-500/15 via-accent/5 to-violet-500/5',
+    iconBg: 'bg-violet-50 dark:bg-violet-900/30',
+  },
+  {
+    icon: '🛡️',
+    title: '品质保证',
+    desc: '5 道质量关卡逐章打磨，6 维 LLM 评审精确到百分位。不达标自动重写，确保每章 A 级品质。',
+    gradient: 'from-emerald-500/15 via-accent/5 to-emerald-500/5',
+    iconBg: 'bg-emerald-50 dark:bg-emerald-900/30',
+  },
+  {
+    icon: '🎧',
+    title: '听书系统',
+    desc: '手机阅读模拟、深色模式、EPUB 导出。适配番茄/起点/纵横三大平台，智能发布策略一键推送。',
+    gradient: 'from-amber-500/15 via-accent/5 to-amber-500/5',
+    iconBg: 'bg-amber-50 dark:bg-amber-900/30',
+  },
+];
+
 /* Animated counter */
 function CountUp({ target, suffix, duration = 1500 }: { target: number; suffix: string; duration?: number }) {
   const [count, setCount] = useState(0);
@@ -137,51 +161,74 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
             <a href="#features" className="text-sm text-ink-muted hover:text-ink transition-colors hidden sm:inline">功能</a>
             <a href="#how" className="text-sm text-ink-muted hover:text-ink transition-colors hidden sm:inline">工作流</a>
             <button onClick={handleEnter}
-              className="text-sm px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover transition-all font-medium shadow-sm hover:shadow-md">
+              className="relative text-sm px-5 py-2.5 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all font-semibold shadow-lg shadow-accent/25 hover:shadow-accent/40 hover:-translate-y-0.5 active:scale-95">
               进入后台
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Hero with animated particles */}
+      {/* Hero with animated gradient background */}
       <section className="relative pt-32 pb-20 px-6 text-center overflow-hidden">
-        {/* Animated background particles */}
+        {/* Animated gradient wash background */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-20 left-1/4 w-72 h-72 bg-accent/8 rounded-full blur-3xl animate-pulse" style={{animationDuration: '4s'}} />
-          <div className="absolute bottom-20 right-1/4 w-96 h-96 bg-purple-500/8 rounded-full blur-3xl animate-pulse" style={{animationDuration: '5s', animationDelay: '1s'}} />
-          <div className="absolute top-1/3 left-1/2 w-48 h-48 bg-emerald-500/8 rounded-full blur-3xl animate-pulse" style={{animationDuration: '3s', animationDelay: '2s'}} />
+          {/* Base gradient */}
+          <div className="absolute inset-0 bg-gradient-to-br from-accent-soft/40 via-paper to-purple-500/5 dark:from-accent-soft/20 dark:via-paper dark:to-purple-500/10" />
+          {/* Animated floating blobs */}
+          <div
+            className="absolute top-10 left-1/4 w-80 h-80 rounded-full blur-3xl opacity-30"
+            style={{
+              background: 'linear-gradient(135deg, var(--color-accent), #7C3AED)',
+              animation: 'heroBlob1 8s ease-in-out infinite',
+            }}
+          />
+          <div
+            className="absolute bottom-10 right-1/4 w-96 h-96 rounded-full blur-3xl opacity-25"
+            style={{
+              background: 'linear-gradient(135deg, #8B5CF6, #3B82F6)',
+              animation: 'heroBlob2 10s ease-in-out infinite',
+              animationDelay: '1s',
+            }}
+          />
+          <div
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full blur-3xl opacity-20"
+            style={{
+              background: 'linear-gradient(135deg, #10B981, var(--color-accent))',
+              animation: 'heroBlob3 7s ease-in-out infinite',
+              animationDelay: '2s',
+            }}
+          />
           {/* Floating dots */}
-          {[...Array(12)].map((_, i) => (
+          {[...Array(16)].map((_, i) => (
             <div key={i} className="absolute w-1 h-1 rounded-full bg-accent/20"
               style={{
-                left: `${10 + (i * 7) % 80}%`,
-                top: `${10 + (i * 13) % 80}%`,
-                animation: `fadeSlideIn ${2 + (i % 3)}s ease-in-out infinite`,
-                animationDelay: `${i * 0.3}s`,
+                left: `${8 + (i * 6.5) % 84}%`,
+                top: `${8 + (i * 11) % 84}%`,
+                animation: `fadeSlideIn ${2.5 + (i % 3)}s ease-in-out infinite`,
+                animationDelay: `${i * 0.25}s`,
               }} />
           ))}
         </div>
 
         <div className="relative max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-soft text-accent text-xs font-semibold mb-8 border border-accent/10">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent-soft text-accent text-xs font-semibold mb-8 border border-accent/10 animate-[fadeSlideIn_0.6s_ease-out]">
             <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
             30组灵魂矛盾 · A级质量门槛 · 全配置注入生成
           </div>
 
-          <h1 className="font-heading text-[clamp(40px,8vw,72px)] leading-[1.08] font-bold mb-6 tracking-tight">
+          <h1 className="font-heading text-[clamp(40px,8vw,72px)] leading-[1.08] font-bold mb-6 tracking-tight animate-[fadeSlideIn_0.6s_ease-out_0.1s_both]">
             用 AI 写出<span className="text-accent relative">
               神作
               <span className="absolute -bottom-1 left-0 right-0 h-[6px] bg-accent/20 rounded-full" />
             </span>级小说
           </h1>
 
-          <p className="text-lg text-ink-muted max-w-xl mx-auto mb-10 leading-relaxed">
+          <p className="text-lg text-ink-muted max-w-xl mx-auto mb-10 leading-relaxed animate-[fadeSlideIn_0.6s_ease-out_0.2s_both]">
             不仅是 AI 续写。选择灵魂矛盾、设计角色命运、注入世界法则——<br/>
             <span className="text-ink font-semibold">AI 按你的文学标准打磨每一章，不过 A 级不发布。</span>
           </p>
 
-          <div className="flex gap-3 justify-center">
+          <div className="flex gap-3 justify-center animate-[fadeSlideIn_0.6s_ease-out_0.3s_both]">
             <button onClick={handleEnter}
               className="px-8 py-3.5 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all font-semibold text-base shadow-lg shadow-accent/25 btn-generate active:scale-95">
               🚀 开始创作
@@ -193,6 +240,25 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
           </div>
 
           <p className="text-xs text-ink-subtle mt-6">30组灵魂矛盾 · A级质量门槛 · DeepSeek / OpenAI / 通义千问</p>
+        </div>
+      </section>
+
+      {/* Three-pillar highlight section */}
+      <section className="max-w-5xl mx-auto px-6 pb-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {HIGHLIGHTS.map((h, i) => (
+            <div key={i}
+              className={`group relative overflow-hidden p-6 rounded-2xl border border-border bg-gradient-to-br ${h.gradient} hover:shadow-lg hover:-translate-y-1 transition-all duration-300`}
+            >
+              <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4 ${h.iconBg} transition-transform duration-300 group-hover:scale-110`}>
+                {h.icon}
+              </div>
+              <h3 className="font-heading text-lg font-bold text-ink mb-2">{h.title}</h3>
+              <p className="text-sm text-ink-muted leading-relaxed">{h.desc}</p>
+              {/* Bottom accent line */}
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-accent/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            </div>
+          ))}
         </div>
       </section>
 
