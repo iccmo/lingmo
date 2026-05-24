@@ -4,7 +4,7 @@ from novel_writer.config import Config, validate
 
 def test_config_defaults():
     c = Config()
-    assert c.model == "gpt-4o"
+    assert c.model == "deepseek-v4-pro"
     assert c.genre == "玄幻"
     assert c.temperature == 0.85
 

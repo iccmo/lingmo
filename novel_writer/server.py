@@ -1275,7 +1275,7 @@ def _run_generation(novel_id: str):
         db.log(novel_id, "error.critical", {
             "error": err_msg,
             "type": err_type,
-            "phase": f"chapter {state.total_chapters + 1}",
+            "phase": f"chapter {(state.total_chapters + 1) if 'state' in dir() else 'unknown'}",
             "traceback": tb,
         })
         print(f"[GEN ERROR] {novel_id}: {err_type}: {err_msg}", file=sys.stderr)
