@@ -4,7 +4,7 @@ import json, sys, re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -207,7 +207,20 @@ def get_chapter(novel_id: str, chapter_num: int):
     ch = db.get_chapter(novel_id, chapter_num)
     if not ch:
         raise HTTPException(404, "Not found")
-    return {"number": ch["number"], "content": ch.get("content", "")}
+    key_events = ch.get("key_events", "[]")
+    if isinstance(key_events, str):
+        try:
+            key_events = json.loads(key_events)
+        except (json.JSONDecodeError, TypeError):
+            key_events = []
+    return {
+        "number": ch["number"],
+        "content": ch.get("content", ""),
+        "title": ch.get("title", ""),
+        "ending_hook": ch.get("ending_hook", ""),
+        "key_events": key_events,
+        "summary": ch.get("summary", ""),
+    }
 
 
 @app.put("/api/novels/{novel_id}/chapters/{chapter_num}")
@@ -4056,6 +4069,246 @@ def optimize_prompt(novel_id: str, background: BackgroundTasks):
             "drop_off_count": len(analytics.get("drop_off_points", [])),
         },
     }
+
+# ═══════════════ AI Proofread ═══════════════
+
+@app.post("/api/novels/{novel_id}/chapters/{chapter_num}/proofread")
+def proofread_chapter(novel_id: str, chapter_num: int):
+    """AI校对：找出错别字、重复用词、逻辑不连贯、标点错误。"""
+    ch = db.get_chapter(novel_id, chapter_num)
+    if not ch:
+        raise HTTPException(404, "Chapter not found")
+    content = ch.get("content", "")
+    if not content:
+        raise HTTPException(400, "Chapter has no content")
+
+    from .generator import Generator
+    from .config import Config
+    provider = _get_provider(novel_id)
+    cfg = Config(
+        openai_api_key=provider.get("api_key", ""),
+        openai_base_url=provider.get("base_url", ""),
+        model=provider.get("models", ["deepseek-v4-pro"])[0] if provider.get("models") else "gpt-4o",
+    )
+    gen = Generator(cfg)
+
+    # Process content in chunks if too long (max ~3000 chars per chunk)
+    chunk_size = 3000
+    chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+    all_issues: list[dict] = []
+
+    for ci, chunk in enumerate(chunks):
+        prompt = f"""请校对以下小说段落，找出：
+1. 错别字（含形近字、同音字错误）
+2. 重复用词（同一句内重复3次以上的词）
+3. 逻辑不连贯（前后矛盾、时间线混乱、行为不合理）
+4. 标点错误（中英文标点混用、缺失、多余）
+
+对每一处问题，用JSON格式返回数组，每个元素包含：
+- type: "typo" | "repetition" | "inconsistency" | "punctuation"
+- original: 原文中的问题文本
+- suggestion: 修改建议
+- reason: 修改理由（简短说明）
+
+只返回JSON数组，不要任何其他文字。如果没有问题，返回空数组[]。
+
+段落内容：
+{chunk}"""
+
+        result = gen._call_llm_with_retry([
+            {"role": "system", "content": "你是一位专业的中文校对编辑。你只返回JSON数组，不返回任何其他内容。"},
+            {"role": "user", "content": prompt},
+        ], max_tokens=4096)
+
+        try:
+            # Extract JSON from response (may be wrapped in markdown code blocks)
+            json_str = result.strip()
+            if json_str.startswith("```"):
+                json_str = re.sub(r'^```(?:json)?\s*', '', json_str)
+                json_str = re.sub(r'\s*```$', '', json_str)
+            issues = json.loads(json_str)
+            if isinstance(issues, list):
+                all_issues.extend(issues)
+        except (json.JSONDecodeError, TypeError):
+            # If parsing fails, try to extract JSON array from the text
+            match = re.search(r'\[.*\]', result, re.DOTALL)
+            if match:
+                try:
+                    issues = json.loads(match.group())
+                    if isinstance(issues, list):
+                        all_issues.extend(issues)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+    return {
+        "novel_id": novel_id,
+        "chapter": chapter_num,
+        "issues": all_issues,
+        "total": len(all_issues),
+    }
+
+
+# ═══════════════ Import External Novels ═══════════════
+
+@app.post("/api/novels/import")
+async def import_novel(
+    title: str = Form(...),
+    genre: str = Form("玄幻"),
+    file: UploadFile = File(...),
+):
+    """从外部文件导入小说（支持 TXT 和 EPUB）。"""
+    import io
+
+    if not title.strip():
+        raise HTTPException(400, "title required")
+
+    # Read file content
+    raw_bytes = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".epub"):
+        # EPUB parsing
+        try:
+            import ebooklib
+            from ebooklib import epub
+        except ImportError:
+            raise HTTPException(500, "ebooklib not installed. Run: pip install ebooklib")
+
+        book = epub.read_epub(io.BytesIO(raw_bytes))
+        chapters_data: list[tuple[str, str]] = []
+
+        # Try to get chapters from TOC/spine
+        toc_items = []
+        for item in book.toc:
+            if isinstance(item, tuple):
+                _extract_toc_items(item, toc_items)
+            elif hasattr(item, 'get_name'):
+                toc_items.append(item)
+
+        # If no TOC, use all document items in spine order
+        if not toc_items:
+            toc_items = [doc for doc in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)]
+
+        for item in toc_items:
+            try:
+                html_content = item.get_content().decode("utf-8", errors="ignore") if isinstance(item.get_content(), bytes) else item.get_content()
+                # Strip HTML tags
+                text = re.sub(r'<[^>]+>', '', html_content)
+                text = re.sub(r'\n{3,}', '\n\n', text).strip()
+                if text and len(text) > 50:  # Skip very short sections
+                    # Try to extract chapter title from first meaningful line
+                    lines = text.split("\n")
+                    title_line = ""
+                    for line in lines:
+                        stripped = line.strip()
+                        if stripped and len(stripped) < 50:
+                            title_line = stripped
+                            break
+                    chapters_data.append((title_line or f"第{len(chapters_data)+1}章", text))
+            except Exception:
+                continue
+
+    elif filename.endswith(".txt"):
+        # TXT parsing
+        text = raw_bytes.decode("utf-8", errors="ignore")
+        chapters_data = _detect_chapters_from_text(text)
+
+    else:
+        raise HTTPException(400, "Unsupported file format. Please upload .txt or .epub")
+
+    if not chapters_data:
+        raise HTTPException(400, "No chapter content found in the uploaded file")
+
+    # Create novel
+    novel_id = re.sub(r'[^a-z0-9-]', '', title.lower().replace(' ', '-')[:40])
+    if not novel_id:
+        from uuid import uuid4
+        novel_id = uuid4().hex[:12]
+
+    # Ensure unique ID
+    base_id = novel_id
+    counter = 1
+    while db.get_novel(novel_id):
+        novel_id = f"{base_id}-{counter}"
+        counter += 1
+
+    novel = db.create_novel(
+        id=novel_id,
+        title=title.strip(),
+        genre=genre,
+        synopsis="",
+    )
+
+    # Add chapters
+    for i, (ch_title, ch_content) in enumerate(chapters_data, 1):
+        word_count = len(ch_content)
+        summary = ch_content[:200].replace("\n", " ")
+        db.add_chapter(
+            novel_id=novel_id,
+            number=i,
+            title=ch_title or f"第{i}章",
+            word_count=word_count,
+            summary=summary,
+            content=ch_content,
+            ending_hook="",
+        )
+
+    return {
+        "novel_id": novel_id,
+        "title": title.strip(),
+        "chapters_imported": len(chapters_data),
+        "total_words": sum(len(c[1]) for c in chapters_data),
+    }
+
+
+def _extract_toc_items(item, result: list):
+    """Recursively extract items from EPUB TOC tuples."""
+    if isinstance(item, tuple) and len(item) >= 2:
+        # item[1] could be a list of sub-items
+        if isinstance(item[1], list):
+            for sub in item[1]:
+                _extract_toc_items(sub, result)
+        elif hasattr(item[1], 'get_name'):
+            result.append(item[1])
+    elif hasattr(item, 'get_name'):
+        result.append(item)
+
+
+def _detect_chapters_from_text(text: str) -> list[tuple[str, str]]:
+    """Detect chapter breaks from plain text and return [(title, content), ...]."""
+    # Common chapter break patterns
+    patterns = [
+        r'(第[一二三四五六七八九十百千\d]+[章节回卷部集幕])',
+        r'(Chapter\s+\d+)',
+        r'(CHAPTER\s+\d+)',
+        r'(第\d+[章节回卷部集幕])',
+    ]
+
+    lines = text.split("\n")
+    chapter_indices = []
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for pat in patterns:
+            if re.match(pat, stripped):
+                chapter_indices.append(i)
+                break
+
+    if len(chapter_indices) < 2:
+        # No chapter structure detected, return entire text as one chapter
+        return [("", text.strip())]
+
+    chapters = []
+    for idx, line_idx in enumerate(chapter_indices):
+        title = lines[line_idx].strip()
+        start = line_idx + 1
+        end = chapter_indices[idx + 1] if idx + 1 < len(chapter_indices) else len(lines)
+        content = "\n".join(lines[start:end]).strip()
+        if content:
+            chapters.append((title, content))
+
+    return chapters
+
 
 # ═══════════════ Static ═══════════════
 

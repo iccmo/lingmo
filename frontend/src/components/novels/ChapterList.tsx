@@ -5,6 +5,7 @@ import { ContextMenu } from 'src/components/ui/context-menu';
 import { MobileReadingMode } from 'src/components/novels/MobileReadingMode';
 import { ChapterDiff } from 'src/components/novels/ChapterDiff';
 import { AudioTextSync } from 'src/components/novels/AudioTextSync';
+import { SceneEditor } from 'src/components/novels/SceneEditor';
 import { useAudio } from 'src/lib/AudioContext';
 import type { ChapterMeta } from 'src/types';
 
@@ -78,8 +79,13 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [saving, setSaving] = useState(false);
+  const [sceneView, setSceneView] = useState(false);
   const [refineTarget, setRefineTarget] = useState('');
   const [refining, setRefining] = useState(false);
+  // AI Proofreading
+  const [proofreading, setProofreading] = useState(false);
+  const [proofreadIssues, setProofreadIssues] = useState<{ type: string; original: string; suggestion: string; reason: string }[]>([]);
+  const [showProofread, setShowProofread] = useState(false);
   // Chapter approval status: 'draft' | 'approved' | 'revise'
   const [approvals, setApprovals] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem(`approvals-${novelId}`) || '{}'); }
@@ -500,6 +506,27 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     }
     toast.success(`核查完成：${nums.length} 章共 ${totalIssues} 个疑点`);
     setSelectMode(false); setSelected(new Set());
+  }
+
+  async function handleProofread() {
+    if (!expanded) return;
+    setProofreading(true);
+    setProofreadIssues([]);
+    try {
+      const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/proofread`, { method: 'POST' });
+      const d = await r.json();
+      setProofreadIssues(d.issues || []);
+      setShowProofread(true);
+      if ((d.issues || []).length === 0) {
+        toast.success('校对完成，未发现问题');
+      } else {
+        toast.success(`校对完成: ${d.issues.length} 处问题`);
+      }
+    } catch (e: unknown) {
+      toast.error('校对失败: ' + (e as Error).message);
+    } finally {
+      setProofreading(false);
+    }
   }
 
   async function handleRegenerate() {
@@ -953,6 +980,21 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                   </button>
                 )}
                 <span className="text-[10px] text-ink-subtle">|</span>
+                {content && (
+                  <button onClick={e => { e.stopPropagation(); setSceneView(!sceneView); }}
+                    className={`text-[10px] transition-colors ${sceneView ? 'text-accent font-medium' : 'text-ink-subtle hover:text-accent'}`}>
+                    🎬 场景
+                  </button>
+                )}
+                {content && <span className="text-[10px] text-ink-subtle">|</span>}
+                {content && (
+                  <button onClick={e => { e.stopPropagation(); handleProofread(); }}
+                    disabled={proofreading}
+                    className="text-[10px] text-ink-subtle hover:text-accent disabled:opacity-50">
+                    {proofreading ? '⏳ 校对中...' : '🔍 校对'}
+                  </button>
+                )}
+                <span className="text-[10px] text-ink-subtle">|</span>
                 <button onClick={e => { e.stopPropagation(); setExpanded(null); }}
                   className="text-[10px] text-ink-subtle hover:text-ink">
                   收起
@@ -1002,6 +1044,73 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                 </div>
               ) : (
                 <div className="text-center py-8 text-ink-muted">加载中...</div>
+              )}
+
+              {/* Proofreading Results */}
+              {showProofread && proofreadIssues.length > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-800 animate-[fadeSlideIn_0.2s_ease-out]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                      🔍 校对结果 — {proofreadIssues.length} 处问题
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setShowProofread(false); setProofreadIssues([]); }}
+                      className="text-[10px] text-ink-muted hover:text-ink"
+                    >
+                      收起
+                    </button>
+                  </div>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                    {proofreadIssues.map((issue, i) => {
+                      const typeLabel = issue.type === 'typo' ? '错别字'
+                        : issue.type === 'repetition' ? '重复用词'
+                        : issue.type === 'inconsistency' ? '逻辑不连贯'
+                        : issue.type === 'punctuation' ? '标点错误'
+                        : issue.type;
+                      const isError = issue.type === 'typo' || issue.type === 'punctuation';
+                      return (
+                        <div key={i} className="text-[10px] p-1.5 rounded bg-card border border-border/50">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`px-1 rounded text-[9px] font-medium ${
+                              isError
+                                ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                            }`}>
+                              {typeLabel}
+                            </span>
+                            <span className="text-ink-subtle">{issue.reason}</span>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <span className={`line-through ${isError ? 'text-red-500' : 'text-amber-500'}`}>
+                              {issue.original}
+                            </span>
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              → {issue.suggestion}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Scene Editor */}
+              {sceneView && content && content !== '正文尚未生成' && (
+                <SceneEditor
+                  chapterContent={content}
+                  chapterNumber={ch.number}
+                  novelId={novelId}
+                  onSave={async (mergedContent: string) => {
+                    await fetch(`/api/novels/${novelId}/chapters/${ch.number}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content: mergedContent }),
+                    });
+                    setContent(mergedContent);
+                  }}
+                  saving={saving}
+                />
               )}
 
               {/* Chapter notes */}

@@ -28,6 +28,7 @@ import { MasterworkLab } from 'src/components/novels/MasterworkLab';
 import { WriterStats } from 'src/components/novels/WriterStats';
 import { GenerationPipeline } from 'src/components/novels/GenerationPipeline';
 import { GenerateDialog } from 'src/components/novels/GenerateDialog';
+import { TimelineView } from 'src/components/novels/TimelineView';
 import { logDailyWords } from 'src/components/novels/WritingCalendar';
 import { ScrollToTop } from 'src/components/ui/scroll-to-top';
 import { api } from 'src/lib/api';
@@ -89,6 +90,7 @@ export function NovelDetail({ mode }: Props) {
   const [batchThreshold, setBatchThreshold] = useState(0.8);
   const [batchStatus, setBatchStatus] = useState<{ job_id: string; status: string; progress: { current: number; total: number }; last_error: string | null } | null>(null);
   const [batchPolling, setBatchPolling] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   const loadNovel = useCallback(() => {
     if (!id) return;
@@ -1033,6 +1035,17 @@ export function NovelDetail({ mode }: Props) {
       {/* Quality Trend */}
       <div id="section-quality"><QualityTrend chapters={novel.chapters} /></div>
 
+      {/* Timeline View */}
+      {showTimeline && novel.chapters && (
+        <div className="mb-6 p-4 bg-card border border-border rounded-xl">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-heading text-base font-semibold text-ink">⏱ 故事时间线</h3>
+            <button onClick={() => setShowTimeline(false)} className="text-[10px] text-ink-muted hover:text-ink">收起</button>
+          </div>
+          <TimelineView chapters={novel.chapters} novelId={novel.id} />
+        </div>
+      )}
+
       {/* Collapsible Analysis Section */}
       <div className="mb-4">
         <button
@@ -1483,6 +1496,16 @@ export function NovelDetail({ mode }: Props) {
               }
             } catch { toast.error('获取建议失败'); }
           }}>💡 写困救援</button>
+        <button
+          onClick={() => setShowTimeline(!showTimeline)}
+          className={`text-[11px] px-2 py-1 rounded border transition-colors ${
+            showTimeline
+              ? 'bg-accent-soft/30 text-accent border-accent/30'
+              : 'border-border text-ink-muted hover:text-accent hover:border-accent/30'
+          }`}
+        >
+          ⏱ 时间线
+        </button>
       </div>
 
       {/* Quality decline alert */}

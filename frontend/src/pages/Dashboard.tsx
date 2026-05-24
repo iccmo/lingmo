@@ -105,6 +105,11 @@ export function Dashboard() {
   const [showCompare, setShowCompare] = useState(false);
   const [costSummary, setCostSummary] = useState<{ total_cost: number; total_tokens: number; total_calls: number; by_novel: { novel_id: string; title: string; cost: number; chapters: number }[]; by_model: { model: string; calls: number; total_cost: number }[] } | null>(null);
   const [showCostBreakdown, setShowCostBreakdown] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importTitle, setImportTitle] = useState('');
+  const [importGenre, setImportGenre] = useState('玄幻');
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   useEffect(() => {
     Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json()), api.costs.summary().catch(() => null)])
@@ -126,6 +131,42 @@ export function Dashboard() {
       toast.success('Demo 小说已创建，正在生成第一章...');
       setTimeout(() => navigate(`/novels/${d.novel_id}`), 2000);
     } catch (e: unknown) { toast.error('创建失败: ' + (e as Error).message); }
+  }
+
+  async function handleImport(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!importFile || !importTitle.trim()) {
+      toast.error('请填写书名并选择文件');
+      return;
+    }
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append('title', importTitle.trim());
+      fd.append('genre', importGenre);
+      fd.append('file', importFile);
+
+      const r = await fetch('/api/novels/import', {
+        method: 'POST',
+        body: fd,
+      });
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(errText.slice(0, 200));
+      }
+      const d = await r.json();
+      toast.success(`导入成功: "${d.title}" — ${d.chapters_imported} 章, ${d.total_words.toLocaleString()} 字`);
+      setShowImport(false);
+      setImportFile(null);
+      setImportTitle('');
+      // Refresh novel list
+      const [n, s] = await Promise.all([api.novels.list(), api.status()]);
+      setNovels(n); setStatus(s);
+    } catch (e: unknown) {
+      toast.error('导入失败: ' + (e as Error).message);
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -335,6 +376,7 @@ export function Dashboard() {
         <h2 className="font-heading text-xl font-semibold text-ink">我的小说</h2>
         <div className="flex gap-2">
           <Button size="sm" className="bg-accent hover:bg-accent-hover" onClick={() => setShowForm(!showForm)}>+ 创建新小说</Button>
+          <Button size="sm" variant="outline" onClick={() => setShowImport(true)}>📥 导入</Button>
           {novels.length >= 2 && (
             <Button size="sm" variant="outline" onClick={() => setShowCompare(true)}>📊 对比</Button>
           )}
@@ -500,6 +542,78 @@ export function Dashboard() {
           );
         } catch { return null; }
       })()}
+
+      {/* Import modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowImport(false)}>
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 animate-[fadeSlideIn_0.2s_ease-out]"
+            onClick={e => e.stopPropagation()}>
+            <h3 className="font-heading text-lg font-semibold text-ink mb-1">📥 导入外部小说</h3>
+            <p className="text-xs text-ink-muted mb-4">支持 .txt 和 .epub 格式。自动识别章节结构。</p>
+
+            <form onSubmit={handleImport} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">书名</label>
+                <input
+                  value={importTitle}
+                  onChange={e => setImportTitle(e.target.value)}
+                  placeholder="输入书名..."
+                  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2
+                    placeholder:text-ink-subtle focus:outline-none focus:border-accent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">题材</label>
+                <select
+                  value={importGenre}
+                  onChange={e => setImportGenre(e.target.value)}
+                  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
+                >
+                  {['玄幻','悬疑','都市','科幻','历史','官场','系统流','女频','仙侠','武侠','游戏','末世','轻小说'].map(g => (
+                    <option key={g} value={g}>{g}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">选择文件</label>
+                <div className="mt-1.5">
+                  <input
+                    type="file"
+                    accept=".txt,.epub"
+                    onChange={e => setImportFile(e.target.files?.[0] || null)}
+                    className="w-full text-xs text-ink-muted file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0
+                      file:text-xs file:font-medium file:bg-accent-soft file:text-accent
+                      hover:file:bg-accent-soft/80 file:cursor-pointer file:transition-colors"
+                  />
+                </div>
+                {importFile && (
+                  <p className="text-[10px] text-ink-subtle mt-1">
+                    已选择: {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowImport(false); setImportFile(null); setImportTitle(''); }}
+                  className="flex-1 py-2 rounded-lg border border-input text-ink-muted text-sm hover:bg-paper transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={importing || !importFile}
+                  className="flex-1 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
+                >
+                  {importing ? '导入中...' : '开始导入'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Compare modal */}
       {showCompare && novels.length >= 2 && (
