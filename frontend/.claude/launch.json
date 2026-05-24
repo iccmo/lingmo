@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "novel-frontend",
+      "runtimeExecutable": "node_modules/.bin/vite",
+      "runtimeArgs": ["--port", "5176", "--host"],
+      "port": 5176
+    }
+  ]
+}

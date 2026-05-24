@@ -1,0 +1,322 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { NovelCard } from 'src/components/novels/NovelCard';
+import { WritingCalendar } from 'src/components/novels/WritingCalendar';
+import { DailyPrompt } from 'src/components/novels/DailyPrompt';
+import { Button } from 'src/components/ui/button';
+import { Input } from 'src/components/ui/input';
+import { Textarea } from 'src/components/ui/textarea';
+import { Card, CardContent } from 'src/components/ui/card';
+import { api } from 'src/lib/api';
+import { toast } from 'sonner';
+import type { NovelSummary, SystemStatus } from 'src/types';
+
+export function Dashboard() {
+  const navigate = useNavigate();
+  const [novels, setNovels] = useState<NovelSummary[]>([]);
+  const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [genreFilter, setGenreFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'words' | 'chapters' | 'latest'>('latest');
+  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json())])
+      .then(([n, s, providers]) => {
+        setNovels(n); setStatus(s);
+        const hasKey = providers?.some((p: {api_key: string}) => p.api_key !== '');
+        if (!hasKey) toast.info('💡 前往设置页配置 API Key 即可开始创作');
+      })
+      .catch(e => toast.error('加载失败: ' + (e as Error).message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleDemo() {
+    toast.info('正在创建 Demo 小说...');
+    try {
+      const r = await fetch('/api/demo', { method: 'POST' });
+      const d = await r.json();
+      toast.success('Demo 小说已创建，正在生成第一章...');
+      setTimeout(() => navigate(`/novels/${d.novel_id}`), 2000);
+    } catch (e: unknown) { toast.error('创建失败: ' + (e as Error).message); }
+  }
+
+  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const id = (fd.get('id') as string).trim();
+    const title = (fd.get('title') as string).trim();
+    if (!id || !title) { toast.error('请填写 ID 和书名'); return; }
+    try {
+      await api.novels.create({
+        id, title,
+        synopsis: (fd.get('synopsis') as string).trim(),
+        genre: (fd.get('genre') as string).trim() || '玄幻',
+      });
+      toast.success(`"${title}" 创建成功`);
+      setShowForm(false);
+      const [n, s] = await Promise.all([api.novels.list(), api.status()]);
+      setNovels(n); setStatus(s);
+    } catch (e: unknown) {
+      toast.error('创建失败: ' + (e as Error).message);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <div className="skeleton h-7 w-32" />
+        <div className="skeleton h-5 w-48" />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4 mt-6">
+          {[1,2,3].map(i => <div key={i} className="skeleton h-40 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-enter">
+      <div className="mb-8">
+        <h1 className="font-heading text-[28px] font-semibold text-ink leading-tight">工作台</h1>
+        <p className="text-sm text-ink-muted mt-1">管理你的 AI 小说创作</p>
+      </div>
+
+      {/* Daily writing prompt */}
+      <DailyPrompt />
+
+      {/* Writing Calendar */}
+      {novels.length > 0 && (
+        <div className="mb-6">
+          <WritingCalendar />
+        </div>
+      )}
+
+      {/* Getting Started Checklist */}
+      {novels.length <= 2 && (
+        <div className="mb-6 p-4 bg-gradient-to-r from-accent-soft/30 to-transparent border border-accent/10 rounded-xl">
+          <h3 className="font-heading text-sm font-semibold text-ink mb-3">🚀 快速开始</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+            {[
+              { done: !!status && novels.some(n => n.total_chapters > 0), label: '创建第一部小说', tip: '点击「+ 创建新小说」' },
+              { done: (() => { try { return localStorage.getItem('app-password') !== null; } catch { return false; } })(), label: '设置访问密码', tip: '在展示页点击进入后台时设置' },
+              { done: (() => { try { const p = JSON.parse(localStorage.getItem('starred-novels') || '[]'); return p.length > 0; } catch { return false; } })(), label: '收藏你最看重的小说', tip: '点击卡片上的 ☆ 收藏' },
+            ].map((item, i) => (
+              <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg ${item.done ? 'bg-emerald-50/50 dark:bg-emerald-950/20' : 'bg-paper'}`}>
+                <span>{item.done ? '✅' : '○'}</span>
+                <div>
+                  <span className={item.done ? 'text-ink line-through opacity-60' : 'text-ink font-medium'}>{item.label}</span>
+                  {!item.done && <span className="text-ink-subtle block text-[10px]">{item.tip}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {status && (
+        <div className="flex gap-8 mb-6 flex-wrap">
+          {[
+            [status.novels_count, '部小说'],
+            [status.total_chapters, '总章节'],
+            [status.total_words.toLocaleString(), '总字数'],
+          ].map(([v, l]) => (
+            <div key={l as string} className="bg-paper border border-border rounded-lg px-5 py-3 min-w-[100px]">
+              <div className="font-heading text-[28px] font-semibold text-ink leading-none">{String(v)}</div>
+              <div className="text-[11px] text-ink-muted mt-1">{l}</div>
+            </div>
+          ))}
+          {novels.length > 0 && (
+            <div className="bg-paper border border-border rounded-lg px-5 py-3 min-w-[100px]">
+              <div className="font-heading text-[28px] font-semibold text-emerald-500 leading-none">
+                {novels.filter(n=>n.total_chapters>0).length}
+              </div>
+              <div className="text-[11px] text-ink-muted mt-1">有内容的书</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)}
+          className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
+          <option value="">全部题材</option>
+          {['玄幻','仙侠','武侠','都市','官场','悬疑','灵异','科幻','末世','游戏','历史','系统流','无限流','奇幻','二次元','轻小说','种田','体育','军事','现代言情','古代言情','纯爱','同人'].map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value as 'words'|'chapters'|'latest')}
+          className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
+          <option value="latest">最近更新</option>
+          <option value="words">按字数</option>
+          <option value="chapters">按章节数</option>
+        </select>
+      </div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="font-heading text-xl font-semibold text-ink">我的小说</h2>
+        <div className="flex gap-2">
+          <Button size="sm" className="bg-accent hover:bg-accent-hover" onClick={() => setShowForm(!showForm)}>+ 创建新小说</Button>
+          <Button size="sm" variant="outline" onClick={handleDemo}>⚡ 一键 Demo</Button>
+        </div>
+      </div>
+
+      {showForm && (
+        <Card className="mb-6 border-border">
+          <CardContent className="p-5">
+            {/* Quick Templates */}
+            <div className="flex gap-2 mb-4">
+              {['玄幻','悬疑','都市','科幻','历史','官场'].map(g => (
+                <button key={g} type="button" className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
+                  onClick={() => {
+                    const f = document.querySelector('form') as HTMLFormElement;
+                    if(f) {
+                      (f.querySelector('input[name=id]') as HTMLInputElement).value = g.toLowerCase()+'-'+Date.now().toString(36);
+                      (f.querySelector('input[name=title]') as HTMLInputElement).value = '未命名·'+g;
+                      (f.querySelector('select') as HTMLSelectElement).value = g;
+                    }
+                  }}>{g}</button>
+              ))}
+            </div>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">小说 ID</label>
+                  <Input name="id" placeholder="例如: immortal-path" className="mt-1.5" required />
+                </div>
+                <div className="w-32">
+                  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">题材</label>
+                  <select name="genre" defaultValue="玄幻" className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2">
+                    {['玄幻','悬疑','都市','科幻','历史','官场','系统流','女频'].map(g=><option key={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">书名</label>
+                <Input name="title" placeholder="例如: 修仙从炼丹开始" className="mt-1.5" required />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">一句话简介</label>
+                <Textarea name="synopsis" placeholder="故事一句话概要..." rows={2} className="mt-1.5" />
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" className="bg-accent hover:bg-accent-hover">✓ 创建</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setShowForm(false)}>取消</Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recently viewed */}
+      {(() => {
+        try {
+          const recent: string[] = JSON.parse(localStorage.getItem('recent-novels') || '[]');
+          const recentNovels = recent.map(id => novels.find(n => n.id === id)).filter(Boolean) as NovelSummary[];
+          if (recentNovels.length < 2) return null;
+          return (
+            <div className="mb-6">
+              <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2">最近访问</h3>
+              <div className="flex gap-2 flex-wrap">
+                {recentNovels.slice(0, 5).map(n => (
+                  <button key={n.id} onClick={() => navigate(`/novels/${n.id}`)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-border text-ink-muted hover:text-ink hover:border-accent/30 transition-colors">
+                    📖 {n.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        } catch { return null; }
+      })()}
+
+      {/* Starred filter */}
+      <div className="flex items-center gap-2 mb-4">
+        {(() => {
+          try {
+            const starred: string[] = JSON.parse(localStorage.getItem('starred-novels') || '[]');
+            const hasStarred = novels.some(n => starred.includes(n.id));
+            if (!hasStarred) return null;
+            return (
+              <button
+                onClick={() => {
+                  const el = document.querySelector('select[value=""]');
+                }}
+                className="text-[11px] px-2 py-1 rounded border border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 transition-colors">
+                ⭐ 已收藏 ({starred.filter(id => novels.some(n => n.id === id)).length})
+              </button>
+            );
+          } catch { return null; }
+        })()}
+      </div>
+
+      {(() => {
+        try {
+          const starred: string[] = JSON.parse(localStorage.getItem('starred-novels') || '[]');
+          const favNovels = novels.filter(n => starred.includes(n.id));
+          const restNovels = novels.filter(n => !starred.includes(n.id));
+
+          if (favNovels.length === 0 && restNovels.length === 0) return (
+        <div className="text-center py-24">
+          <div className="text-6xl mb-6 opacity-40">✍️</div>
+          <h3 className="font-heading text-2xl font-semibold text-ink mb-2">开始你的第一部 AI 小说</h3>
+          <p className="text-sm text-ink-muted mb-8 max-w-md mx-auto">从一句话简介到完整小说，AI 负责写作、润色、质检，你只需要做决策</p>
+          <div className="flex gap-3 justify-center">
+            <button className="px-6 py-3 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors font-medium text-base" onClick={() => setShowForm(true)}>🚀 创建小说</button>
+            <button className="px-6 py-3 rounded-lg border border-border text-ink-muted hover:text-ink transition-colors text-base" onClick={() => navigate('/settings')}>⚙ API Key</button>
+          </div>
+        </div>
+          );
+
+          return (
+        <div>
+          {/* Favorites section */}
+          {favNovels.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2">⭐ 收藏</h3>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+                {favNovels
+                  .filter(n => !genreFilter || n.genre === genreFilter)
+                  .sort((a, b) => {
+                    if (sortBy === 'words') return (b.total_words||0) - (a.total_words||0);
+                    if (sortBy === 'chapters') return (b.total_chapters||0) - (a.total_chapters||0);
+                    return 0;
+                  })
+                  .map(n => <NovelCard key={n.id} novel={n}
+                    onDelete={id => setNovels(prev => prev.filter(x => x.id !== id))}
+                    isGenerating={generatingIds.has(n.id)}
+                    onGenerate={id => {
+                      setGeneratingIds(prev => new Set(prev).add(id));
+                      fetch(`/api/novels/${id}/generate`,{method:'POST'}).then(()=>toast.success('已触发')).catch(()=>toast.error('失败')).finally(()=>setGeneratingIds(prev=>{const s=new Set(prev);s.delete(id);return s;}));
+                    }} />)}
+              </div>
+            </div>
+          )}
+
+          {/* All novels */}
+          {restNovels.length > 0 && (
+            <div>
+              {favNovels.length > 0 && <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2 mt-4">全部小说</h3>}
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+                {restNovels
+                  .filter(n => !genreFilter || n.genre === genreFilter)
+                  .sort((a, b) => {
+                    if (sortBy === 'words') return (b.total_words||0) - (a.total_words||0);
+                    if (sortBy === 'chapters') return (b.total_chapters||0) - (a.total_chapters||0);
+                    return 0;
+                  })
+                  .map(n => <NovelCard key={n.id} novel={n}
+                    onDelete={id => setNovels(prev => prev.filter(x => x.id !== id))}
+                    isGenerating={generatingIds.has(n.id)}
+                    onGenerate={id => {
+                      setGeneratingIds(prev => new Set(prev).add(id));
+                      fetch(`/api/novels/${id}/generate`,{method:'POST'}).then(()=>toast.success('已触发')).catch(()=>toast.error('失败')).finally(()=>setGeneratingIds(prev=>{const s=new Set(prev);s.delete(id);return s;}));
+                    }} />)}
+              </div>
+            </div>
+          )}
+        </div>
+          );
+        } catch { return null; }
+      })()}
+
+    </div>
+  );
+}
