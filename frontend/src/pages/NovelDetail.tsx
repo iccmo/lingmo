@@ -467,6 +467,7 @@ export function NovelDetail({ mode }: Props) {
     const allRules = [
       { rule: '用错的比喻才是好比喻。不要写「眼睛像鹰一样锐利」——写有偏差的、让读者记住的比喻。', always: true },
       { rule: '身体比大脑诚实。不要写「他感到紧张」——写胃在收缩、牙在打颤、左眼皮跳了三天。', always: true },
+      { rule: '禁止用破折号做停顿。不要用——强行制造戏剧性。段落之间的过渡靠叙述节奏，不靠标点。全文破折号不超过3个。', always: true },
       { rule: '笔墨必须不匀称。花三百字写一顿饭的味道，用一句话交代死亡。', always: true },
       { rule: '至少一个角色在本章中失去冷静——「明知道不该做但还是做了」的瞬间。', forTension: true },
       { rule: '省略的暴力。角色说「天气不错」，但读者知道他刚刚埋了自己的狗。不说悲伤，悲伤反而最重。', forTension: true },
