@@ -459,30 +459,40 @@ export function NovelDetail({ mode }: Props) {
       }
     } catch {}
 
-    // 9. Literary quality injections — four rules that separate good from great
-    parts.push(`【文学深度注入 · 四条铁律】
+    // 9. Contextual rule rotation — pick 3-5 most relevant rules per chapter
+    const currentCh = (novel?.chapters?.filter((c: any) => c.word_count > 0).length || 0) + 1;
+    const isEarly = currentCh <= 5;
+    const isLate = currentCh >= 20;
 
-1. 对话的30%应该无用。不是说废话——是说只有这两个人才会说的话。一个人说了反话，一个人没听懂，一个人说到一半停了。真实的人不会在对话里交代信息，他们会绕圈子、会撒谎、会咽回去。
+    const allRules = [
+      { rule: '用错的比喻才是好比喻。不要写「眼睛像鹰一样锐利」——写有偏差的、让读者记住的比喻。', always: true },
+      { rule: '身体比大脑诚实。不要写「他感到紧张」——写胃在收缩、牙在打颤、左眼皮跳了三天。', always: true },
+      { rule: '笔墨必须不匀称。花三百字写一顿饭的味道，用一句话交代死亡。', always: true },
+      { rule: '至少一个角色在本章中失去冷静——「明知道不该做但还是做了」的瞬间。', forTension: true },
+      { rule: '省略的暴力。角色说「天气不错」，但读者知道他刚刚埋了自己的狗。不说悲伤，悲伤反而最重。', forTension: true },
+      { rule: '情绪必须错位。葬礼上有人憋笑。中奖后想起不在的人。不可预测的情绪才是真实的。', forTension: true },
+      { rule: '至少有一段话没有功能——不推进情节、不埋伏笔。它只是好看。写光线照在灰尘上的样子。', forCalm: true },
+      { rule: '对话的30%应该无用。真实的人会绕圈子、会撒谎、会说到一半停了。', forCalm: true },
+      { rule: '物即情。不要让角色有情绪——让他们的东西替他们表达。一件穿了三年袖口磨出线的毛衣。', forCalm: true },
+      { rule: '叙事声音必须和灵魂矛盾一致。沉默↔表达就克制留白，肉体↔精神就感官粗粝。', forEarly: true },
+      { rule: '人可以反复犯同一个错。角色不需要每次都成长。有时候不变比改变更像人。', forLate: true },
+      { rule: '理念即角色。某些东西应该比人物更鲜活——一座图书馆、一盏不灭的灯承载的主题比对话更重。', forLate: true },
+    ];
 
-2. 至少一个角色在本章中失去冷静。不是愤怒——是那种「明知道不该做但还是做了」的瞬间。理性的崩塌比理性的胜利更有力量。
+    const isTension = currentCh % 3 === 0 || currentCh % 5 === 0;
+    const selected = allRules.filter(r => {
+      if (r.always) return true;
+      if (r.forEarly && isEarly) return true;
+      if (r.forLate && isLate) return true;
+      if (r.forTension && isTension) return true;
+      if (r.forCalm && !isTension) return true;
+      return false;
+    });
 
-3. 叙事声音必须和灵魂矛盾一致。如果灵魂是沉默↔表达，叙事就该克制留白不解释。如果是肉体↔精神，叙事就该感官粗粝身体化。不要用一个通用的声音写所有故事。
+    const shuffled = selected.sort(() => Math.random() - 0.5).slice(0, Math.min(5, selected.length));
+    parts.push(`【本章技法 · ${shuffled.length}条】\n${shuffled.map((r, i) => `${i + 1}. ${r.rule}`).join('\n\n')}`);
 
-4. 至少有一段话没有功能——不推进情节、不塑造人物、不埋伏笔。它只是好看。写光线照在灰尘上的样子。写一杯茶凉了的过程。写一个人走路时的节奏。这段文字存在的唯一理由是：读者会在心里记住它。`);
-
-    parts.push(`【人味注入 · 五条法则】
-
-1. 用错的比喻才是好比喻。不要写「他的眼睛像鹰一样锐利」——写你的语文老师会皱眉、但读者会记住的比喻。余华写「他的眼睛像两颗煮过头的鹌鹑蛋」。精准的比喻是词典，有偏差的比喻才是文学。
-
-2. 笔墨必须不匀称。在无关紧要的地方浪费文字——花三百字写一顿饭的味道，然后用一句话交代死亡。读者会记住那顿饭，不会记住「他是被刺死的」。
-
-3. 情绪必须错位。不要在悲剧场景写悲伤——写葬礼上有人憋笑。不要在中奖场景写喜悦——写主角突然想起一个已经不在的人。不可预测的情绪才是真实的情绪。
-
-4. 身体比大脑诚实。不要写「他感到紧张」——写胃在收缩、牙在打颤但他不觉得冷、左眼皮跳了三天。身体自己会说话，大脑听不懂。
-
-5. 人可以反复犯同一个错。角色不需要每次都成长。福贵在整本《活着》里从没变聪明过。祥子到死都在买那辆车。有时候，不变——比改变更像人。`);
-
-    // 11. Style reference chapters
+    // 10. Style reference chapters
     try {
       const refs: number[] = JSON.parse(localStorage.getItem(`style-refs-${novelId}`) || '[]');
       if (refs.length > 0) {
@@ -490,15 +500,10 @@ export function NovelDetail({ mode }: Props) {
       }
     } catch {}
 
-    parts.push(`【大师技法注入 · 三条】
+    // 11. User direction (appended last so it takes precedence)
+    if (userDirection) parts.push(`【本章方向】${userDirection}`);
 
-1. 省略的暴力。不要写情绪——写情绪在人身上留下的痕迹。角色说「天气不错」，但读者知道他刚刚埋了自己的狗。他没说悲伤，悲伤反而最重。在关键情感时刻，至少留白一次。不说出来，让读者自己发现。
-
-2. 物即情。不要让角色有情绪——让他们的东西替他们表达。一件穿了三年、袖口磨出线的毛衣，比「他很孤独」有力一百倍。在关键情感时刻，用一个物件代替一句心理描写。
-
-3. 理念即角色。你创造的世界里，某些东西应该比人物更鲜活。一座图书馆、一盏不灭的灯、一个反复出现的门牌号——它们承载的主题比任何对话都重。让世界本身说话。`);
-
-    // 12. User direction (appended last so it takes precedence)
+    return parts.join('\n\n');
     if (userDirection) parts.push(`【本章方向】${userDirection}`);
 
     return parts.join('\n\n');
