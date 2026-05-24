@@ -1431,10 +1431,7 @@ export function NovelDetail({ mode }: Props) {
         }}
       />
 
-      <AudioPlayer
-        novelId={novel.id}
-        chapters={novel.chapters.map((c: any) => ({ number: c.number, title: c.title, word_count: c.word_count || 0 }))}
-      />
+      <AudioPlayer />
 
       <ScrollToTop />
 

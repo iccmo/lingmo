@@ -2400,6 +2400,37 @@ def update_provider(provider_id: str, data: dict):
     return {"ok": True}
 
 @app.post("/api/providers/{provider_id}/test")
+@app.get("/api/novels/{novel_id}/chapters/{chapter_num}/tts")
+async def chapter_tts(novel_id: str, chapter_num: int, voice: str = "zh-CN-XiaoxiaoNeural", rate: str = "+0%"):
+    """Stream chapter audio using Edge TTS (natural Chinese voices)."""
+    novel = db.get_novel(novel_id)
+    if not novel: raise HTTPException(404)
+    ch = db.get_chapter(novel_id, chapter_num)
+    if not ch: raise HTTPException(404)
+    content = ch.get("content", "") or ch.get("summary", "")
+    if not content: raise HTTPException(400, "No content")
+    # Clean content for TTS
+    text = content.replace("#", "").replace("*", "").replace("_", "").replace(">", "").replace("[", "").replace("]", "")
+    text = text[:5000]  # Limit for reasonable response time
+
+    try:
+        import edge_tts, asyncio, tempfile, os
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        # Save to temp file
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        tmp_path = tmp.name
+        tmp.close()
+        await communicate.save(tmp_path)
+
+        from fastapi.responses import FileResponse
+        return FileResponse(tmp_path, media_type="audio/mpeg",
+                          headers={"Content-Disposition": f"inline; filename=ch{chapter_num}.mp3"})
+    except ImportError:
+        raise HTTPException(500, "edge-tts not installed. Run: pip install edge-tts")
+    except Exception as e:
+        raise HTTPException(500, f"TTS failed: {str(e)[:100]}")
+
+@app.post("/api/providers/{provider_id}/test")
 def test_provider(provider_id: str):
     """Test a provider's API key by making a minimal completion call."""
     provider = db.get_provider(provider_id)
