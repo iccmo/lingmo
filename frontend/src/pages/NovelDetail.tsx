@@ -60,6 +60,11 @@ export function NovelDetail({ mode }: Props) {
   const [editingNotes, setEditingNotes] = useState(false);
   const [causalInput, setCausalInput] = useState('');
   const [showCausalInput, setShowCausalInput] = useState(false);
+  // Session tracking
+  const [sessionChapters, setSessionChapters] = useState(0);
+  const [sessionStartTime] = useState(Date.now());
+  const [sessionWords, setSessionWords] = useState(0);
+  const [sessionScores, setSessionScores] = useState<number[]>([]);
   const [showAutoConfig, setShowAutoConfig] = useState(false);
   const [autoConfig, setAutoConfig] = useState(() => ({
     chaptersPerRun: 3,
@@ -242,6 +247,9 @@ export function NovelDetail({ mode }: Props) {
           if (s.status === 'complete') {
             toast.success(s.message);
             setJustCompleted(true);
+            // Track session stats
+            setSessionChapters(prev => prev + 1);
+            if (s.overall) setSessionScores(prev => [...prev, s.overall].slice(-20));
             // Save quality breakdown
             if (s.quality_detail) {
               try {
@@ -985,6 +993,40 @@ export function NovelDetail({ mode }: Props) {
       {genStatus && <GenerationPipeline genStatus={genStatus} onRetry={handleRetry} />}
 
       {/* Post-generation guidance */}
+      {/* Session summary */}
+      {sessionChapters >= 2 && !genStatus && !justCompleted && (
+        <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-accent-soft/20 to-transparent border border-accent/10 text-xs animate-[fadeSlideIn_0.3s_ease-out]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-ink">📊 本次写作会话</span>
+            <button onClick={() => { setSessionChapters(0); setSessionScores([]); }}
+              className="text-[10px] text-ink-muted hover:text-ink">清除</button>
+          </div>
+          <div className="grid grid-cols-4 gap-3 text-center">
+            <div>
+              <div className="font-heading text-lg font-bold text-ink">{sessionChapters}</div>
+              <div className="text-[9px] text-ink-muted">生成章节</div>
+            </div>
+            <div>
+              <div className="font-heading text-lg font-bold text-ink">{(() => {
+                const elapsed = Math.round((Date.now() - sessionStartTime) / 60000);
+                return elapsed < 60 ? `${elapsed}分钟` : `${Math.floor(elapsed/60)}h${elapsed%60}m`;
+              })()}</div>
+              <div className="text-[9px] text-ink-muted">已用时间</div>
+            </div>
+            <div>
+              <div className={`font-heading text-lg font-bold ${sessionScores.length > 0 ? (sessionScores.reduce((a,b)=>a+b,0)/sessionScores.length >= 0.8 ? 'text-emerald-500' : 'text-amber-500') : 'text-ink'}`}>
+                {sessionScores.length > 0 ? (sessionScores.reduce((a,b)=>a+b,0)/sessionScores.length).toFixed(2) : '—'}
+              </div>
+              <div className="text-[9px] text-ink-muted">均质量</div>
+            </div>
+            <div>
+              <div className="font-heading text-lg font-bold text-ink">{sessionScores.filter(s => s >= 0.8).length}/{sessionScores.length}</div>
+              <div className="text-[9px] text-ink-muted">A级率</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {justCompleted && !genStatus && (
         <div className="mb-4 space-y-2">
           <div className="p-3 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 flex items-center gap-3 text-xs animate-[fadeSlideIn_0.3s_ease-out]">
