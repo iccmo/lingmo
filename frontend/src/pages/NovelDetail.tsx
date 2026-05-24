@@ -13,6 +13,8 @@ import { PlatformChecklist } from 'src/components/novels/PlatformChecklist';
 import { WordSprint } from 'src/components/novels/WordSprint';
 import { PomodoroTimer } from 'src/components/novels/PomodoroTimer';
 import { ChapterDNA } from 'src/components/novels/ChapterDNA';
+import { DialogueRatio } from 'src/components/novels/DialogueRatio';
+import { PacingCurve } from 'src/components/novels/PacingCurve';
 import { EmotionRecipe } from 'src/components/novels/EmotionRecipe';
 import { WritingDigest } from 'src/components/novels/WritingDigest';
 import { PlotNetwork } from 'src/components/novels/PlotNetwork';
@@ -1103,6 +1105,12 @@ export function NovelDetail({ mode }: Props) {
 
             {/* Emotional Arc */}
             <div id="section-arc"><EmotionalArc chapters={novel.chapters} /></div>
+
+            {/* Pacing Curve */}
+            <div id="section-pacing"><PacingCurve chapters={novel.chapters} /></div>
+
+            {/* Dialogue / Narration Ratio */}
+            <div id="section-dialogue"><DialogueRatio chapters={novel.chapters} /></div>
 
             {/* Emotion Recipe */}
             <div id="section-emotion"><EmotionRecipe chapters={novel.chapters} /></div>

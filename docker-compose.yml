@@ -7,6 +7,12 @@ services:
       - ./data:/app/data
     env_file:
       - .env
+    # Cloud backup to S3-compatible storage (uncomment and set values to enable)
+    # environment:
+    #   S3_ENDPOINT: https://your-s3-endpoint.example.com
+    #   S3_BUCKET: novel-writer-backups
+    #   S3_ACCESS_KEY: your-access-key
+    #   S3_SECRET_KEY: your-secret-key
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/status"]
       interval: 30s

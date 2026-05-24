@@ -110,12 +110,14 @@ export function Dashboard() {
   const [importTitle, setImportTitle] = useState('');
   const [importGenre, setImportGenre] = useState('玄幻');
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [backupStatus, setBackupStatus] = useState<{ configured: boolean; last_backup: string | null; last_backup_key: string | null; last_backup_size: number | null } | null>(null);
 
   useEffect(() => {
-    Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json()), api.costs.summary().catch(() => null)])
-      .then(([n, s, providers, costs]) => {
+    Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json()), api.costs.summary().catch(() => null), fetch('/api/backup/status').then(r => r.json()).catch(() => null)])
+      .then(([n, s, providers, costs, backup]) => {
         setNovels(n); setStatus(s);
         setCostSummary(costs);
+        setBackupStatus(backup);
         const hasKey = providers?.some((p: {api_key: string}) => p.api_key !== '');
         if (!hasKey) toast.info('💡 前往设置页配置 API Key 即可开始创作');
       })
@@ -309,6 +311,26 @@ export function Dashboard() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+          {/* Cloud backup status */}
+          {backupStatus && (
+            <div
+              className="bg-paper border border-border rounded-lg px-5 py-3 min-w-[100px]"
+              title={backupStatus.configured
+                ? `最近备份: ${backupStatus.last_backup || '无'}`
+                : '未配置云备份（设置 S3_* 环境变量启用）'}
+            >
+              <div className="font-heading text-[15px] font-semibold text-sky-500 leading-none">
+                ☁️ 云备份
+              </div>
+              <div className="text-[11px] text-ink-muted mt-1">
+                {backupStatus.configured
+                  ? backupStatus.last_backup
+                    ? `上次: ${new Date(backupStatus.last_backup).toLocaleDateString('zh-CN')}`
+                    : '已配置 · 无记录'
+                  : '未配置'}
+              </div>
             </div>
           )}
         </div>

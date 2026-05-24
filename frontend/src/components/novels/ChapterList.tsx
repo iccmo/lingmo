@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
+const AUTO_SAVE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_AUTO_SAVES = 10;
 import { ContextMenu } from 'src/components/ui/context-menu';
 import { MobileReadingMode } from 'src/components/novels/MobileReadingMode';
 import { ChapterDiff } from 'src/components/novels/ChapterDiff';
 import { AudioTextSync } from 'src/components/novels/AudioTextSync';
 import { SceneEditor } from 'src/components/novels/SceneEditor';
+import { WordFrequency } from 'src/components/novels/WordFrequency';
 import { useAudio } from 'src/lib/AudioContext';
 import type { ChapterMeta } from 'src/types';
 
@@ -78,6 +81,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   const [attentionFilter, setAttentionFilter] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
+  const editContentRef = useRef(editContent);
+  // Keep ref in sync with state
+  useEffect(() => { editContentRef.current = editContent; }, [editContent]);
   const [saving, setSaving] = useState(false);
   const [sceneView, setSceneView] = useState(false);
   const [refineTarget, setRefineTarget] = useState('');
@@ -86,6 +92,8 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   const [proofreading, setProofreading] = useState(false);
   const [proofreadIssues, setProofreadIssues] = useState<{ type: string; original: string; suggestion: string; reason: string }[]>([]);
   const [showProofread, setShowProofread] = useState(false);
+  // Word frequency analysis
+  const [showWordFreq, setShowWordFreq] = useState(false);
   // Chapter approval status: 'draft' | 'approved' | 'revise'
   const [approvals, setApprovals] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem(`approvals-${novelId}`) || '{}'); }
@@ -164,6 +172,34 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   function enterEditMode() {
     setEditContent(content);
     setEditMode(true);
+    // Check for existing auto-saves and offer to restore
+    if (!expanded) return;
+    try {
+      const prefix = `auto-save-${novelId}-${expanded}-`;
+      const saves: { key: string; content: string; timestamp: number }[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) {
+          const val = localStorage.getItem(key);
+          if (val) {
+            const ts = parseInt(key.replace(prefix, ''), 10);
+            if (!isNaN(ts)) saves.push({ key, content: val, timestamp: ts });
+          }
+        }
+      }
+      if (saves.length > 0) {
+        saves.sort((a, b) => b.timestamp - a.timestamp);
+        const latest = saves[0];
+        const timeAgo = Date.now() - latest.timestamp;
+        const agoStr = timeAgo < 60000 ? '刚刚'
+          : timeAgo < 3600000 ? `${Math.floor(timeAgo / 60000)} 分钟前`
+          : `${Math.floor(timeAgo / 3600000)} 小时前`;
+        if (confirm(`检测到未保存的草稿（${agoStr}），是否恢复？`)) {
+          setEditContent(latest.content);
+          toast.success('已恢复自动保存的草稿');
+        }
+      }
+    } catch { /* skip auto-save restore on error */ }
   }
 
   function saveNotes() {
@@ -257,6 +293,46 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     setSelectMode(false);
     setSelected(new Set());
   }, [chapters.length]);
+
+  // Auto-save timer: periodic snapshots while editMode is active
+  useEffect(() => {
+    if (!editMode || !expanded) return;
+    const saveSnapshot = () => {
+      const currentContent = editContentRef.current;
+      if (!currentContent) return;
+      try {
+        const now = Date.now();
+        const key = `auto-save-${novelId}-${expanded}-${now}`;
+        localStorage.setItem(key, currentContent);
+
+        // Enforce max auto-saves per chapter: keep latest 10, delete oldest
+        const prefix = `auto-save-${novelId}-${expanded}-`;
+        const allKeys: { key: string; ts: number }[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(prefix)) {
+            const ts = parseInt(k.replace(prefix, ''), 10);
+            if (!isNaN(ts)) allKeys.push({ key: k, ts });
+          }
+        }
+        if (allKeys.length > MAX_AUTO_SAVES) {
+          allKeys.sort((a, b) => a.ts - b.ts); // oldest first
+          const toDelete = allKeys.slice(0, allKeys.length - MAX_AUTO_SAVES);
+          for (const item of toDelete) {
+            localStorage.removeItem(item.key);
+          }
+        }
+        toast('💾 已自动保存', { description: `第${expanded}章快照已保存`, duration: 2000 });
+      } catch { /* localStorage may be full */ }
+    };
+    const timer = setInterval(saveSnapshot, AUTO_SAVE_INTERVAL_MS);
+    // Save once after 2s on first enter
+    const initialTimer = setTimeout(saveSnapshot, 2000);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(initialTimer);
+    };
+  }, [editMode, expanded, novelId]);
 
   // Auto-scroll to last-read chapter on mount, or auto-expand from MiniPlayer
   useEffect(() => {
@@ -995,6 +1071,13 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                   </button>
                 )}
                 <span className="text-[10px] text-ink-subtle">|</span>
+                {content && content !== '正文尚未生成' && (
+                  <button onClick={e => { e.stopPropagation(); setShowWordFreq(!showWordFreq); }}
+                    className={`text-[10px] transition-colors ${showWordFreq ? 'text-accent font-medium' : 'text-ink-subtle hover:text-accent'}`}>
+                    📊 词频
+                  </button>
+                )}
+                <span className="text-[10px] text-ink-subtle">|</span>
                 <button onClick={e => { e.stopPropagation(); setExpanded(null); }}
                   className="text-[10px] text-ink-subtle hover:text-ink">
                   收起
@@ -1092,6 +1175,24 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Word Frequency Analysis */}
+              {showWordFreq && content && content !== '正文尚未生成' && (
+                <div className="mt-3 p-3 rounded-lg bg-paper/50 border border-border animate-[fadeSlideIn_0.2s_ease-out]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-ink">
+                      📊 词频分析 {expanded ? `— 第${expanded}章` : ''}
+                    </span>
+                    <button
+                      onClick={e => { e.stopPropagation(); setShowWordFreq(false); }}
+                      className="text-[10px] text-ink-muted hover:text-ink"
+                    >
+                      收起
+                    </button>
+                  </div>
+                  <WordFrequency content={content} label={expanded ? `第${expanded}章` : undefined} />
                 </div>
               )}
 

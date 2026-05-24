@@ -4322,6 +4322,118 @@ def _detect_chapters_from_text(text: str) -> list[tuple[str, str]]:
     return chapters
 
 
+# ═══════════════ Cloud Backup ═══════════════
+
+import datetime as dt
+import io as _io
+import os
+import zipfile as _zipfile
+
+_BACKUP_STATUS_FILE = Path("data") / ".backup_status.json"
+
+
+def _read_backup_status() -> dict:
+    """Read last backup status from disk."""
+    try:
+        if _BACKUP_STATUS_FILE.exists():
+            return json.loads(_BACKUP_STATUS_FILE.read_text())
+    except Exception:
+        pass
+    return {}
+
+
+def _write_backup_status(status: dict) -> None:
+    """Write last backup status to disk."""
+    try:
+        _BACKUP_STATUS_FILE.write_text(json.dumps(status, default=str))
+    except Exception:
+        pass
+
+
+@app.post("/api/backup/cloud")
+def cloud_backup():
+    """Create a timestamped zip of data/novel_writer.db and upload to S3-compatible storage.
+
+    Requires environment variables: S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY.
+    Returns {"status": "not_configured"} if any are missing.
+    """
+    s3_endpoint = os.environ.get("S3_ENDPOINT", "").strip()
+    s3_bucket = os.environ.get("S3_BUCKET", "").strip()
+    s3_access_key = os.environ.get("S3_ACCESS_KEY", "").strip()
+    s3_secret_key = os.environ.get("S3_SECRET_KEY", "").strip()
+
+    if not all([s3_endpoint, s3_bucket, s3_access_key, s3_secret_key]):
+        return {"status": "not_configured"}
+
+    db_path = Path("data/novel_writer.db")
+    if not db_path.exists():
+        raise HTTPException(500, "Database file not found at data/novel_writer.db")
+
+    now = dt.datetime.now()
+    date_str = now.strftime("%Y-%m-%d")
+    key = f"backup-{date_str}.zip"
+
+    try:
+        import boto3
+
+        # Create zip in memory
+        buf = _io.BytesIO()
+        with _zipfile.ZipFile(buf, "w", _zipfile.ZIP_DEFLATED) as zf:
+            zf.write(db_path, arcname="novel_writer.db")
+        buf.seek(0)
+        data = buf.read()
+        size = len(data)
+
+        # Upload to S3-compatible storage
+        client = boto3.client(
+            "s3",
+            endpoint_url=s3_endpoint,
+            aws_access_key_id=s3_access_key,
+            aws_secret_access_key=s3_secret_key,
+        )
+        client.put_object(Bucket=s3_bucket, Key=key, Body=data, ContentType="application/zip")
+
+        # Keep last 30 backups, delete older ones
+        resp = client.list_objects_v2(Bucket=s3_bucket, Prefix="backup-")
+        if resp.get("Contents"):
+            backups = sorted(resp["Contents"], key=lambda o: o["Key"], reverse=True)
+            for obj in backups[30:]:
+                client.delete_object(Bucket=s3_bucket, Key=obj["Key"])
+
+        # Persist backup status
+        status = {
+            "last_backup": now.isoformat(),
+            "last_backup_key": key,
+            "last_backup_size": size,
+            "configured": True,
+        }
+        _write_backup_status(status)
+
+        return {"status": "ok", "key": key, "size": size}
+    except ImportError:
+        raise HTTPException(500, "boto3 not installed. Run: pip install boto3")
+    except Exception as e:
+        raise HTTPException(500, f"Backup failed: {str(e)[:300]}")
+
+
+@app.get("/api/backup/status")
+def backup_status():
+    """Return whether cloud backup is configured and the last backup time."""
+    s3_endpoint = os.environ.get("S3_ENDPOINT", "").strip()
+    s3_bucket = os.environ.get("S3_BUCKET", "").strip()
+    s3_access_key = os.environ.get("S3_ACCESS_KEY", "").strip()
+    s3_secret_key = os.environ.get("S3_SECRET_KEY", "").strip()
+    configured = all([s3_endpoint, s3_bucket, s3_access_key, s3_secret_key])
+
+    status = _read_backup_status()
+    return {
+        "configured": configured,
+        "last_backup": status.get("last_backup"),
+        "last_backup_key": status.get("last_backup_key"),
+        "last_backup_size": status.get("last_backup_size"),
+    }
+
+
 # ═══════════════ Static ═══════════════
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
