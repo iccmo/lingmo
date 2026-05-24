@@ -22,6 +22,8 @@ export function AudioPlayer() {
   const [progress, setProgress] = useState(0);
   const [voice, setVoice] = useState(() => localStorage.getItem('tts-voice') || 'zh-CN-XiaoxiaoNeural');
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const sleepTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const [sleepTimer, setSleepTimer] = useState(0); // minutes, 0 = off
 
   // Draggable
   const [pos, setPos] = useState({ x: typeof window !== 'undefined' ? window.innerWidth - 320 : 900, y: 200 });
@@ -62,7 +64,8 @@ export function AudioPlayer() {
 
   function playChapter(ch: ChapterInfo, seekTo = 0) {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    const audio = new Audio(`/api/novels/${ch.novelId}/chapters/${ch.number}/tts?voice=${voice}&rate=${speed > 1 ? '+' + Math.round((speed-1)*100) + '%' : '+0%'}`);
+    const rateParam = speed === 1.0 ? '+0%' : speed > 1 ? `+${Math.round((speed-1)*100)}%` : `${Math.round((speed-1)*100)}%`;
+    const audio = new Audio(`/api/novels/${ch.novelId}/chapters/${ch.number}/tts?voice=${voice}&rate=${rateParam}`);
     audioRef.current = audio;
     audio.currentTime = seekTo;
     audio.onloadedmetadata = () => { setCurrent(ch); setPlaying(true); setPaused(false); };
@@ -92,6 +95,21 @@ export function AudioPlayer() {
   function stop() {
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     setPlaying(false); setPaused(false); setProgress(0);
+    cancelSleepTimer();
+  }
+
+  function startSleepTimer(mins: number) {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimer(mins);
+    sleepTimerRef.current = setTimeout(() => {
+      toast.info('⏰ 定时结束，已暂停');
+      if (audioRef.current) audioRef.current.pause();
+      setPaused(true); setSleepTimer(0);
+    }, mins * 60000);
+  }
+  function cancelSleepTimer() {
+    if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+    setSleepTimer(0);
   }
 
   function skipChapter(dir: 1 | -1) {
@@ -153,9 +171,14 @@ export function AudioPlayer() {
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-card border border-border rounded-full shadow-xl px-4 py-2 flex items-center gap-3 text-xs animate-[fadeSlideIn_0.2s_ease-out]"
         style={{ userSelect: 'none' }}>
         <span className="text-ink-muted">🎧</span>
-        <span className="text-ink font-medium truncate max-w-[200px]">{current.novelTitle} · Ch{current.number}</span>
-        <button onClick={togglePause} className="text-accent">{paused ? '▶' : '⏸'}</button>
-        <button onClick={() => setMini(false)} className="text-ink-muted">展开</button>
+        <div className="flex flex-col min-w-0">
+          <span className="text-ink font-medium truncate max-w-[180px]">{current.novelTitle} · Ch{current.number}</span>
+          <div className="h-0.5 bg-border rounded-full mt-0.5 w-full">
+            <div className="h-full bg-accent rounded-full transition-all" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+        <button onClick={togglePause} className="text-accent shrink-0">{paused ? '▶' : '⏸'}</button>
+        <button onClick={() => setMini(false)} className="text-ink-muted shrink-0">展开</button>
       </div>
     );
   }
@@ -206,6 +229,18 @@ export function AudioPlayer() {
             </div>
           </div>
         )}
+
+        {/* Sleep timer */}
+        <div className="flex items-center gap-1 justify-center">
+          <span className="text-[9px] text-ink-muted">⏰</span>
+          {[15, 30, 45, 60].map(m => (
+            <button key={m} onClick={() => sleepTimer === m ? cancelSleepTimer() : startSleepTimer(m)}
+              className={`text-[9px] px-1.5 py-0.5 rounded ${sleepTimer === m ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}>
+              {m}min
+            </button>
+          ))}
+          {sleepTimer > 0 && <span className="text-[9px] text-amber-500">{sleepTimer}分钟后暂停</span>}
+        </div>
 
         {/* Controls */}
         <div className="flex items-center justify-center gap-2">

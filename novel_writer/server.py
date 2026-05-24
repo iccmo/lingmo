@@ -2401,7 +2401,7 @@ def update_provider(provider_id: str, data: dict):
 
 @app.post("/api/providers/{provider_id}/test")
 @app.get("/api/novels/{novel_id}/chapters/{chapter_num}/tts")
-async def chapter_tts(novel_id: str, chapter_num: int, voice: str = "zh-CN-XiaoxiaoNeural", rate: str = "+0%"):
+async def chapter_tts(novel_id: str, chapter_num: int, voice: str = "zh-CN-XiaoxiaoNeural", rate: str = "+0%", pitch: str = "+0Hz"):
     """Stream chapter audio using Edge TTS (natural Chinese voices)."""
     novel = db.get_novel(novel_id)
     if not novel: raise HTTPException(404)
