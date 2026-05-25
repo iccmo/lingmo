@@ -1339,6 +1339,10 @@ def _run_generation(novel_id: str):
         soul_injection = _gen_directions.pop(novel_id + "_soul", "")
         if soul_injection:
             author_direction = soul_injection + ("\n\n作者方向：" + author_direction if author_direction else "")
+        # 【核心】注入约束 —— 数据库写小说，AI只是笔
+        constraints = _build_constraints(novel_id, chapter.number)
+        if constraints and constraints != "无特定约束，自由创作":
+            author_direction = f"【本章约束——必须遵守】\n{constraints}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
         _set_status(novel_id, "generating", "正在生成候选版本…（约40秒）", 20)
         chapter, quality = gen.batch_generate(state, n=2, rag_context=rag_context, outline=outline, style=style, author_input=author_direction)
         gen_duration = (_time.time() - t0) * 1000
@@ -7172,4 +7176,82 @@ def run_agent_pipeline(novel_id: str, background: BackgroundTasks, data: dict = 
         "brief": brief[:200] if brief else "(skipped)",
         "outline": outline[:200] if outline else "(skipped)",
     }
+
+
+# ═══════════════ Core: Constraint Builder (文档 §2-3) ═══════════════
+
+def _build_constraints(novel_id: str, next_chapter: int) -> str:
+    """
+    生成前查故事圣经，输出约束块注入 prompt。
+    数据库写小说，AI 只是笔。
+    """
+    constraints = []
+
+    # ── 角色约束 ──
+    chars = db.get_character_state(novel_id)
+    latest = {}
+    for c in chars:
+        latest[c['char_name']] = c  # 每角色取最新状态
+
+    for name, c in list(latest.items())[-8:]:
+        parts = [name]
+        if c.get('physical_state') and c['physical_state'] != '健康':
+            parts.append(c['physical_state'])
+            if '伤' in str(c['physical_state']) or '残' in str(c['physical_state']):
+                parts.append('不能使用该部位')
+            if c['physical_state'] == '死亡':
+                parts.append('不能出场（除非幻觉/回忆）')
+        if c.get('emotion'):
+            emo = c['emotion']
+            if '愤怒' in str(emo):
+                parts.append('不会示弱或原谅')
+            if '悲伤' in str(emo) or '绝望' in str(emo):
+                parts.append('不会主动采取行动')
+        if c.get('location'):
+            parts.append(f"当前在{c['location']}")
+        if len(parts) > 1:
+            constraints.append(' - '.join(parts))
+
+    # ── 伏笔约束 ──
+    fs = db.get_active_foreshadowing(novel_id)
+    overdue = [f for f in fs if f.get('status') == 'overdue' or
+               (f.get('due_by_chapter') and int(f.get('due_by_chapter', 0)) <= next_chapter)]
+    if overdue:
+        constraints.append(f"⚠️ {len(overdue)} 个伏笔需在本章回收：")
+        for f in overdue[:3]:
+            constraints.append(f"  - 必须回收 #{f.get('id','?')}「{f.get('description','')[:60]}」")
+    elif fs:
+        constraints.append(f"📌 {len(fs)} 个活跃伏笔，本章可暗示但不需回收")
+
+    # ── 代价约束 ──
+    costs = db.get_cost_ledger(novel_id)
+    gains = len([e for e in costs if e.get('gain')])
+    losses = len([e for e in costs if e.get('loss')])
+    if gains > losses + 1:
+        constraints.append(f"⚖️ 获得 {gains} 次，失去 {losses} 次——本章需要一次失去来平衡代价")
+    elif losses > gains + 1:
+        constraints.append(f"⚖️ 失去 {losses} 次，获得 {gains} 次——本章需要一次获得来避免过于沉重")
+
+    # ── 冰山约束（不说之书） ──
+    unsaid = db.get_unsaid(novel_id)
+    if unsaid:
+        constraints.append(f"🧊 {len(unsaid)} 条隐藏真相——AI 必须知道但不能在正文写出")
+        for u in unsaid[-5:]:
+            constraints.append(f"  - 🔒 {u['entry'][:80]}")
+
+    # ── 世界观约束 ──
+    world = db.get_world_state(novel_id)
+    broken = [w for w in world if w.get('is_broken')]
+    if broken:
+        for w in broken[-3:]:
+            constraints.append(f"🌍 规则「{w.get('rule_name','?')}」曾被破坏——确保本章不重复破坏")
+
+    # ── 对位约束（待激活的线） ──
+    tl = db.get_timeline(novel_id)
+    if len(tl) > 3:
+        relay = len([c for c in chars if c.get('emotion')]) / max(1, len(tl))
+        if relay < 0.2:
+            constraints.append("📖 关系线长期停滞——本章应推进至少一个角色关系变化")
+
+    return "\n".join(constraints) if constraints else "无特定约束，自由创作"
 
