@@ -23,6 +23,7 @@ import { SoulWorkshop } from 'src/components/novels/SoulWorkshop';
 import { CharacterSoul } from 'src/components/novels/CharacterSoul';
 import { CharacterGraph } from 'src/components/novels/CharacterGraph';
 import { StoryBibleView } from 'src/components/novels/StoryBibleView';
+import { WriterStatusBar } from 'src/components/novels/WriterStatusBar';
 import { AgentDashboard } from 'src/components/novels/AgentDashboard';
 import { UnsaidPanel } from 'src/components/novels/UnsaidPanel';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
@@ -1682,7 +1683,10 @@ export function NovelDetail({ mode }: Props) {
       </div>
 
       <div id="section-chapters">
-        <h2 className="font-heading text-xl font-semibold text-ink mb-3">章节目录</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-heading text-xl font-semibold text-ink">章节目录</h2>
+          <WriterStatusBar novelId={novel.id} />
+        </div>
         <ChapterList chapters={novel.chapters} novelId={novel.id} onDelete={handleDeleteChapter} />
       </div>
 
