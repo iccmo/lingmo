@@ -196,6 +196,17 @@ export function MiniPlayer() {
   const CIRC = { size: 56, stroke: 3, r: 24 };
   const circLen = 2 * Math.PI * CIRC.r;
 
+  // Reopen FAB — always show if closed, regardless of current
+  if (!visible) {
+    return (
+      <button onClick={() => setVisible(true)}
+        className="fixed z-50 bottom-6 right-6 w-10 h-10 rounded-full bg-accent text-white shadow-lg flex items-center justify-center text-lg hover:bg-accent-hover hover:scale-105 transition-all">
+        🎧
+      </button>
+    );
+  }
+
+  // Need a current track for anything else
   if (!current) return null;
 
   // Collapsed pill
@@ -210,14 +221,6 @@ export function MiniPlayer() {
         <button onClick={(e) => { e.stopPropagation(); togglePause(); }} className="text-accent shrink-0">{paused ? '▶' : '⏸'}</button></>}
         <button onClick={(e) => { e.stopPropagation(); setVisible(false); }} className="text-[9px] text-ink-subtle hover:text-red-500">✕</button>
       </div>
-    );
-  }
-
-  // Reopen FAB
-  if (!visible) {
-    return (
-      <button onClick={() => setVisible(true)}
-        className="fixed z-50 bottom-6 right-6 w-10 h-10 rounded-full bg-accent text-white shadow-lg flex items-center justify-center text-lg hover:bg-accent-hover hover:scale-105 transition-all">🎧</button>
     );
   }
 
