@@ -15,16 +15,16 @@ import { MiniPlayer } from 'src/components/novels/MiniPlayer';
 import type { AppMode } from 'src/types';
 
 // Lazy-loaded routes
-const NovelDetail = lazy(() => import('src/pages/NovelDetail'));
-const Settings = lazy(() => import('src/pages/Settings'));
-const Logs = lazy(() => import('src/pages/Logs'));
-const MemoryBank = lazy(() => import('src/pages/MemoryBank'));
-const Editor = lazy(() => import('src/pages/Editor'));
-const WorldEditor = lazy(() => import('src/pages/WorldEditor'));
-const Outline = lazy(() => import('src/pages/Outline'));
-const Foreshadowing = lazy(() => import('src/pages/Foreshadowing'));
-const Stats = lazy(() => import('src/pages/Stats'));
-const ListenPage = lazy(() => import('src/pages/ListenPage'));
+const NovelDetail = lazy(() => import('src/pages/NovelDetail').then(m => ({ default: m.NovelDetail })));
+const Settings = lazy(() => import('src/pages/Settings').then(m => ({ default: m.Settings })));
+const Logs = lazy(() => import('src/pages/Logs').then(m => ({ default: m.Logs })));
+const MemoryBank = lazy(() => import('src/pages/MemoryBank').then(m => ({ default: m.MemoryBank })));
+const Editor = lazy(() => import('src/pages/Editor').then(m => ({ default: m.Editor })));
+const WorldEditor = lazy(() => import('src/pages/WorldEditor').then(m => ({ default: m.WorldEditor })));
+const Outline = lazy(() => import('src/pages/Outline').then(m => ({ default: m.Outline })));
+const Foreshadowing = lazy(() => import('src/pages/Foreshadowing').then(m => ({ default: m.Foreshadowing })));
+const Stats = lazy(() => import('src/pages/Stats').then(m => ({ default: m.Stats })));
+const ListenPage = lazy(() => import('src/pages/ListenPage').then(m => ({ default: m.ListenPage })));
 
 function PageLoader() {
   return (
