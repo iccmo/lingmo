@@ -374,3 +374,12 @@ CREATE TABLE IF NOT EXISTS consistency_log (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_consistency_novel ON consistency_log(novel_id, chapter_num);
+
+-- V12: Unsaid Book — hidden truths the author knows but the text never states
+CREATE TABLE IF NOT EXISTS unsaid_book (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id    TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    entry       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_unsaid_novel ON unsaid_book(novel_id);

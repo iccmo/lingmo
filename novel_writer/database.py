@@ -617,3 +617,15 @@ class Database:
         with self.conn() as c:
             return [dict(r) for r in c.execute("SELECT * FROM consistency_log WHERE novel_id=? ORDER BY chapter_num DESC",
                 (novel_id,)).fetchall()]
+
+    def save_unsaid(self, novel_id: str, entry: str):
+        with self.conn() as c:
+            c.execute("INSERT INTO unsaid_book (novel_id, entry) VALUES (?, ?)", (novel_id, entry))
+
+    def get_unsaid(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM unsaid_book WHERE novel_id=? ORDER BY id DESC", (novel_id,)).fetchall()]
+
+    def delete_unsaid(self, entry_id: int):
+        with self.conn() as c:
+            c.execute("DELETE FROM unsaid_book WHERE id=?", (entry_id,))

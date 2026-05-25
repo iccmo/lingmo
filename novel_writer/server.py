@@ -4438,6 +4438,25 @@ if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 # SPA fallback: serve static files if they exist, otherwise index.html
+# ═══════════════ Unsaid Book + Story Bible API ═══════════════
+
+@app.get("/api/novels/{novel_id}/unsaid")
+def get_unsaid(novel_id: str):
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    return {"entries": db.get_unsaid(novel_id)}
+
+@app.post("/api/novels/{novel_id}/unsaid")
+def add_unsaid(novel_id: str, data: dict):
+    entry = (data.get("entry") or "").strip()
+    if not entry or len(entry) < 2: raise HTTPException(400, "Entry too short")
+    db.save_unsaid(novel_id, entry)
+    return {"ok": True}
+
+@app.delete("/api/novels/{novel_id}/unsaid/{entry_id}")
+def remove_unsaid(novel_id: str, entry_id: int):
+    db.delete_unsaid(entry_id)
+    return {"ok": True}
+
 # ═══════════════ Story Bible API ═══════════════
 
 @app.get("/api/novels/{novel_id}/story-bible")
