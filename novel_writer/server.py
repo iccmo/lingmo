@@ -1349,6 +1349,22 @@ def _run_generation(novel_id: str):
             retries += 1
             issues_str = '；'.join(quality.get('issues', ['质量不足']))
             print(f"[GEN] {novel_id} Q={quality['overall']} — retry #{retries}: {issues_str}")
+
+            # Agent Engine: Editor review → targeted rewrite (first retry only)
+            if retries == 1 and quality['overall'] >= 0.6:
+                _set_status(novel_id, "reviewing", "编辑 Agent 审稿中…", 32)
+                editor_result = _editor_review(novel_id, chapter.number, body, quality.get('issues', []))
+                if editor_result.get('feedback'):
+                    _set_status(novel_id, "generating", "根据编辑意见定向修改…", 37)
+                    body = _targeted_rewrite(novel_id, chapter.number, body, editor_result['feedback'])
+                    # Re-score after targeted fix
+                    _set_status(novel_id, "reviewing", "重新评分…", 42)
+                    quality = gen.score_quality(body, state, style)
+                    print(f"[GEN] {novel_id} Editor round Q={quality['overall']}")
+                    if quality['overall'] >= q_threshold:
+                        break  # Editor fix succeeded
+
+            # Fallback: full regenerate
             _set_status(novel_id, "generating", f"质量不足，正在重写…（第{retries+1}次）", 30 + retries * 15, quality['overall'])
             chapter, quality = gen.batch_generate(state, n=1, rag_context=rag_context, outline=outline, style=style)
             body = chapter.content or chapter.summary
@@ -4842,4 +4858,92 @@ def get_cost_ledger(novel_id: str):
 def mark_consistency_fixed(novel_id: str, issue_id: int):
     db.mark_consistency_fixed(issue_id)
     return {"ok": True}
+
+
+# ═══════════════ Agent Engine: Editor Review + Targeted Rewrite ═══════════════
+
+def _editor_review(novel_id: str, chapter_num: int, content: str, quality_issues: list[str] = None) -> dict:
+    """Editor Agent: review chapter and give line-specific feedback (§4, §8)."""
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
+                     model=model)
+        gen = Generator(cfg)
+
+        # Gather bible context for editor
+        chars = db.get_character_state(novel_id, chapter_num - 1) if chapter_num > 1 else []
+        char_context = "\n".join(f"- {c['char_name']}: 情绪={c.get('emotion','?')}, 身体={c.get('physical_state','?')}, 位置={c.get('location','?')}"
+            for c in chars[:5]) if chars else "无历史数据"
+
+        foreshadowing = db.get_active_foreshadowing(novel_id)
+        fs_context = "\n".join(f"- #{f['id']}: {f['description'][:60]} (Ch{f['created_chapter']}, 到期Ch{f.get('due_by_chapter','?')})"
+            for f in foreshadowing[:5]) if foreshadowing else "无活跃伏笔"
+
+        issues_text = "\n".join(f"- {i}" for i in (quality_issues or [])) if quality_issues else "无"
+
+        prompt = f"""你是小说编辑。审读以下章节，给出具体的、可操作的修改意见。
+
+# 角色状态（上一章）
+{char_context}
+
+# 活跃伏笔（需在本章或近期回收）
+{fs_context}
+
+# 质量评审发现的问题
+{issues_text}
+
+# 待审章节正文（前3000字）
+{content[:3000]}
+
+# 你的任务
+给出具体的、定位到问题句子的修改意见。格式：
+第X段第Y句：「原文」——> 问题：XXX ——> 建议：XXX
+
+只指出最重要的3-5个问题。不要泛泛而谈。每个问题必须精确到一个具体句子。
+不要打分。不要说"整体不错"。只说问题。
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=1024)
+        return {"feedback": result or "", "model": model}
+    except Exception as e:
+        return {"feedback": "", "error": str(e)[:100]}
+
+
+def _targeted_rewrite(novel_id: str, chapter_num: int, content: str, editor_feedback: str) -> str:
+    """Writer Agent: rewrite chapter based on editor's specific feedback."""
+    if not editor_feedback:
+        return content
+
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
+                     model=model)
+        gen = Generator(cfg)
+
+        prompt = f"""你是小说作者。编辑给了以下修改意见。请根据意见修改原文。
+
+# 编辑意见
+{editor_feedback}
+
+# 原文
+{content[:4000]}
+
+# 规则
+1. 只修改编辑指出的问题句子。不要重写整章。
+2. 保持原有风格、角色声音、情节走向不变。
+3. 修改后直接返回全文。不要解释修改了什么。
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=4096)
+        return result if result and len(result) > len(content) * 0.5 else content
+    except Exception:
+        return content
 
