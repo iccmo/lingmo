@@ -110,6 +110,38 @@ export function StoryBibleView({ novelId }: Props) {
         </div>
       )}
 
+      {/* Cost Ledger (§50) */}
+      {(data as any).cost_ledger && (data as any).cost_ledger.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-ink mb-2">
+            ⚖️ 代价账簿
+            {(() => {
+              const entries = (data as any).cost_ledger || [];
+              const gains = entries.filter((e: any) => e.gain).length;
+              const losses = entries.filter((e: any) => e.loss).length;
+              const bal = gains - losses;
+              return <span className={`ml-1 text-[10px] ${bal > 2 ? 'text-amber-500' : bal < -2 ? 'text-red-500' : 'text-emerald-500'}`}>
+                ({gains}得/{losses}失 {bal >= 0 ? '+' : ''}{bal})
+              </span>;
+            })()}
+          </h4>
+          <div className="space-y-1">
+            {(data as any).cost_ledger.slice(-10).reverse().map((e: any, i: number) => (
+              <div key={i} className="p-1.5 rounded bg-paper border border-border text-[10px]">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-ink">{e.character_name}</span>
+                  <span className="text-ink-subtle">Ch{e.chapter_num}</span>
+                </div>
+                <div className="flex gap-2 mt-0.5">
+                  {e.gain && <span className="text-emerald-600 dark:text-emerald-400">+{e.gain}</span>}
+                  {e.loss && <span className="text-red-500">-{e.loss}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Consistency Issues */}
       {data.consistency_log.length > 0 && (
         <div>
