@@ -1308,6 +1308,18 @@ def _run_generation(novel_id: str):
             top_k=5,
         )
 
+        # Inject unsaid_book hidden truths into context
+        try:
+            unsaid_entries = db.get_unsaid(novel_id)
+            if unsaid_entries:
+                unsaid_text = "\n".join(f"- {e['entry']}" for e in unsaid_entries[-10:])
+                if rag_context:
+                    rag_context = [{"chapter_number": 0, "title": "🔒 作者隐藏设定", "chunk_text": unsaid_text, "similarity": 1.0}] + rag_context
+                else:
+                    rag_context = [{"chapter_number": 0, "title": "🔒 作者隐藏设定", "chunk_text": unsaid_text, "similarity": 1.0}]
+        except Exception:
+            pass
+
         # Batch generate (n versions, pick best by quality)
         import time as _time
         t0 = _time.time()
