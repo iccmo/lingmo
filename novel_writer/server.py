@@ -5389,3 +5389,150 @@ def _memory_decay_check(novel_id: str, chapter_num: int, content: str) -> list[d
         pass
     return issues
 
+
+# ═══════════════ Agent Pipeline Orchestration (§4) ═══════════════
+
+def _agent_editor_in_chief(novel_id: str, chapter_num: int) -> str:
+    """总编 Agent: reads bible → writes chapter brief (§4.1)."""
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""), model=model)
+        gen = Generator(cfg)
+
+        chars = db.get_character_state(novel_id)
+        fs = db.get_active_foreshadowing(novel_id)
+        unsaid = db.get_unsaid(novel_id)
+        costs = db.get_cost_ledger(novel_id)
+        reader = db.get_character_state(novel_id, chapter_num - 1) if chapter_num > 1 else []
+
+        char_lines = "\n".join(f"- {c['char_name']}: 情绪={c.get('emotion','?')}, 身体={c.get('physical_state','?')}, 目标={c.get('goal','?')}" for c in chars[-5:]) if chars else "首章"
+        fs_lines = "\n".join(f"- #{f['id']}: {f['description'][:60]} (到期Ch{f.get('due_by_chapter','?')})" for f in fs[:5]) if fs else "无活跃伏笔"
+        unsaid_lines = "\n".join(f"- 🔒 {e['entry'][:80]}" for e in unsaid[-5:]) if unsaid else "无"
+        cost_lines = "\n".join(f"- {e.get('character_name','?')}: +{e.get('gain','')} / -{e.get('loss','')}" for e in costs[-3:]) if costs else "无"
+
+        prompt = f"""你是小说总编。根据以下信息，为第{chapter_num}章写一份简报（不超过300字）。
+不要写正文。只写要求。
+
+【当前角色状态】
+{char_lines}
+
+【活跃伏笔】
+{fs_lines}
+
+【隐藏真相（不能说）】
+{unsaid_lines}
+
+【近期代价】
+{cost_lines}
+
+【简报要求】
+1. 本章需要推进什么情节？（1-2句）
+2. 本章必须出现的角色和他们的情感状态
+3. 本章必须回收的伏笔（如果有）
+4. 本章的主题约束（代价必须被支付）
+5. 本章的节奏（快/慢/中）
+
+直接输出简报，不要编号。像在跟作者说话一样写。
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=512)
+        return result or ""
+    except Exception as e:
+        print(f"[AGENT-EIC] Failed: {e}")
+        return ""
+
+
+def _agent_architect(novel_id: str, chapter_num: int, brief: str) -> str:
+    """结构师 Agent: brief → chapter outline (§4.2)."""
+    if not brief:
+        return ""
+
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""), model=model)
+        gen = Generator(cfg)
+
+        prompt = f"""你是小说结构师。根据总编的简报，为第{chapter_num}章设计大纲。
+
+【总编简报】
+{brief}
+
+【输出格式】
+开场（1-2句，地点+人物+初始状态）
+发展（2-3个情节点）
+转折（1个关键的转折或揭示）
+结尾（钩子，1-2句）
+
+每个情节点包含：类型（开场/冲突/发现/转折/结尾）、涉及角色、地点、要传达的情感。
+直接输出大纲，不要编号。简洁即可。
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=512)
+        return result or ""
+    except Exception as e:
+        print(f"[AGENT-ARCH] Failed: {e}")
+        return ""
+
+
+def _agent_fact_checker(novel_id: str, chapter_num: int, content: str) -> list[str]:
+    """事实核查 Agent: draft + bible → contradiction report (§4.4)."""
+    issues = []
+    try:
+        prev_chars = db.get_character_state(novel_id, chapter_num - 1) if chapter_num > 1 else []
+        prev_map = {c['char_name']: c for c in prev_chars}
+
+        for char_name, prev in prev_map.items():
+            if prev.get('physical_state') == 'injured' and '双手' in content and char_name in content:
+                issues.append(f"🔴 {char_name}上章受伤但本章使用双手——矛盾")
+            if prev.get('goal') and prev['goal'] not in content[:1000]:
+                issues.append(f"🟡 {char_name}的目标「{prev['goal']}」未在本章体现")
+
+        fs = db.get_active_foreshadowing(novel_id)
+        for f in fs:
+            if f.get('status') == 'overdue':
+                issues.append(f"🔴 伏笔#{f['id']}「{f['description'][:40]}」过期未收")
+    except Exception:
+        pass
+    return issues
+
+
+@app.post("/api/novels/{novel_id}/agent-pipeline")
+def run_agent_pipeline(novel_id: str, background: BackgroundTasks, data: dict = {}):
+    """Run the complete Agent pipeline for next chapter generation (§4)."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404)
+
+    novel = db.get_novel(novel_id)
+    next_ch = novel.get("total_chapters", 0) + 1
+
+    # Step 1: Editor-in-Chief → brief
+    brief = _agent_editor_in_chief(novel_id, next_ch)
+
+    # Step 2: Architect → outline
+    outline = _agent_architect(novel_id, next_ch, brief)
+
+    # Step 3: Trigger generation with brief + outline as direction
+    if brief or outline:
+        direction = f"【总编简报】\n{brief}\n\n【章节大纲】\n{outline}"
+        _gen_directions[novel_id] = direction
+        _gen_directions[novel_id + "_qthreshold"] = "0.75"
+
+    # Step 4: Trigger generation
+    background.add_task(_run_generation, novel_id)
+
+    return {
+        "status": "agent_pipeline_started",
+        "novel_id": novel_id,
+        "next_chapter": next_ch,
+        "brief": brief[:200] if brief else "(skipped)",
+        "outline": outline[:200] if outline else "(skipped)",
+    }
+
