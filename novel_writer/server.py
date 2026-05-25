@@ -5890,6 +5890,23 @@ def seed_bible_from_existing(novel_id: str):
     return {"status": "seeded", "seeded": seeded, "chapters": len(gen_chapters)}
 
 
+@app.get("/api/novels/{novel_id}/quality-gate")
+def get_quality_gate(novel_id: str):
+    """Brain Agent quality gate for the latest chapter."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    brain = BrainAgent(db)
+    report = brain.get_quality_report(novel_id)
+    # Determine gate
+    errors = report.get("errors", 0)
+    if errors >= 3:
+        gate = "🔴 需修复"
+    elif errors >= 1 or report.get("warnings", 0) >= 3:
+        gate = "⚠️ 注意"
+    else:
+        gate = "✅ 良好"
+    return {"gate": gate, **report}
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""

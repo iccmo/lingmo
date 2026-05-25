@@ -60,13 +60,21 @@ class BrainAgent:
         else:
             self.log.append({"station": "deslop_filter", "result": "skipped (early chapter)"})
 
-        # ═══ 终检：全部通过？ ═══
-        passed = True
-        if consistency_result.get("error_count", 0) > 0:
-            passed = False
-            result["blockers"] = consistency_result.get("issues", [])
+        # ═══ 终检：质量关卡 ═══
+        errors = consistency_result.get("error_count", 0)
+        deslop_score = result.get("deslop", {}).get("score", 50)
+        confidence = consistency_result.get("confidence", 100)
 
-        result["passed"] = passed
+        if errors >= 3 or confidence < 50:
+            gate = "🔴 BLOCK"
+        elif errors >= 1 or deslop_score < 35 or confidence < 75:
+            gate = "⚠️ WARN"
+        else:
+            gate = "✅ PASS"
+
+        result["gate"] = gate
+        result["passed"] = gate == "✅ PASS"
+        result["blockers"] = consistency_result.get("issues", []) if gate != "✅ PASS" else []
         result["log"] = self.log
         return result
 
