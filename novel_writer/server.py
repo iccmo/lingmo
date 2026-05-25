@@ -4511,6 +4511,28 @@ def get_story_bible(novel_id: str):
     }
 
 
+# ═══════════════ Reader Agent API ═══════════════
+
+@app.get("/api/novels/{novel_id}/reader-state")
+def get_reader_state(novel_id: str):
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    total = novel.get("total_chapters", 0)
+    chars = db.get_character_state(novel_id)
+    known = [{"name": c['char_name'], "emotion": c.get('emotion','')} for c in chars[-5:]]
+    active_fs = db.get_active_foreshadowing(novel_id)
+    expecting = [{"desc": f['description'][:60], "due": f.get('due_by_chapter')} for f in active_fs[:3]]
+    costs = db.get_cost_ledger(novel_id)
+    gains = len([e for e in costs if e.get('gain')])
+    losses = len([e for e in costs if e.get('loss')])
+    return {
+        "current_chapter": total, "known_characters": known, "expecting": expecting,
+        "cost_balance": {"gains": gains, "losses": losses},
+        "reader_mood": "engaged" if len(expecting) >= 2 else "drifting",
+        "suggestion": "读者期待值高" if len(expecting) >= 2 else "可推进主线",
+    }
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""
