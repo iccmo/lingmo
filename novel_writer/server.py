@@ -4552,6 +4552,27 @@ def constraint_collapse(novel_id: str, data: dict):
     return {"original":len(choices),"survivors":survivors,"eliminated":eliminated,"collapsed":len(survivors)==1}
 
 
+# ═══════════════ Counterpoint + Reader API ═══════════════
+
+@app.get("/api/novels/{novel_id}/counterpoint")
+def get_counterpoint(novel_id: str):
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    chars = db.get_character_state(novel_id)
+    fs = db.get_active_foreshadowing(novel_id)
+    tl = db.get_timeline(novel_id)
+    costs = db.get_cost_ledger(novel_id)
+    total = len(tl) if tl else 1
+    rel_chs = len(set(c['chapter_num'] for c in chars if c.get('emotion')))
+    lines = [
+        {"name":"情节线","speed":min(100,total*5),"status":"正常" if 20<min(100,total*5)<80 else "推进中"},
+        {"name":"关系线","speed":round(rel_chs/total*100) if total else 0,"status":"正常" if rel_chs>0 else "待激活"},
+        {"name":"主题线","speed":len(costs),"status":"正常" if len(costs)>0 else "待激活"},
+        {"name":"秘密线","speed":len(fs),"status":"正常" if 1<=len(fs)<=5 else ("过载" if len(fs)>5 else "枯竭")},
+    ]
+    lagging = [l['name'] for l in lines if l['status'] in ('待激活','枯竭')]
+    return {"lines":lines,"lagging":lagging,"suggestion":(f"推进{lagging[0]}" if lagging else "各线均衡")}
+
+
 # ═══════════════ Reader Agent API ═══════════════
 
 @app.get("/api/novels/{novel_id}/reader-state")
@@ -5120,4 +5141,78 @@ def constraint_collapse(novel_id: str, data: dict):
             "多个选择存活，需要人类判断" if survivors else "所有选择被淘汰，放宽约束或重新定义场景"
         ),
     }
+
+
+# ═══════════════ Counterpoint Agent (§16) + Memory Decay Agent (§44) ═══════════════
+
+@app.get("/api/novels/{novel_id}/counterpoint")
+def get_counterpoint(novel_id: str):
+    """Track multiple storylines and their relative speed (§16)."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    chars = db.get_character_state(novel_id)
+    foreshadowing = db.get_active_foreshadowing(novel_id)
+    timeline = db.get_timeline(novel_id)
+    costs = db.get_cost_ledger(novel_id)
+
+    # Line A: Plot (chapters with revealed info vs total)
+    total_chs = len(timeline)
+    plot_progress = min(100, total_chs * 5) if total_chs else 0
+
+    # Line B: Relationships (characters with emotion changes)
+    rel_chapters = set(c['chapter_num'] for c in chars if c.get('emotion'))
+    rel_speed = len(rel_chapters) / max(1, total_chs) if total_chs else 0
+
+    # Line C: Theme (cost ledger entries = theme manifesting)
+    theme_speed = len(costs) / max(1, total_chs) if total_chs else 0
+
+    # Line D: Secrets (active foreshadowing = unrevealed secrets)
+    secret_speed = len(foreshadowing) / max(1, total_chs) if total_chs else 0
+
+    lines = [
+        {"name": "情节线", "id": "plot", "speed": plot_progress, "status": "正常" if 20 < plot_progress < 80 else ("缓慢" if plot_progress <= 20 else "过速")},
+        {"name": "关系线", "id": "rel", "speed": round(rel_speed * 100), "status": "正常" if 0.2 < rel_speed < 0.8 else ("滞后" if rel_speed <= 0.2 else "过密")},
+        {"name": "主题线", "id": "theme", "speed": round(theme_speed * 100), "status": "正常" if theme_speed > 0 else "未激活"},
+        {"name": "秘密线", "id": "secret", "speed": len(foreshadowing), "status": "正常" if 1 <= len(foreshadowing) <= 5 else ("过载" if len(foreshadowing) > 5 else "枯竭")},
+    ]
+
+    # Detect lagging lines
+    lagging = [l for l in lines if l['status'] in ('滞后', '缓慢', '未激活', '枯竭')]
+    suggestion = ""
+    if lagging:
+        suggestion = f"{lagging[0]['name']}滞后——建议下章推进此线"
+    elif any(l['status'] == '过密' for l in lines):
+        suggestion = "关系线过密——建议暂缓感情戏"
+    else:
+        suggestion = "各线均衡，可自由推进"
+
+    return {"lines": lines, "lagging": [l['name'] for l in lagging], "suggestion": suggestion}
+
+
+def _memory_decay_check(novel_id: str, chapter_num: int, content: str) -> list[dict]:
+    """Check if character memories in this chapter are too accurate (§44)."""
+    issues = []
+    try:
+        # Look for recall patterns: "记得" "想起" "那天" "当时"
+        import re
+        recall_patterns = re.findall(r'(记得|想起|那天|当时|那时候|那晚).{5,50}', content)
+        if not recall_patterns:
+            return issues
+
+        # Get original events from earlier chapters
+        chars = db.get_character_state(novel_id)
+        for i, recall in enumerate(recall_patterns[:5]):
+            for c in chars:
+                if c['char_name'] and c['char_name'] in recall:
+                    # Check if recall has exact detail that a character wouldn't remember
+                    if len(re.findall(r'[一-鿿]', recall)) > 20:
+                        issues.append({
+                            "type": "memory_decay",
+                            "recall": recall[:80],
+                            "character": c['char_name'],
+                            "suggestion": "回忆太过精确——真正记忆会歪曲细节。考虑将听觉记忆换为视觉或模糊处理",
+                        })
+                    break
+    except Exception:
+        pass
+    return issues
 
