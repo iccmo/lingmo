@@ -4511,6 +4511,47 @@ def get_story_bible(novel_id: str):
     }
 
 
+# ═══════════════ Constraint Collapse + Reader Agent API ═══════════════
+
+@app.post("/api/novels/{novel_id}/constraint-collapse")
+def constraint_collapse(novel_id: str, data: dict):
+    scene = (data.get("scene_description") or data.get("scene") or "").strip()
+    choices = data.get("choices", [])
+    if not scene or len(choices) < 2: raise HTTPException(400, "Need scene and >=2 choices")
+    eliminated = []; survivors = list(choices)
+    chars = db.get_character_state(novel_id)
+    # Round 1: Hard constraints
+    for choice in list(survivors):
+        for c in chars[-5:]:
+            if c.get('physical_state') == 'injured' and any(w in choice for w in ['战斗','打','杀','冲']):
+                eliminated.append({"choice":choice,"reason":f"{c['char_name']}受伤无法执行","round":1})
+                survivors.remove(choice); break
+    # Round 2: Voice
+    if len(survivors)>1:
+        for choice in list(survivors):
+            if '原谅' in choice and any('愤怒' in (c.get('emotion') or '') for c in chars[-3:]):
+                eliminated.append({"choice":choice,"reason":"角色情绪为愤怒不宜原谅","round":2})
+                survivors.remove(choice)
+    # Round 3: Foreshadowing
+    if len(survivors)>1:
+        active_fs = db.get_active_foreshadowing(novel_id)
+        overdue = [f for f in active_fs if f.get('status')=='overdue']
+        if overdue:
+            for choice in list(survivors):
+                if not any(f['description'][:10] in choice for f in overdue):
+                    eliminated.append({"choice":choice,"reason":f"{len(overdue)}个过期伏笔未收","round":3})
+                    survivors.remove(choice)
+    # Round 4: Iceberg
+    if len(survivors)>1:
+        unsaid = db.get_unsaid(novel_id)
+        if unsaid:
+            for choice in list(survivors):
+                if any(u['entry'][:10] in choice for u in unsaid[-3:]):
+                    eliminated.append({"choice":choice,"reason":"可能过早揭示隐藏真相","round":4})
+                    survivors.remove(choice)
+    return {"original":len(choices),"survivors":survivors,"eliminated":eliminated,"collapsed":len(survivors)==1}
+
+
 # ═══════════════ Reader Agent API ═══════════════
 
 @app.get("/api/novels/{novel_id}/reader-state")
@@ -5008,4 +5049,75 @@ def _contrastive_generate(gen, state, rag_context, outline, style, author_input=
     elif quality_b['overall'] > quality_a['overall'] + 0.05:
         return chapter_b, quality_b
     return chapter_a, quality_a
+
+
+# ═══════════════ Constraint Collapse Engine (§42) ═══════════════
+
+@app.post("/api/novels/{novel_id}/constraint-collapse")
+def constraint_collapse(novel_id: str, data: dict):
+    """
+    Given a scene with multiple possible choices, apply 4 rounds of constraints
+    to narrow down to the inevitable choice (§42).
+    
+    Input: {scene_description, choices: ["choice A", "choice B", ...]}
+    Output: {survivors: [...], eliminated: [{choice, reason, round}]}
+    """
+    scene = (data.get("scene_description") or data.get("scene") or "").strip()
+    choices = data.get("choices", [])
+    if not scene or len(choices) < 2:
+        raise HTTPException(400, "Need scene_description and at least 2 choices")
+
+    eliminated = []
+    survivors = list(choices)
+
+    # Round 1: Hard constraints (story bible)
+    chars = db.get_character_state(novel_id)
+    char_names = list(set(c['char_name'] for c in chars[-10:]))
+    active_fs = db.get_active_foreshadowing(novel_id)
+
+    for choice in list(survivors):
+        # Check if any character is in a state that makes this impossible
+        for c in chars[-5:]:
+            if c.get('physical_state') == 'injured' and ('战斗' in choice or '打' in choice or '杀' in choice):
+                if c['char_name'] in choice:
+                    eliminated.append({"choice": choice, "reason": f"{c['char_name']}受伤，无法执行需要体力的选择", "round": 1})
+                    survivors.remove(choice)
+                    break
+
+    # Round 2: Character constraints (voice)
+    if survivors and len(survivors) > 1:
+        for choice in list(survivors):
+            # If choice contradicts known character traits (simplistic check)
+            if '原谅' in choice and any('愤怒' in (c.get('emotion') or '') for c in chars[-3:]):
+                eliminated.append({"choice": choice, "reason": "角色当前情绪为愤怒，不宜立即原谅", "round": 2})
+                survivors.remove(choice)
+
+    # Round 3: Structure constraints (foreshadowing + pacing)
+    if survivors and len(survivors) > 1 and active_fs:
+        overdue = [f for f in active_fs if f.get('status') == 'overdue']
+        if overdue:
+            for choice in list(survivors):
+                if not any(f['description'][:10] in choice for f in overdue):
+                    eliminated.append({"choice": choice, "reason": f"有{len(overdue)}个过期伏笔未收，该选择未涉及回收", "round": 3})
+                    survivors.remove(choice)
+
+    # Round 4: Theme constraint (冰山)
+    if survivors and len(survivors) > 1:
+        unsaid = db.get_unsaid(novel_id)
+        if unsaid:
+            # Prefer choices that leave the unsaid truths untouched
+            for choice in list(survivors):
+                if any(u['entry'][:10] in choice for u in unsaid[-3:]):
+                    eliminated.append({"choice": choice, "reason": "该选择可能过早揭示隐藏真相", "round": 4})
+                    survivors.remove(choice)
+
+    return {
+        "original_choices": len(choices),
+        "survivors": survivors,
+        "eliminated": eliminated,
+        "is_collapsed": len(survivors) == 1,
+        "recommendation": survivors[0] if len(survivors) == 1 else (
+            "多个选择存活，需要人类判断" if survivors else "所有选择被淘汰，放宽约束或重新定义场景"
+        ),
+    }
 
