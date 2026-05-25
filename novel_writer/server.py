@@ -4552,6 +4552,61 @@ def constraint_collapse(novel_id: str, data: dict):
     return {"original":len(choices),"survivors":survivors,"eliminated":eliminated,"collapsed":len(survivors)==1}
 
 
+# ═══════════════ System Self-Check Matrix (§57) ═══════════════
+
+@app.get("/api/novels/{novel_id}/self-check")
+def system_self_check(novel_id: str):
+    """Run all agents and return a unified confidence report."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+
+    results = {}
+    confidence = 100
+
+    # Bible extraction
+    chars = db.get_character_state(novel_id)
+    results['bible'] = {"status": "ok" if chars else "empty", "chars": len(chars)}
+    if not chars: confidence -= 25
+
+    # Foreshadowing
+    fs = db.get_active_foreshadowing(novel_id)
+    overdue = [f for f in fs if f.get('status') == 'overdue']
+    results['foreshadowing'] = {"active": len(fs), "overdue": len(overdue)}
+    if overdue: confidence -= len(overdue) * 10
+
+    # Consistency
+    issues = db.get_consistency_log(novel_id)
+    errors = [i for i in issues if i.get('severity') == 'error']
+    unfixed = [i for i in issues if not i.get('was_fixed')]
+    results['consistency'] = {"total": len(issues), "errors": len(errors), "unfixed": len(unfixed)}
+    confidence -= len(errors) * 15 - len([i for i in issues if i.get('was_fixed')]) * 10
+
+    # Cost balance
+    costs = db.get_cost_ledger(novel_id)
+    gains = len([e for e in costs if e.get('gain')])
+    losses = len([e for e in costs if e.get('loss')])
+    bal = gains - losses
+    results['costs'] = {"gains": gains, "losses": losses, "balance": bal}
+    if abs(bal) > 3: confidence -= 10
+
+    # Voice profile
+    voice = db.get_voice_samples(novel_id)
+    results['voice'] = {"samples": len(voice)}
+    if not voice: confidence -= 5
+
+    # Unsaid
+    unsaid = db.get_unsaid(novel_id)
+    results['unsaid'] = {"entries": len(unsaid)}
+
+    confidence = max(0, min(100, confidence))
+
+    return {
+        "results": results,
+        "confidence": confidence,
+        "grade": "S" if confidence >= 90 else "A" if confidence >= 75 else "B" if confidence >= 60 else "C" if confidence >= 40 else "D",
+        "ready_for_next": confidence >= 60,
+    }
+
+
 # ═══════════════ Counterpoint + Reader API ═══════════════
 
 @app.get("/api/novels/{novel_id}/counterpoint")

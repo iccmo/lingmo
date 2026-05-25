@@ -120,3 +120,84 @@ export function analyzeTextQuality(text: string): { density: DensityReport; forc
 
   return { density, forces, grade };
 }
+
+/**
+ * Breathing rhythm analysis (§53).
+ * Maps each sentence to its reader breathing phase.
+ * [呼] = natural exhale point (meaning complete)
+ * [吸] = inhale point (expectation created)
+ * [悬] = suspended (meaning delayed, reader holds breath)
+ */
+export interface BreathPoint {
+  text: string;
+  phase: 'exhale' | 'inhale' | 'suspend';
+  reason: string;
+}
+
+export function analyzeBreathing(text: string): BreathPoint[] {
+  const sentences = text.split(/(?<=[。！？.!?])/).filter(s => s.trim());
+  const points: BreathPoint[] = [];
+
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (!trimmed) continue;
+
+    // Natural exhale: complete statement ending with 。 or .
+    if (/[。.]$/.test(trimmed) && !trimmed.match(/[？?！!]/)) {
+      points.push({ text: trimmed.slice(0, 40), phase: 'exhale', reason: '意义完成' });
+    }
+    // Inhale: question or anticipation
+    else if (/[？?]$/.test(trimmed)) {
+      points.push({ text: trimmed.slice(0, 40), phase: 'inhale', reason: '制造期待' });
+    }
+    // Suspend: trailing, interrupted, or ends with ...
+    else if (/[！!…]$/.test(trimmed) || trimmed.endsWith('…')) {
+      points.push({ text: trimmed.slice(0, 40), phase: 'suspend', reason: '意义中断或延迟' });
+    }
+    // Suspend: starts with 但/可/却/然而
+    else if (/^(但是|可是|然而|却|不过|只是|但)/.test(trimmed)) {
+      points.push({ text: trimmed.slice(0, 40), phase: 'suspend', reason: '转折制造悬停' });
+    }
+    else {
+      points.push({ text: trimmed.slice(0, 40), phase: 'exhale', reason: '默认完成' });
+    }
+  }
+
+  return points;
+}
+
+/**
+ * Whitespace density analysis (§55).
+ * Calculates how much the reader must fill in themselves.
+ * Density = (implied info count) / (explicit char count) * 100
+ */
+export interface WhitespaceReport {
+  explicitChars: number;
+  impliedCount: number;
+  density: number;  // 0-100, higher = more reader participation
+  assessment: string;
+}
+
+export function analyzeWhitespace(text: string): WhitespaceReport {
+  const explicitChars = text.replace(/\s/g, '').length;
+
+  // Count implied information signals
+  const implications = [
+    (text.match(/没说|沉默|不动|没动|没哭|没笑|没说话/g) || []).length,
+    (text.match(/…/g) || []).length,
+    (text.match(/[？?]/g) || []).length,
+    (text.match(/但是|可是|然而|却/g) || []).length,
+    (text.match(/后来|那天|当时|有一年/g) || []).length,
+  ];
+  
+  const impliedCount = implications.reduce((a, b) => a + b, 0);
+  const density = explicitChars > 0 ? Math.min(100, +(impliedCount / (explicitChars / 100)).toFixed(1)) : 0;
+
+  let assessment: string;
+  if (density < 1) assessment = '留白过少——读者参与感弱，信息太满';
+  else if (density < 3) assessment = '留白适中——读者有适度参与';
+  else if (density < 6) assessment = '留白丰富——读者积极脑补，负空间活跃';
+  else assessment = '留白极密——注意不要让读者迷失';
+
+  return { explicitChars, impliedCount, density, assessment };
+}
