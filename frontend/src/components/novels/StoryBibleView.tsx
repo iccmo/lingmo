@@ -31,15 +31,21 @@ interface Props { novelId: string }
 export function StoryBibleView({ novelId }: Props) {
   const [data, setData] = useState<StoryBibleData | null>(null);
   const [reader, setReader] = useState<ReaderState | null>(null);
+  const [counterpoint, setCounterpoint] = useState<any>(null);
+  const [selfCheck, setSelfCheck] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       fetch(`/api/novels/${novelId}/story-bible`).then(r => r.json()),
       fetch(`/api/novels/${novelId}/reader-state`).then(r => r.json()).catch(() => null),
-    ]).then(([bible, rstate]) => {
+      fetch(`/api/novels/${novelId}/counterpoint`).then(r => r.json()).catch(() => null),
+      fetch(`/api/novels/${novelId}/self-check`).then(r => r.json()).catch(() => null),
+    ]).then(([bible, rstate, cp, sc]) => {
       setData(bible);
       setReader(rstate);
+      setCounterpoint(cp);
+      setSelfCheck(sc);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [novelId]);
 
@@ -60,6 +66,34 @@ export function StoryBibleView({ novelId }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* System Grade (§57) */}
+      {selfCheck && (
+        <div className={`p-2 rounded-lg text-center ${
+          selfCheck.grade === 'S' ? 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200' :
+          selfCheck.grade === 'A' ? 'bg-sky-50 dark:bg-sky-950/20 border border-sky-200' :
+          'bg-amber-50 dark:bg-amber-950/20 border border-amber-200'
+        }`}>
+          <span className={`text-lg font-bold ${
+            selfCheck.grade === 'S' ? 'text-emerald-500' : selfCheck.grade === 'A' ? 'text-sky-500' : 'text-amber-500'
+          }`}>{selfCheck.grade}</span>
+          <span className="text-[10px] text-ink-subtle ml-2">信心 {selfCheck.confidence}% · {selfCheck.ready_for_next ? '✅ 可续写' : '⚠️ 需修复'}</span>
+        </div>
+      )}
+
+      {/* Counterpoint (§16) */}
+      {counterpoint && (
+        <div className="flex gap-2 text-[9px]">
+          {counterpoint.lines?.map((l: any) => (
+            <div key={l.id} className={`flex-1 p-1.5 rounded text-center ${
+              l.status === '正常' ? 'bg-emerald-50 dark:bg-emerald-950/20' : 'bg-amber-50 dark:bg-amber-950/20'
+            }`}>
+              <div className="text-ink-subtle">{l.name}</div>
+              <div className={`font-medium ${l.status === '正常' ? 'text-emerald-500' : 'text-amber-500'}`}>{l.speed}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Reader State (§67) */}
       {reader && (
         <div className="p-2 rounded-lg bg-accent-soft/20 border border-accent/10">
