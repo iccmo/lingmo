@@ -4552,6 +4552,55 @@ def constraint_collapse(novel_id: str, data: dict):
     return {"original":len(choices),"survivors":survivors,"eliminated":eliminated,"collapsed":len(survivors)==1}
 
 
+# ═══════════════ Text Analysis API ═══════════════
+
+@app.post("/api/text/analyze")
+def analyze_text(data: dict):
+    """Run all client-side analyses server-side for a given text."""
+    text = (data.get("text") or data.get("content") or "").strip()
+    if not text or len(text) < 10:
+        raise HTTPException(400, "Text too short")
+
+    import re
+    chars = len(text.replace('\n', '').replace(' ', ''))
+
+    # Density
+    contradictions = len(re.findall(r'但是|可是|然而|却|不过|只是', text))
+    questions = len(re.findall(r'[？?]', text))
+    suspensions = len(re.findall(r'…|\.\.\.', text))
+    surprises = len(re.findall(r'[！!]', text))
+    density = round((contradictions + questions + suspensions + surprises) / max(1, chars / 100), 1)
+
+    # Forces
+    reversals = len(re.findall(r'但是|可是|然而|却|不过|没想到|谁知|不料', text))
+    sentences = [s for s in re.split(r'[。！？.!?\n]+', text) if s.strip()]
+    torque = round(min(1, reversals / max(1, len(sentences) * 0.1)), 2)
+
+    # Body sense
+    visual = len(re.findall(r'看|见|望|盯|瞪|光|亮|暗|黑|白|红|蓝|绿|色', text))
+    tactile = len(re.findall(r'碰|触|摸|握|抓|按|压|冷|热|凉|暖|烫|疼|痛', text))
+    auditory = len(re.findall(r'听|闻|声|响|音|说|道|问|答|喊|叫|吼|静|默', text))
+
+    # Opening strength
+    first_sentences = sentences[:3]
+    has_body = any(re.findall(r'碰|触|摸|握|冷|热|疼|痛|看|见|听|闻', '。'.join(first_sentences)))
+    has_expect = any(re.findall(r'[？?…]|但是|可是|然而|不过', '。'.join(first_sentences)))
+    opening_strength = (1 if has_body else 0) + (1 if has_expect else 0)
+
+    return {
+        "chars": chars, "sentences": len(sentences),
+        "density": density,
+        "forces": {"torque": torque},
+        "body_sense": {"visual": visual, "tactile": tactile, "auditory": auditory, "total": visual+tactile+auditory},
+        "opening": {"strength": opening_strength, "assessment": "强" if opening_strength >= 2 else "可" if opening_strength >= 1 else "弱"},
+        "style_fingerprint": {
+            "sentence_length": round(chars / max(1, len(sentences))),
+            "dialogue_ratio": round(len(re.findall(r'「|」|"', text)) / max(1, chars) * 100, 1),
+            "description_ratio": round(len(re.findall(r'看|见|望|光|色|影', text)) / max(1, chars) * 100, 1),
+        },
+    }
+
+
 # ═══════════════ Wound Agent (§48) + Energy Form (§63) ═══════════════
 
 @app.get("/api/novels/{novel_id}/wound-arc")
