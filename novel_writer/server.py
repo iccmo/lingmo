@@ -5843,6 +5843,32 @@ def agent_report(novel_id: str):
     }
 
 
+@app.post("/api/novels/{novel_id}/seed-bible")
+def seed_bible_from_existing(novel_id: str):
+    """Populate story_bible from existing chapters + character definitions. No LLM needed."""
+    novel = db.get_novel(novel_id)
+    if not novel: raise HTTPException(404)
+    gen_chapters = [c for c in (novel.get('chapters') or []) if c.get('word_count', 0) > 0]
+    if not gen_chapters: return {"status": "no_content"}
+    static_chars = novel.get('characters', [])
+    seeded = {"chars": 0, "tl": 0, "loc": 0}
+    for ch in gen_chapters:
+        cn = ch['number']
+        for sc in static_chars:
+            if not sc.get('name'): continue
+            exists = [c for c in db.get_character_state(novel_id, cn) if c['char_name'] == sc['name']]
+            if not exists:
+                try:
+                    db.save_character_state(novel_id, cn, sc['name'], emotion='未知',
+                        physical_state=sc.get('status','健康'), goal='未知', location='未知')
+                    seeded["chars"] += 1
+                except: pass
+        db.save_timeline_event(novel_id, cn, absolute_time=f"第{cn}章",
+            relative_time="未知", event_summary=(ch.get('summary') or ch.get('title',''))[:100])
+        seeded["tl"] += 1
+    return {"status": "seeded", "seeded": seeded, "chapters": len(gen_chapters)}
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""
