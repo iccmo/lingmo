@@ -1437,11 +1437,14 @@ def _run_generation(novel_id: str):
         except Exception:
             pass
 
-        # V11: Extract story bible (non-blocking)
+        # V11: Extract story bible + consistency check (non-blocking)
         try:
             import threading
             final_content = cleaned_body or chapter.content or chapter.summary
-            threading.Thread(target=_extract_story_bible, args=(novel_id, chapter.number, final_content, chapter.title), daemon=True).start()
+            def _bible_pipeline():
+                _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
+                _run_consistency_check(novel_id, chapter.number)
+            threading.Thread(target=_bible_pipeline, daemon=True).start()
         except Exception:
             pass
 
@@ -4579,3 +4582,80 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
             print(f"[BIBLE] Extracted story bible for {novel_id} ch{chapter_num}")
     except Exception as e:
         print(f"[BIBLE] Extraction failed: {e}")
+
+def _run_consistency_check(novel_id: str, chapter_num: int):
+    """Run all 5 consistency checks against the story bible."""
+    try:
+        # Check 1: Character consistency
+        chars = db.get_character_state(novel_id, chapter_num)
+        prev_chars = db.get_character_state(novel_id, chapter_num - 1) if chapter_num > 1 else []
+        prev_map = {c['char_name']: c for c in prev_chars}
+
+        for char in chars:
+            name = char['char_name']
+            prev = prev_map.get(name)
+            if not prev:
+                continue
+
+            # Physical state regression
+            if prev.get('physical_state') == 'injured' and char.get('physical_state') == 'healthy':
+                db.log_consistency_issue(novel_id, chapter_num, 'character', 'error',
+                    f"{name} 上一章受伤，本章突然健康——需要说明恢复过程",
+                    f"添加一句话说明{name}如何恢复或接受了治疗")
+            elif prev.get('physical_state') == 'healthy' and char.get('physical_state') == 'injured':
+                db.log_consistency_issue(novel_id, chapter_num, 'character', 'info',
+                    f"{name} 本章受伤（从健康→受伤），需要明确受伤原因",
+                    "")
+
+            # Knowledge inconsistency
+            prev_know = prev.get('knowledge', '[]')
+            curr_know = char.get('knowledge', '[]')
+            if prev_know != curr_know and prev_know != '[]':
+                db.log_consistency_issue(novel_id, chapter_num, 'character', 'info',
+                    f"{name} 的知识状态发生了变化",
+                    "")
+
+        # Check 2: Foreshadowing — mark overdue
+        active_fs = db.get_active_foreshadowing(novel_id)
+        for fs in active_fs:
+            due = fs.get('due_by_chapter')
+            if due and int(due) < chapter_num:
+                db.log_consistency_issue(novel_id, chapter_num, 'foreshadowing', 'warning',
+                    f"伏笔 #{fs['id']}：「{fs['description'][:50]}」预期在第 {due} 章回收，当前第 {chapter_num} 章——已过期",
+                    f"建议在第 {chapter_num + 1} 章回收此伏笔，或标记为放弃")
+                # Mark as overdue
+                with db.conn() as c:
+                    c.execute("UPDATE foreshadowing_tracker SET status='overdue' WHERE id=? AND status='active'",
+                              (fs['id'],))
+
+        # Check 3: World rules
+        world_rules = db.get_world_state(novel_id)
+        broken_rules = [r for r in world_rules if r.get('is_broken')]
+        for rule in broken_rules[-3:]:  # Only report recent breakages
+            db.log_consistency_issue(novel_id, chapter_num, 'world', 'warning',
+                f"世界观规则「{rule['rule_name']}」被破坏",
+                f"确认这是剧情需要还是bug。如需恢复，在后续章节说明规则修正")
+
+        # Check 4: Timeline — detect impossible jumps
+        timeline = db.get_timeline(novel_id)
+        if len(timeline) >= 2:
+            curr = timeline[-1]
+            prev_tl = timeline[-2]
+            if curr.get('relative_time') and prev_tl.get('relative_time'):
+                # Simple check: if relative time contains large numbers
+                pass  # Extended in future iterations
+
+        # Check 5: Location — detect teleportation
+        locations = db.get_location_history(novel_id)
+        if len(locations) >= 2:
+            curr_loc = locations[-1]
+            prev_loc = locations[-2]
+            if curr_loc.get('location_name') != prev_loc.get('location_name'):
+                db.log_consistency_issue(novel_id, chapter_num, 'timeline', 'info',
+                    f"地点从「{prev_loc['location_name']}」切换到「{curr_loc['location_name']}」",
+                    f"确认切换是否合理，是否需要添加旅行/过渡描写")
+
+        print(f"[CONSISTENCY] Check complete for {novel_id} ch{chapter_num}")
+    except Exception as e:
+        print(f"[CONSISTENCY] Check failed: {e}")
+
