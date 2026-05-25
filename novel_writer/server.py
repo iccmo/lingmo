@@ -4947,3 +4947,43 @@ def _targeted_rewrite(novel_id: str, chapter_num: int, content: str, editor_feed
     except Exception:
         return content
 
+
+# ═══════════════ Agent Engine: Contrastive Generation (§18) ═══════════════
+
+def _contrastive_generate(gen, state, rag_context, outline, style, author_input=""):
+    """Generate 2 versions with different constraints, pick the less template-like one."""
+    import re
+
+    # Version A: standard generation
+    chapter_a, quality_a = gen.batch_generate(state, n=1, rag_context=rag_context, outline=outline, style=style,
+                                               author_input=author_input)
+    body_a = chapter_a.content or chapter_a.summary
+
+    # Version B: constraint-injected (forbidden words, sentence length limits)
+    constraint_input = (author_input + "\n\n【约束】不要使用以下词汇：突然、竟然、似乎、仿佛、不由得、只见、谁知。每段不超过5句。对话每轮不超过3句。") if author_input else "【约束】不要使用：突然、竟然、似乎、仿佛。"
+    chapter_b, quality_b = gen.batch_generate(state, n=1, rag_context=rag_context, outline=outline, style=style,
+                                               author_input=constraint_input)
+    body_b = chapter_b.content or chapter_b.summary
+
+    # Score deviation: count forbidden words as penalty, count unique sentence starters as bonus
+    def deviation_score(text):
+        forbidden = ['突然', '竟然', '似乎', '仿佛', '不由得', '只见', '谁知', '缓缓', '微微', '轻轻']
+        penalty = sum(text.count(w) for w in forbidden)
+        # Count unique sentence starters (first 2 chars of each sentence)
+        sentences = re.split(r'[。！？]', text)
+        starters = set(s[:3] for s in sentences if len(s) >= 3)
+        bonus = len(starters)
+        return bonus - penalty * 2
+
+    score_a = deviation_score(body_a)
+    score_b = deviation_score(body_b)
+
+    print(f"[CONTRAST] Score A={score_a} Q={quality_a['overall']} | Score B={score_b} Q={quality_b['overall']}")
+
+    # Pick the version with higher deviation score, fallback to quality
+    if score_b > score_a + 5:
+        return chapter_b, quality_b
+    elif quality_b['overall'] > quality_a['overall'] + 0.05:
+        return chapter_b, quality_b
+    return chapter_a, quality_a
+
