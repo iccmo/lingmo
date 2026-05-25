@@ -34,6 +34,7 @@ export function StoryBibleView({ novelId }: Props) {
   const [counterpoint, setCounterpoint] = useState<any>(null);
   const [selfCheck, setSelfCheck] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [constraintPreview, setConstraintPreview] = useState<any>(null);
 
   useEffect(() => {
     Promise.all([
