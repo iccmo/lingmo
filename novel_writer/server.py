@@ -1430,12 +1430,6 @@ def _run_generation(novel_id: str):
             quality_score=final_quality['overall'], model_used=cfg.model,
         )
 
-        # V3: Store embeddings (non-blocking)
-        try:
-            gen.store_chapter_embedding(cid, novel_id, chapter.summary)
-        except Exception:
-            pass  # Embedding is optional for future searches
-
         # V7: Pre-generate TTS audio in background (non-blocking)
         try:
             import threading
@@ -2210,11 +2204,6 @@ def _run_batch_generation(novel_id: str, count: int):
                 completion_tokens=usage.get("completion_tokens", 0),
                 cost=round(usage.get("cost", 0), 6),
             )
-            try:
-                gen.store_chapter_embedding(cid, novel_id, chapter.summary)
-            except Exception:
-                pass
-
             # Append to state so next chapter sees full text
             chapter.content = cleaned_body
             chapter.word_count = len(cleaned_body)
@@ -3243,11 +3232,6 @@ def _run_expand(novel_id: str, chosen_id: str, direction: str, preview: str, hoo
                             model_used=cfg.model)
 
         # Store embedding (non-blocking)
-        try:
-            gen.store_chapter_embedding(cid, novel_id, final_body[:200])
-        except Exception:
-            pass
-
         db.log(novel_id, "chapter.expanded", {
             "chapter": ch_count+1, "title": title,
             "quality": quality.get('overall', 0), "grade": quality.get('grade', '?'),

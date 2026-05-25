@@ -177,18 +177,8 @@ CREATE INDEX IF NOT EXISTS idx_relations_novel     ON character_relations(novel_
 CREATE VIEW IF NOT EXISTS active_novels AS
     SELECT * FROM novels WHERE deleted_at IS NULL;
 
--- V3: Embedding storage for RAG context retrieval
-CREATE TABLE IF NOT EXISTS chapter_embeddings (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    chapter_id      INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
-    chunk_index     INTEGER NOT NULL DEFAULT 0,
-    chunk_text      TEXT NOT NULL,               -- 摘要片段 (≤ 500 chars)
-    embedding       TEXT NOT NULL,               -- JSON float array (1536-dim)
-    model           TEXT NOT NULL DEFAULT 'text-embedding-3-small',
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(chapter_id, chunk_index)
-);
-CREATE INDEX IF NOT EXISTS idx_embeddings_chapter ON chapter_embeddings(chapter_id);
+
+
 
 -- V4: Model provider configuration
 CREATE TABLE IF NOT EXISTS model_providers (

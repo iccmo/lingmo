@@ -3061,116 +3061,28 @@ AI写作的典型特征：
         return result, changes
 
 
-# ═══════════════════ V3: RAG Semantic Context Retrieval ═══════════════════
+    # ═══════════════════ V3: Context Retrieval (LIKE-based, Chinese-friendly) ═══════════════════
 
-    def _embed(self, text: str) -> list[float]:
-        """Generate embedding vector via OpenAI API"""
-        import time
-        for attempt in range(3):
-            try:
-                resp = self.client.embeddings.create(
-                    model="text-embedding-3-small",
-                    input=text[:8000],  # max token limit
-                )
-                return resp.data[0].embedding
-            except Exception as e:
-                print(f"[EMBED] Error (attempt {attempt+1}): {e}", file=__import__("sys").stderr)
-                time.sleep(2 ** attempt)
-        return []
-
-    def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity between two vectors"""
-        if not a or not b:
-            return 0.0
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = sum(x * x for x in a) ** 0.5
-        norm_b = sum(x * x for x in b) ** 0.5
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
-
-    def retrieve_relevant_context(
-        self,
-        query: str,
-        novel_id: str,
-        top_k: int = 5,
-    ) -> list[dict]:
-        """
-        Semantic search: find most relevant chapter summaries.
-        Args:
-            query: Current scene description or plot direction
-            novel_id: Novel ID to search within
-            top_k: Number of results to return
-        Returns:
-            List of {chapter_number, summary, similarity}
-        """
+    def retrieve_relevant_context(self, query: str, novel_id: str, top_k: int = 5) -> list[dict]:
         try:
             from .database import Database
             db = Database()
-
-            # Generate query embedding
-            query_embedding = self._embed(query)
-            if not query_embedding:
-                return []
-
-            # Get all stored embeddings for this novel
             with db.conn() as conn:
-                rows = conn.execute("""
-                    SELECT ce.chunk_text, ce.embedding, c.number, c.title
-                    FROM chapter_embeddings ce
-                    JOIN chapters c ON c.id = ce.chapter_id
-                    WHERE c.novel_id = ?
-                    ORDER BY c.number DESC
-                    LIMIT 200
-                """, (novel_id,)).fetchall()
-
-            if not rows:
-                return []
-
-            # Compute similarities
-            scored = []
-            for row in rows:
-                emb = json.loads(row["embedding"])
-                sim = self._cosine_similarity(query_embedding, emb)
-                scored.append({
-                    "chapter_number": row["number"],
-                    "title": row["title"],
-                    "chunk_text": row["chunk_text"],
-                    "similarity": round(sim, 4),
-                })
-
-            scored.sort(key=lambda x: x["similarity"], reverse=True)
-            return scored[:top_k]
-
+                rows = conn.execute(
+                    "SELECT cs.novel_id, cs.chapter_num, c.title, cs.summary_text as summary "
+                    "FROM chapter_summaries cs "
+                    "JOIN chapters c ON c.novel_id = cs.novel_id AND c.number = cs.chapter_num "
+                    "WHERE cs.novel_id = ? AND cs.summary_text LIKE ? "
+                    "ORDER BY c.number DESC LIMIT ?",
+                    (novel_id, '%' + query + '%', top_k)).fetchall()
+                return [{
+                    "chapter_number": r["chapter_num"],
+                    "title": r["title"] or "",
+                    "chunk_text": r["summary"] or "",
+                    "similarity": 1.0,
+                } for r in rows]
         except Exception as e:
-            print(f"[RAG] Error: {e}", file=__import__("sys").stderr)
+            print(f"[RAG] Error: {e}")
             return []
 
-    def store_chapter_embedding(
-        self,
-        chapter_id: int,
-        novel_id: str,
-        summary: str,
-        chunk_size: int = 500,
-    ):
-        """
-        Generate and store embeddings for a chapter summary.
-        Splits long summaries into chunks.
-        """
-        try:
-            from .database import Database
-            db = Database()
-            import json
 
-            chunks = [summary[i:i+chunk_size] for i in range(0, len(summary), chunk_size)]
-
-            with db.conn() as conn:
-                for idx, chunk in enumerate(chunks):
-                    emb = self._embed(chunk)
-                    if emb:
-                        conn.execute("""INSERT OR REPLACE INTO chapter_embeddings
-                            (chapter_id, chunk_index, chunk_text, embedding)
-                            VALUES (?, ?, ?, ?)""",
-                            (chapter_id, idx, chunk, json.dumps(emb)))
-        except Exception as e:
-            print(f"[EMBED STORE] Error: {e}", file=__import__("sys").stderr)
