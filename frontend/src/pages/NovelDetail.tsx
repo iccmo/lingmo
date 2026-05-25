@@ -60,7 +60,7 @@ export function NovelDetail({ mode }: Props) {
   const [cockpit, setCockpit] = useState<CockpitData | null>(null);
   const [showGenDialog, setShowGenDialog] = useState(false);
   const [prefillDirection, setPrefillDirection] = useState('');
-  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysisTab, setAnalysisTab] = useState<string>('quality');
   const [justCompleted, setJustCompleted] = useState(false);
   const [suggestions, setSuggestions] = useState<{ title: string; hook: string; summary: string; tone: string }[] | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -562,7 +562,7 @@ export function NovelDetail({ mode }: Props) {
         throw new Error(`服务器错误 (${genRes.status}): ${errText.slice(0, 100)}`);
       }
       setPolling(true);
-      setShowAnalysis(false);  // collapse analysis to reduce noise during generation
+      // analysis tabs remain visible during generation
       const thresholdLabel = qualityThreshold >= 0.8 ? '【严格模式】' : qualityThreshold >= 0.65 ? '' : '【宽松模式】';
       const hasConfig = soulInjection.length > 100 ? '【全配置注入】' : soulInjection.length > 10 ? '【灵魂注入】' : '';
       const modeLabel = isDeepMode ? '【精雕模式】' : '';
@@ -707,9 +707,11 @@ export function NovelDetail({ mode }: Props) {
         onNavigate={(sectionId) => {
           const el = document.getElementById(sectionId);
           if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
-          // Auto-expand analysis if navigating to a section inside it
-          if (['section-engine','section-characters','section-masterwork','section-creative'].includes(sectionId)) {
-            setShowAnalysis(true);
+          // Auto-switch to relevant analysis tab
+          if (['section-engine','section-characters'].includes(sectionId)) {
+            setAnalysisTab('character');
+          } else if (['section-masterwork','section-creative'].includes(sectionId)) {
+            setAnalysisTab('tools');
           }
         }}
       />
@@ -768,16 +770,37 @@ export function NovelDetail({ mode }: Props) {
       </div>
 
       {/* Section quick-nav (visible when scrolled) */}
-      <SectionNav sections={[
-        { id: 'quality', label: '质量趋势', icon: '📊' },
-        { id: 'arc', label: '情感弧线', icon: '📈' },
-        { id: 'lab', label: '创作实验室', icon: '🔬' },
-        { id: 'stats', label: '写作统计', icon: '📋' },
-        { id: 'recommend', label: '智能推荐', icon: '🧬' },
-        { id: 'sim', label: '读者模拟', icon: '👁️' },
-        { id: 'publish', label: '发布状态', icon: '📤' },
-        { id: 'chapters', label: '章节目录', icon: '📑' },
-      ]} />
+      <SectionNav
+        activeSection={(() => {
+          // Map tab to section nav id for active dot
+          const map: Record<string, string> = {
+            quality: 'quality', rhythm: 'rhythm', character: 'character',
+            analysis: 'analysis', tools: 'tools',
+          };
+          return map[analysisTab] || 'quality';
+        })()}
+        onNavigate={(id) => {
+          const tabMap: Record<string, string> = {
+            quality: 'quality', arc: 'rhythm', rhythm: 'rhythm',
+            character: 'character', analysis: 'analysis',
+            recommend: 'analysis', lab: 'tools', sim: 'tools', tools: 'tools',
+          };
+          if (tabMap[id]) {
+            setAnalysisTab(tabMap[id]);
+          } else {
+            document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
+        sections={[
+          { id: 'quality', label: '质量', icon: '📊' },
+          { id: 'rhythm', label: '节奏', icon: '📈' },
+          { id: 'character', label: '角色', icon: '👥' },
+          { id: 'analysis', label: '分析', icon: '🔬' },
+          { id: 'tools', label: '工具', icon: '🛠️' },
+          { id: 'stats', label: '写作统计', icon: '📋' },
+          { id: 'publish', label: '发布状态', icon: '📤' },
+          { id: 'chapters', label: '章节目录', icon: '📑' },
+        ]} />
       <div className="flex items-center gap-3 mt-1">
         <h1 className="font-heading text-[28px] font-semibold text-ink leading-tight">{novel.title}</h1>
         {mode === 'auto' && <span className="text-xs px-2 py-0.5 rounded-full bg-accent-soft text-accent font-medium">全自动</span>}
@@ -1034,9 +1057,6 @@ export function NovelDetail({ mode }: Props) {
         </div>
       )}
 
-      {/* Quality Trend */}
-      <div id="section-quality"><QualityTrend chapters={novel.chapters} /></div>
-
       {/* Timeline View */}
       {showTimeline && novel.chapters && (
         <div className="mb-6 p-4 bg-card border border-border rounded-xl">
@@ -1048,97 +1068,105 @@ export function NovelDetail({ mode }: Props) {
         </div>
       )}
 
-      {/* Collapsible Analysis Section */}
-      <div className="mb-4">
-        <button
-          onClick={() => setShowAnalysis(!showAnalysis)}
-          className="flex items-center gap-2 text-xs text-ink-muted hover:text-ink transition-colors mb-2">
-          <span className={`transition-transform duration-200 ${showAnalysis ? 'rotate-90' : ''}`}>▸</span>
-          创作分析
-          <span className="text-ink-subtle">（情感弧线 · A/B测试 · 智能推荐 · 读者模拟）</span>
-        </button>
+      {/* Analysis Tabs */}
+      <div className="mb-6">
+        <div className="flex gap-1 mb-4 p-1 bg-paper border border-border rounded-lg">
+          {[
+            { key: 'quality', label: '质量' },
+            { key: 'rhythm', label: '节奏' },
+            { key: 'character', label: '角色' },
+            { key: 'analysis', label: '分析' },
+            { key: 'tools', label: '工具' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setAnalysisTab(tab.key)}
+              className={`flex-1 py-2 text-xs font-medium rounded-md transition-all ${
+                analysisTab === tab.key
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'text-ink-muted hover:text-ink hover:bg-card'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-        {showAnalysis && (
-          <div className="space-y-4 animate-[fadeSlideIn_0.2s_ease-out]">
-            {/* Novel Architect — long-form planning */}
-            <div id="section-architect">
-              <NovelArchitect novelId={novel.id} chapters={novel.chapters} totalChapters={novel.total_chapters} />
+        <div className="animate-[fadeSlideIn_0.2s_ease-out]">
+          {/* 质量 Tab */}
+          {analysisTab === 'quality' && (
+            <div id="section-quality" className="space-y-4">
+              <QualityTrend chapters={novel.chapters} />
             </div>
+          )}
 
-            {/* Soul Engine */}
-            <div id="section-engine"><SoulEngine novelId={novel.id} genre={novel.genre} /></div>
+          {/* 节奏 Tab: PacingCurve + EmotionalArc + DialogueRatio */}
+          {analysisTab === 'rhythm' && (
+            <div className="space-y-4">
+              <div id="section-pacing"><PacingCurve chapters={novel.chapters} /></div>
+              <div id="section-arc"><EmotionalArc chapters={novel.chapters} /></div>
+              <div id="section-dialogue"><DialogueRatio chapters={novel.chapters} /></div>
+            </div>
+          )}
 
-            {/* Masterwork Lab */}
-            <div id="section-masterwork"><MasterworkLab
-              novelId={novel.id}
-              chapters={novel.chapters}
-              genre={novel.genre}
-            /></div>
-
-            {/* Soul Workshop */}
-            <div id="section-soul"><SoulWorkshop novelId={novel.id} chapters={novel.chapters} /></div>
-
-            {/* Character Soul */}
-            <div id="section-characters"><CharacterSoul novelId={novel.id} /></div>
-
-            {/* Character Relationship Graph */}
-            {novel.characters && novel.characters.length > 0 && (
-              <div id="section-character-graph" className="p-4 bg-card border border-border rounded-xl">
-                <h3 className="font-heading text-base font-semibold text-ink mb-3">🕸️ 角色关系图</h3>
-                <CharacterGraph
-                  characters={novel.characters.map((c) => ({
-                    name: c.name,
-                    role: c.role,
-                    char_key: c.char_key,
-                  }))}
-                  relations={(novel.character_relations || []).map((r) => ({
-                    c1_name: r.c1_name,
-                    c2_name: r.c2_name,
-                    relation: r.relation_type,
-                  }))}
-                />
-              </div>
-            )}
-
-            {/* Writing Digest */}
-            <div id="section-digest"><WritingDigest chapters={novel.chapters} novelId={novel.id} /></div>
-
-            {/* Emotional Arc */}
-            <div id="section-arc"><EmotionalArc chapters={novel.chapters} /></div>
-
-            {/* Pacing Curve */}
-            <div id="section-pacing"><PacingCurve chapters={novel.chapters} /></div>
-
-            {/* Dialogue / Narration Ratio */}
-            <div id="section-dialogue"><DialogueRatio chapters={novel.chapters} /></div>
-
-            {/* Emotion Recipe */}
-            <div id="section-emotion"><EmotionRecipe chapters={novel.chapters} /></div>
-
-            {/* Creative Lab */}
-            <div id="section-creative"><CreativeLab chapters={novel.chapters} genre={novel.genre} novelId={novel.id} /></div>
-
-            {/* Plot Network */}
-            <div id="section-network"><PlotNetwork novelId={novel.id} /></div>
-
-            {/* Chapter DNA */}
-            <div id="section-dna"><ChapterDNA chapters={novel.chapters} novelId={novel.id} /></div>
-
-            {/* Story Lab: A/B Test + Character Voice */}
-            <div id="section-lab" className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <OpeningABTest novelId={novel.id} genre={novel.genre} synopsis={novel.synopsis} />
+          {/* 角色 Tab: CharacterSoul + CharacterGraph + SoulWorkshop + SoulEngine + CharacterVoices */}
+          {analysisTab === 'character' && (
+            <div className="space-y-4">
+              <div id="section-characters"><CharacterSoul novelId={novel.id} /></div>
+              {novel.characters && novel.characters.length > 0 && (
+                <div id="section-character-graph" className="p-4 bg-card border border-border rounded-xl">
+                  <h3 className="font-heading text-base font-semibold text-ink mb-3">🕸️ 角色关系图</h3>
+                  <CharacterGraph
+                    characters={novel.characters.map((c) => ({
+                      name: c.name,
+                      role: c.role,
+                      char_key: c.char_key,
+                    }))}
+                    relations={(novel.character_relations || []).map((r) => ({
+                      c1_name: r.c1_name,
+                      c2_name: r.c2_name,
+                      relation: r.relation_type,
+                    }))}
+                  />
+                </div>
+              )}
+              <div id="section-soul"><SoulWorkshop novelId={novel.id} chapters={novel.chapters} /></div>
+              <div id="section-engine"><SoulEngine novelId={novel.id} genre={novel.genre} /></div>
               <CharacterVoices novelId={novel.id} chapters={novel.chapters} />
             </div>
+          )}
 
-            {/* Smart Recommendations */}
-            <div id="section-recommend"><SmartRecommend genre={novel.genre} chapters={novel.chapters} /></div>
-
-            {/* Reader Simulator */}
-            <div id="section-sim">
-              <ReaderSim novelId={novel.id} chapters={novel.chapters} />
+          {/* 分析 Tab: ChapterDNA + EmotionRecipe + PlotNetwork + NovelArchitect + WritingDigest + SmartRecommend */}
+          {analysisTab === 'analysis' && (
+            <div className="space-y-4">
+              <div id="section-architect">
+                <NovelArchitect novelId={novel.id} chapters={novel.chapters} totalChapters={novel.total_chapters} />
+              </div>
+              <div id="section-digest"><WritingDigest chapters={novel.chapters} novelId={novel.id} /></div>
+              <div id="section-dna"><ChapterDNA chapters={novel.chapters} novelId={novel.id} /></div>
+              <div id="section-emotion"><EmotionRecipe chapters={novel.chapters} /></div>
+              <div id="section-network"><PlotNetwork novelId={novel.id} /></div>
+              <div id="section-recommend"><SmartRecommend genre={novel.genre} chapters={novel.chapters} /></div>
             </div>
-          </div>
-        )}
+          )}
+
+          {/* 工具 Tab: MasterworkLab + CreativeLab + ReaderSim + OpeningABTest + PlatformChecklist */}
+          {analysisTab === 'tools' && (
+            <div className="space-y-4">
+              <div id="section-masterwork"><MasterworkLab
+                novelId={novel.id}
+                chapters={novel.chapters}
+                genre={novel.genre}
+              /></div>
+              <div id="section-creative"><CreativeLab chapters={novel.chapters} genre={novel.genre} novelId={novel.id} /></div>
+              <div id="section-sim">
+                <ReaderSim novelId={novel.id} chapters={novel.chapters} />
+              </div>
+              <OpeningABTest novelId={novel.id} genre={novel.genre} synopsis={novel.synopsis} />
+              <PlatformChecklist chapters={novel.chapters} genre={novel.genre} />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Writer Stats — always visible */}
@@ -1190,8 +1218,8 @@ export function NovelDetail({ mode }: Props) {
               <span className="text-emerald-700 dark:text-emerald-300 font-medium">章节已生成</span>
               <span className="text-ink-muted ml-2">下一步：阅读 → 标记已审/待改 → 继续生成或精修</span>
             </div>
-            <button onClick={() => { setShowAnalysis(true); }}
-              className="text-[10px] text-accent hover:underline whitespace-nowrap">展开分析</button>
+            <button onClick={() => { setAnalysisTab('quality'); }}
+              className="text-[10px] text-accent hover:underline whitespace-nowrap">查看分析</button>
             <button onClick={() => {
               const chs = novel?.chapters?.filter((c: any) => c.word_count > 0) || [];
               if (chs.length >= 2) {
@@ -1590,9 +1618,8 @@ export function NovelDetail({ mode }: Props) {
         <span>快捷键</span>
       </div>
 
-      {/* Platform checklist + Publishing status */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <PlatformChecklist chapters={novel.chapters} genre={novel.genre} />
+      {/* Publishing status */}
+      <div className="mb-4">
         {novel.chapters && novel.chapters.length > 0 && (
           <div id="section-publish" className="p-4 bg-card border border-border rounded-xl">
             <h3 className="font-heading text-base font-semibold text-ink mb-3">📤 发布状态</h3>

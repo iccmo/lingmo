@@ -211,11 +211,11 @@ export function Dashboard() {
         <p className="text-sm text-ink-muted mt-1">管理你的 AI 小说创作</p>
       </div>
 
+      {/* Writing Goal Tracker — most important daily task */}
+      <WritingGoal />
+
       {/* Daily writing prompt */}
       <DailyPrompt />
-
-      {/* Writing Goal Tracker */}
-      <WritingGoal />
 
       {/* Writing Calendar */}
       {novels.length > 0 && (
@@ -246,6 +246,10 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Writing Trend Chart */}
+      {novels.length > 0 && <WritingTrend />}
+
+      {/* Stats row */}
       {status && (
         <div className="flex gap-8 mb-6 flex-wrap">
           {[
@@ -335,51 +339,6 @@ export function Dashboard() {
           )}
         </div>
       )}
-
-      {/* Writing Trend Chart */}
-      {novels.length > 0 && <WritingTrend />}
-
-      {/* Continue last reading */}
-      {(() => {
-        // Find the most recently read chapter across all novels
-        let latest: LastRead | null = null;
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (!key || !key.startsWith('last-read-')) continue;
-          try {
-            const data: LastRead = JSON.parse(localStorage.getItem(key) || '');
-            if (!latest || data.timestamp > latest.timestamp) latest = data;
-          } catch {}
-        }
-        if (!latest || !novels.find(n => n.id === latest!.novelId)) return null;
-        const novel = novels.find(n => n.id === latest!.novelId)!;
-        const timeAgo = Date.now() - latest.timestamp;
-        const agoStr = timeAgo < 60000 ? '刚刚'
-          : timeAgo < 3600000 ? `${Math.floor(timeAgo / 60000)}分钟前`
-          : timeAgo < 86400000 ? `${Math.floor(timeAgo / 3600000)}小时前`
-          : `${Math.floor(timeAgo / 86400000)}天前`;
-
-        return (
-          <button
-            onClick={() => navigate(`/novels/${latest!.novelId}`)}
-            className="w-full text-left mb-6 p-4 rounded-xl bg-gradient-to-r from-accent-soft/20 to-card border border-accent/10 hover:border-accent/30 transition-all group"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[10px] text-ink-subtle uppercase tracking-wider mb-0.5">📖 继续上次</p>
-                <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors">{novel.title}</p>
-                <p className="text-xs text-ink-muted mt-0.5">
-                  第{latest.chapter}章 {latest.title || ''}
-                  <span className="text-ink-subtle ml-2">{agoStr}</span>
-                </p>
-              </div>
-              <span className="shrink-0 px-3 py-1.5 bg-accent text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
-                继续 →
-              </span>
-            </div>
-          </button>
-        );
-      })()}
 
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)}
@@ -494,6 +453,47 @@ export function Dashboard() {
           } catch { return null; }
         })()}
       </div>
+
+      {/* Continue last reading — grouped with novel cards */}
+      {(() => {
+        let latest: LastRead | null = null;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (!key || !key.startsWith('last-read-')) continue;
+          try {
+            const data: LastRead = JSON.parse(localStorage.getItem(key) || '');
+            if (!latest || data.timestamp > latest.timestamp) latest = data;
+          } catch {}
+        }
+        if (!latest || !novels.find(n => n.id === latest!.novelId)) return null;
+        const novel = novels.find(n => n.id === latest!.novelId)!;
+        const timeAgo = Date.now() - latest.timestamp;
+        const agoStr = timeAgo < 60000 ? '刚刚'
+          : timeAgo < 3600000 ? `${Math.floor(timeAgo / 60000)}分钟前`
+          : timeAgo < 86400000 ? `${Math.floor(timeAgo / 3600000)}小时前`
+          : `${Math.floor(timeAgo / 86400000)}天前`;
+
+        return (
+          <button
+            onClick={() => navigate(`/novels/${latest!.novelId}`)}
+            className="w-full text-left mb-4 p-4 rounded-xl bg-gradient-to-r from-accent-soft/20 to-card border border-accent/10 hover:border-accent/30 transition-all group"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-ink-subtle uppercase tracking-wider mb-0.5">📖 继续上次</p>
+                <p className="text-sm font-medium text-ink group-hover:text-accent transition-colors">{novel.title}</p>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  第{latest.chapter}章 {latest.title || ''}
+                  <span className="text-ink-subtle ml-2">{agoStr}</span>
+                </p>
+              </div>
+              <span className="shrink-0 px-3 py-1.5 bg-accent text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                继续 →
+              </span>
+            </div>
+          </button>
+        );
+      })()}
 
       {(() => {
         try {

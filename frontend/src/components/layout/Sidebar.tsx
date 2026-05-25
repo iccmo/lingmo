@@ -95,6 +95,10 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
         const inNovel = location.pathname.startsWith(novelPath);
         const memActive = location.pathname === `${novelPath}/memory`;
         const foreshadowActive = location.pathname === `${novelPath}/foreshadowing`;
+        // Activity indicator: updated in last 24h
+        const recent = n.latest_chapter?.generated_at
+          ? (Date.now() - new Date(n.latest_chapter.generated_at + 'Z').getTime()) < 86400000
+          : false;
         return (
           <div key={n.id}>
             <button
@@ -106,9 +110,13 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
                 active ? 'bg-accent-soft text-accent font-medium' : inNovel ? 'text-ink hover:bg-paper' : 'text-ink-muted hover:text-ink hover:bg-paper'
               }`}
             >
-              <span className="truncate flex-1">{n.title}</span>
+              <span className="truncate flex-1 flex items-center gap-1.5">
+                {n.title}
+                {recent && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="24小时内更新" />
+                )}
+              </span>
               {(() => {
-                // Show approval badges
                 try {
                   const approvals = JSON.parse(localStorage.getItem(`approvals-${n.id}`) || '{}');
                   const reviseCount = Object.values(approvals).filter((s: any) => s === 'revise').length;
@@ -119,12 +127,23 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
                 return null;
               })()}
               {n.total_chapters > 0 && (
-                <span className="text-[9px] text-ink-subtle tabular-nums shrink-0">{n.total_chapters}章</span>
+                <span className="text-[10px] font-semibold text-ink-muted tabular-nums shrink-0">{n.total_chapters}章</span>
               )}
               {inNovel && !active && (
                 <span className="text-[9px] text-ink-subtle">◆</span>
               )}
             </button>
+            {/* Mini progress bar */}
+            {n.total_chapters > 0 && (
+              <div className="mx-3">
+                <div className="h-0.5 bg-border rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-accent/40 rounded-full transition-all duration-300"
+                    style={{ width: `${Math.min(n.total_chapters * 5, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <button
               onClick={() => navigate(`${novelPath}/memory`)}
               className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[10px] sm:text-[11px] transition-colors text-left w-full ml-4 ${
