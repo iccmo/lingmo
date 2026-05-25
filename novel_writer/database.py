@@ -640,3 +640,20 @@ class Database:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM voice_profile WHERE novel_id=? ORDER BY id DESC LIMIT ?",
                 (novel_id, limit)).fetchall()]
+
+    def save_cost_entry(self, novel_id: str, chapter_num: int, character_name: str,
+                         gain: str, loss: str, gain_type: str = 'info', loss_type: str = 'none',
+                         is_immediate: bool = True):
+        with self.conn() as c:
+            c.execute("""INSERT INTO cost_ledger (novel_id, chapter_num, character_name, gain, loss, gain_type, loss_type, is_immediate)
+                VALUES (?,?,?,?,?,?,?,?)""",
+                (novel_id, chapter_num, character_name, gain, loss, gain_type, loss_type, int(is_immediate)))
+
+    def get_cost_ledger(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM cost_ledger WHERE novel_id=? ORDER BY chapter_num", (novel_id,)).fetchall()]
+
+    def mark_consistency_fixed(self, issue_id: int):
+        with self.conn() as c:
+            c.execute("UPDATE consistency_log SET was_fixed=1 WHERE id=?", (issue_id,))

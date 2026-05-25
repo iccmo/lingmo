@@ -394,3 +394,18 @@ CREATE TABLE IF NOT EXISTS voice_profile (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_voice_novel ON voice_profile(novel_id);
+
+-- V14: Cost ledger — tracks gains vs losses per chapter (§50)
+CREATE TABLE IF NOT EXISTS cost_ledger (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    character_name  TEXT NOT NULL DEFAULT '',
+    gain            TEXT NOT NULL DEFAULT '',
+    loss            TEXT NOT NULL DEFAULT '',
+    gain_type       TEXT NOT NULL DEFAULT 'info',
+    loss_type       TEXT NOT NULL DEFAULT 'none',
+    is_immediate    INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cost_novel ON cost_ledger(novel_id, chapter_num);

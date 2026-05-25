@@ -4491,6 +4491,7 @@ def get_story_bible(novel_id: str):
         "timeline": db.get_timeline(novel_id),
         "world_rules": db.get_world_state(novel_id),
         "consistency_log": db.get_consistency_log(novel_id)[:20],
+        "cost_ledger": db.get_cost_ledger(novel_id),
     }
 
 
@@ -4548,6 +4549,9 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
   "timeline": {{"absolute_time": "故事内时间(如'第三天下午')", "relative_time": "距上一章的时间(如'三天后')", "event_summary": "本章事件一句话摘要"}},
   "world_rules": [
     {{"rule": "规则名", "description": "规则描述", "is_broken": false}}
+  ],
+  "costs": [
+    {{"character": "角色名", "gain": "获得什么", "loss": "失去什么", "gain_type": "info/power/relationship/position", "loss_type": "freedom/innocence/trust/health", "is_immediate": true}}
   ]
 }}
 
@@ -4633,6 +4637,18 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
                     db.save_world_state(novel_id, chapter_num, rule["rule"],
                         rule_description=rule.get("description", ""),
                         is_broken=rule.get("is_broken", False),
+                    )
+
+            # Save cost ledger entries (§50)
+            for cost in data.get("costs", []):
+                if cost.get("character") and (cost.get("gain") or cost.get("loss")):
+                    db.save_cost_entry(novel_id, chapter_num,
+                        character_name=cost["character"],
+                        gain=cost.get("gain", ""),
+                        loss=cost.get("loss", ""),
+                        gain_type=cost.get("gain_type", "info"),
+                        loss_type=cost.get("loss_type", "none"),
+                        is_immediate=cost.get("is_immediate", True),
                     )
 
             print(f"[BIBLE] Extracted story bible for {novel_id} ch{chapter_num}")
@@ -4800,4 +4816,30 @@ def get_voice_profile(novel_id: str):
     """Get voice profile samples for a novel."""
     if not db.get_novel(novel_id): raise HTTPException(404)
     return {"samples": db.get_voice_samples(novel_id)}
+
+
+# ═══════════════ Cost Ledger API (§50) ═══════════════
+
+@app.get("/api/novels/{novel_id}/cost-ledger")
+def get_cost_ledger(novel_id: str):
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    entries = db.get_cost_ledger(novel_id)
+    # Compute balance
+    total_gains = len([e for e in entries if e.get('gain')])
+    total_losses = len([e for e in entries if e.get('loss')])
+    return {
+        "entries": entries,
+        "summary": {
+            "total_gains": total_gains,
+            "total_losses": total_losses,
+            "balance": total_gains - total_losses,
+            "status": "balanced" if abs(total_gains - total_losses) <= 2 else ("surplus" if total_gains > total_losses else "deficit"),
+        }
+    }
+
+
+@app.post("/api/novels/{novel_id}/consistency/{issue_id}/fix")
+def mark_consistency_fixed(novel_id: str, issue_id: int):
+    db.mark_consistency_fixed(issue_id)
+    return {"ok": True}
 
