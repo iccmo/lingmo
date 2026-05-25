@@ -249,7 +249,7 @@ def save_chapter(novel_id: str, chapter_num: int, data: dict):
 _gen_directions: dict[str, str] = {}
 
 # In-memory store for agent pipeline results (keyed by novel_id)
-_agent_memos: dict[str, dict] = {}
+_constraints_cache: dict[str, str] = {}
 
 @app.post("/api/novels/{novel_id}/generate")
 def trigger_generate(novel_id: str, background: BackgroundTasks, data: dict = {}):
@@ -1340,7 +1340,7 @@ def _run_generation(novel_id: str):
         if soul_injection:
             author_direction = soul_injection + ("\n\n作者方向：" + author_direction if author_direction else "")
         # 【核心】注入约束 —— 数据库写小说，AI只是笔
-        constraints = _build_constraints(novel_id, chapter.number)
+        constraints = _constraints_cache.pop(novel_id, "") or _build_constraints(novel_id, chapter.number)
         if constraints and constraints != "无特定约束，自由创作":
             author_direction = f"【本章约束——必须遵守】\n{constraints}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
         _set_status(novel_id, "generating", "正在生成候选版本…（约40秒）", 20)
@@ -1486,63 +1486,11 @@ def _run_generation(novel_id: str):
             final_content = cleaned_body or chapter.content or chapter.summary
             next_ch = chapter.number + 1
             def _post_gen_pipeline():
+                # Only extract structured data + check consistency
                 _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
                 _run_consistency_check(novel_id, chapter.number)
-                # Agent auto-prep: Editor-in-Chief → brief for next chapter
-                brief = _agent_editor_in_chief(novel_id, next_ch)
-                if brief:
-                    outline = _agent_architect(novel_id, next_ch, brief)
-                    if brief or outline:
-                        direction = f"【总编简报（自动生成）】\n{brief}"
-                        if outline:
-                            direction += f"\n\n【章节大纲（自动生成）】\n{outline}"
-                        _gen_directions[novel_id] = direction
-                        print(f"[AGENT] Auto-prepared brief+outline for ch{next_ch}")
-
-                # V12: Full agent pipeline — non-blocking, each agent stores results in _agent_memos
-                novel_memos = _agent_memos.setdefault(novel_id, {})
-
-                try: novel_memos["narrative_distance"] = _agent_narrative_distance(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["narrative_distance"] = {"error": str(e)}
-
-                try: novel_memos["pov_shifts"] = _agent_pov_shifts(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["pov_shifts"] = {"error": str(e)}
-
-                try: novel_memos["narrative_voice"] = _agent_narrative_voice(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["narrative_voice"] = {"error": str(e)}
-
-                try: novel_memos["pre_understanding"] = _agent_pre_understanding(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["pre_understanding"] = {"error": str(e)}
-
-                try: novel_memos["midpoint_health"] = _agent_midpoint_health(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["midpoint_health"] = {"error": str(e)}
-
-                try: novel_memos["attention_curve"] = _agent_attention_curve(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["attention_curve"] = {"error": str(e)}
-
-                try: novel_memos["expectation_check"] = _agent_expectation_check(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["expectation_check"] = {"error": str(e)}
-
-                try: novel_memos["reverse_reading"] = _agent_reverse_reading(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["reverse_reading"] = {"error": str(e)}
-
-                try: novel_memos["scream_moments"] = _agent_scream_moments(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["scream_moments"] = {"error": str(e)}
-
-                try: novel_memos["ending_candidates"] = _agent_ending_candidates(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["ending_candidates"] = {"error": str(e)}
-
-                try: novel_memos["rituals"] = _agent_rituals(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["rituals"] = {"error": str(e)}
-
-                try: novel_memos["time_spiral"] = _agent_time_spiral(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["time_spiral"] = {"error": str(e)}
-
-                try: novel_memos["negative_space_health"] = _agent_negative_space_health(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["negative_space_health"] = {"error": str(e)}
-
-                try: novel_memos["boundary_check"] = _agent_boundary_check(novel_id, chapter.number, final_content)
-                except Exception as e: novel_memos["boundary_check"] = {"error": str(e)}
+                # Pre-compute constraints for next chapter
+                _constraints_cache[novel_id] = _build_constraints(novel_id, chapter.number + 1)
             threading.Thread(target=_post_gen_pipeline, daemon=True).start()
         except Exception:
             pass
