@@ -4503,8 +4503,10 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
         from .generator import Generator
         from .config import Config
         provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
-                     model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
+                     model=model)
         gen = Generator(cfg)
 
         prompt = f"""从以下小说章节中提取结构化信息。输出严格JSON格式，不要加任何解释。
@@ -4534,7 +4536,7 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
 {content[:3000]}
 """
         messages = [{"role": "user", "content": prompt}]
-        result = gen._call_llm_with_retry(messages, max_tokens=1024)
+        result = gen._call_llm_with_retry(messages, max_tokens=2048)
         if not result:
             return
 
@@ -4707,8 +4709,10 @@ def reverse_polish(novel_id: str, chapter_num: int):
         from .generator import Generator
         from .config import Config
         provider = _get_provider(novel_id)
+        models = provider.get("models", ["deepseek-v4-pro"])
+        model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
         cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
-                     model=provider.get("models","deepseek-v4-flash")[0] if provider.get("models") else "gpt-4o")
+                     model=model)
         gen = Generator(cfg)
 
         prompt = f"""以下是小说正文。你的任务是删减——只删不加，不改写。
