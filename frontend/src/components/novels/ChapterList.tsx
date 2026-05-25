@@ -97,6 +97,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   // Reverse polish
   const [polishing, setPolishing] = useState(false);
   const [polishedText, setPolishedText] = useState('');
+  // Text analysis
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
   // Chapter approval status: 'draft' | 'approved' | 'revise'
   const [approvals, setApprovals] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem(`approvals-${novelId}`) || '{}'); }
@@ -608,6 +611,19 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     }
   }
 
+  async function handleAnalyze() {
+    if (!expanded || !content) return;
+    setAnalyzing(true);
+    try {
+      const r = await fetch('/api/text/analyze', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: content}),
+      });
+      setAnalysisResult(await r.json());
+    } catch { toast.error('分析失败'); }
+    finally { setAnalyzing(false); }
+  }
+
   async function handleReversePolish() {
     if (!expanded || !content) return;
     setPolishing(true);
@@ -1105,6 +1121,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                   </button>
                 )}
                 <span className="text-[10px] text-ink-subtle">|</span>
+                {content && content !== '正文尚未生成' && (
+                  <button onClick={e => { e.stopPropagation(); handleAnalyze(); }}
+                    disabled={analyzing}
+                    className="text-[10px] text-ink-subtle hover:text-accent disabled:opacity-50">
+                    {analyzing ? '⏳' : '📈'} 分析
+                  </button>
+                )}
+                <span className="text-[10px] text-ink-subtle">|</span>
                 <button onClick={e => { e.stopPropagation(); setExpanded(null); }}
                   className="text-[10px] text-ink-subtle hover:text-ink">
                   收起
@@ -1157,6 +1181,37 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
               )}
 
               {/* Proofreading Results */}
+              {analysisResult && (
+                <div className="mt-3 p-3 rounded-lg bg-sky-50/50 dark:bg-sky-950/10 border border-sky-200 dark:border-sky-800 animate-[fadeSlideIn_0.2s_ease-out]">
+                  <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-400">📈 文本分析</span>
+                  <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">密度</div>
+                      <div className="font-bold text-ink">{analysisResult.density}</div>
+                    </div>
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">扭转力</div>
+                      <div className="font-bold text-ink">{analysisResult.forces?.torque}</div>
+                    </div>
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">开头</div>
+                      <div className="font-bold text-ink">{analysisResult.opening?.assessment}</div>
+                    </div>
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">体感</div>
+                      <div className="font-bold text-ink">{analysisResult.body_sense?.total || 0}</div>
+                    </div>
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">句长</div>
+                      <div className="font-bold text-ink">{analysisResult.style_fingerprint?.sentence_length}</div>
+                    </div>
+                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                      <div className="text-ink-subtle">对话%</div>
+                      <div className="font-bold text-ink">{analysisResult.style_fingerprint?.dialogue_ratio}%</div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {polishedText && (
                 <div className="mt-3 p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 animate-[fadeSlideIn_0.2s_ease-out]">
                   <div className="flex items-center justify-between mb-2">
