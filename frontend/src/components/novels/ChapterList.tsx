@@ -1183,32 +1183,28 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
               {/* Proofreading Results */}
               {analysisResult && (
                 <div className="mt-3 p-3 rounded-lg bg-sky-50/50 dark:bg-sky-950/10 border border-sky-200 dark:border-sky-800 animate-[fadeSlideIn_0.2s_ease-out]">
-                  <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-400">📈 文本分析</span>
-                  <div className="grid grid-cols-3 gap-2 mt-2 text-[10px]">
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">密度</div>
-                      <div className="font-bold text-ink">{analysisResult.density}</div>
-                    </div>
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">扭转力</div>
-                      <div className="font-bold text-ink">{analysisResult.forces?.torque}</div>
-                    </div>
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">开头</div>
-                      <div className="font-bold text-ink">{analysisResult.opening?.assessment}</div>
-                    </div>
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">体感</div>
-                      <div className="font-bold text-ink">{analysisResult.body_sense?.total || 0}</div>
-                    </div>
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">句长</div>
-                      <div className="font-bold text-ink">{analysisResult.style_fingerprint?.sentence_length}</div>
-                    </div>
-                    <div className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
-                      <div className="text-ink-subtle">对话%</div>
-                      <div className="font-bold text-ink">{analysisResult.style_fingerprint?.dialogue_ratio}%</div>
-                    </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-400">📈 文本分析</span>
+                    <span className="text-[9px] text-ink-subtle">{analysisResult.chars}字 · {analysisResult.sentences}句</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                    {[
+                      ['密度', analysisResult.density, '期望/百字'],
+                      ['扭转力', analysisResult.forces?.torque, '转折强度'],
+                      ['开头', analysisResult.opening?.assessment, '连接强度'],
+                      ['体感', analysisResult.body_sense?.total || 0, '视觉+触觉+听觉'],
+                      ['视觉', analysisResult.body_sense?.visual || 0, '看/见/望/盯'],
+                      ['触觉', analysisResult.body_sense?.tactile || 0, '碰/摸/冷/热/疼'],
+                      ['句长', analysisResult.style_fingerprint?.sentence_length, '字/句'],
+                      ['对话', analysisResult.style_fingerprint?.dialogue_ratio + '%', '引号占比'],
+                      ['描述', analysisResult.style_fingerprint?.description_ratio + '%', '感官描写占比'],
+                    ].map(([label, value, hint]) => (
+                      <div key={label as string} className="text-center p-1.5 rounded bg-white/50 dark:bg-black/10">
+                        <div className="text-ink-subtle text-[9px]">{label}</div>
+                        <div className="font-bold text-ink">{String(value)}</div>
+                        <div className="text-[8px] text-ink-subtle/50">{hint}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
