@@ -1,8 +1,11 @@
-"""FastAPI Web 后端 — REST API + Database"""
+"""灵墨 Web 后端 — REST API + Database + Brain Agent"""
 
 import json
 import re
 import sys
+
+from .brain_agent import BrainAgent
+from .stations.constraint_compressor import ConstraintCompressor
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -1339,11 +1342,16 @@ def _run_generation(novel_id: str):
         soul_injection = _gen_directions.pop(novel_id + "_soul", "")
         if soul_injection:
             author_direction = soul_injection + ("\n\n作者方向：" + author_direction if author_direction else "")
-        # 【核心】注入约束 —— 数据库写小说，AI只是笔
-        constraints = _constraints_cache.pop(novel_id, "") or _build_constraints(novel_id, chapter.number)
-        if constraints and constraints != "无特定约束，自由创作":
-            author_direction = f"【本章约束——必须遵守】\n{constraints}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
-        _set_status(novel_id, "generating", "正在生成候选版本…（约40秒）", 20)
+        # 【核心】Brain Agent + 约束压缩 —— 数据库写小说，AI只是笔
+        brain = BrainAgent(db)
+        constraint_result = brain.constraint_builder.run({
+            "novel_id": novel_id, "chapter_num": chapter.number, "db": db
+        })
+        compressor = ConstraintCompressor()
+        compressed = compressor.compress(constraint_result, "L1")  # 标准压缩：只保留硬约束
+        if compressed["text"]:
+            author_direction = f"【硬约束】\n{compressed['text']}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
+        _set_status(novel_id, "generating", f"正在生成候选版本…（约束{compressed['char_count']}字）", 20)
         chapter, quality = gen.batch_generate(state, n=2, rag_context=rag_context, outline=outline, style=style, author_input=author_direction)
         gen_duration = (_time.time() - t0) * 1000
         body = chapter.content or chapter.summary
@@ -1479,6 +1487,19 @@ def _run_generation(novel_id: str):
             threading.Thread(target=_pregen_tts_background, args=(novel_id, chapter.number), daemon=True).start()
         except Exception:
             pass
+
+        # Brain Agent: post-generation checks (deslop + consistency)
+        try:
+            final_body = cleaned_body or body
+            brain = BrainAgent(db)
+            deslop_result = brain.deslop_filter.run({"content": final_body})
+            print(f"[BRAIN] Deslop score: {deslop_result['score']}/50 ({deslop_result['grade']})")
+            consistency_result = brain.consistency_checker.run({
+                "novel_id": novel_id, "chapter_num": chapter.number, "db": db
+            })
+            print(f"[BRAIN] Consistency: {consistency_result['error_count']} errors, confidence={consistency_result['confidence']}%")
+        except Exception as e:
+            print(f"[BRAIN] Post-check failed: {e}")
 
         # V11: Extract story bible + consistency check → Agent prep next chapter (non-blocking)
         try:
