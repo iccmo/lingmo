@@ -76,17 +76,30 @@ export function StoryBibleView({ novelId }: Props) {
       {/* Active Foreshadowing */}
       {data.foreshadowing.length > 0 && (
         <div>
-          <h4 className="text-xs font-semibold text-ink mb-2">🔮 伏笔追踪</h4>
+          <h4 className="text-xs font-semibold text-ink mb-2">🔮 伏笔追踪 ({data.foreshadowing.length})</h4>
           <div className="space-y-1">
             {data.foreshadowing.map(f => (
               <div key={f.id} className={`p-1.5 rounded text-[10px] flex items-center justify-between ${
                 f.status === 'overdue' ? 'bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800' : 'bg-paper'
               }`}>
                 <span className="text-ink truncate flex-1">{f.description}</span>
-                <span className={`text-ink-subtle ml-2 shrink-0 ${
-                  f.status === 'overdue' ? 'text-red-500' : ''
-                }`}>
-                  {f.status === 'overdue' ? '⚠️ 过期' : `Ch${f.created_chapter} → ${f.due_by_chapter || '?'}`}
+                <span className="flex items-center gap-1 ml-2 shrink-0">
+                  <span className={`text-ink-subtle ${f.status === 'overdue' ? 'text-red-500' : ''}`}>
+                    {f.status === 'overdue' ? '⚠️ 过期' : `Ch${f.created_chapter} → ${f.due_by_chapter || '?'}`}
+                  </span>
+                  {f.status === 'active' && (
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      const ch = prompt('回收于第几章？', String(f.due_by_chapter || ''));
+                      if (ch) {
+                        await fetch(`/api/novels/${novelId}/foreshadowing/${f.id}/resolve`, {
+                          method: 'POST', headers: {'Content-Type': 'application/json'},
+                          body: JSON.stringify({chapter_num: parseInt(ch), text: ''}),
+                        });
+                        window.location.reload();
+                      }
+                    }} className="text-[9px] text-accent hover:underline">回收</button>
+                  )}
                 </span>
               </div>
             ))}
@@ -150,6 +163,17 @@ export function StoryBibleView({ novelId }: Props) {
             {data.consistency_log.filter(c => c.severity === 'error').length > 0 &&
               <span className="text-red-500 ml-1">({data.consistency_log.filter(c => c.severity === 'error').length} 错误)</span>
             }
+            {/* System Confidence Index (§66) */}
+            {(() => {
+              const all = data.consistency_log;
+              const errors = all.filter(c => c.severity === 'error').length;
+              const warnings = all.filter(c => c.severity === 'warning').length;
+              const fixed = all.filter(c => c.was_fixed).length;
+              const score = Math.max(0, Math.min(100, 100 - errors * 15 - warnings * 5 + fixed * 10));
+              return <span className={`ml-2 text-[10px] font-mono ${score >= 80 ? 'text-emerald-500' : score >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
+                信心 {score}%
+              </span>;
+            })()}
           </h4>
           <div className="space-y-1">
             {data.consistency_log.slice(0, 10).map((c, i) => (
@@ -169,6 +193,14 @@ export function StoryBibleView({ novelId }: Props) {
                 </div>
                 <p className="text-ink mt-0.5">{c.description}</p>
                 {c.fix_suggestion && <p className="text-ink-subtle mt-0.5">💡 {c.fix_suggestion}</p>}
+                {!c.was_fixed && (
+                  <button onClick={async () => {
+                    await fetch(`/api/novels/${novelId}/consistency/${c.id}/fix`, {method: 'POST'});
+                    window.location.reload();
+                  }}
+                    className="text-[9px] text-accent hover:underline mt-0.5">✅ 标记已修复</button>
+                )}
+                {c.was_fixed && <span className="text-[9px] text-emerald-500 mt-0.5">✅ 已修复</span>}
               </div>
             ))}
           </div>
