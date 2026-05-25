@@ -1,8 +1,7 @@
-const CACHE = 'novel-writer-v1';
-const URLS = ['/', '/assets/', '/api/novels'];
+const CACHE = 'lingmo-v2';
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/'])));
+  e.waitUntil(caches.delete('novel-writer-v1').then(() => caches.open(CACHE).then(c => c.addAll(['/']))));
 });
 
 self.addEventListener('fetch', e => {
