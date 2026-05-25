@@ -7135,12 +7135,27 @@ def _build_constraints(novel_id: str, next_chapter: int) -> str:
     """
     constraints = []
 
-    # ── 角色约束 ──
+    # ── 角色约束（静态设定 + 动态状态） ──
+    novel = db.get_novel(novel_id) or {}
+    static_chars = novel.get('characters', [])
+    char_map = {c['name']: c for c in static_chars if c.get('name')}
+
     chars = db.get_character_state(novel_id)
     latest = {}
     for c in chars:
-        latest[c['char_name']] = c  # 每角色取最新状态
+        latest[c['char_name']] = c
 
+    # Static character traits (from characters table)
+    for name, info in char_map.items():
+        traits = []
+        if info.get('personality'):
+            traits.append(f"性格：{info['personality'][:30]}")
+        if info.get('role') and info['role'] != '配角':
+            traits.append(f"角色：{info['role']}")
+        if traits:
+            constraints.append(f"🎭 {name} — {'；'.join(traits)}")
+
+    # Dynamic character states (from story_bible)
     for name, c in list(latest.items())[-8:]:
         parts = [name]
         if c.get('physical_state') and c['physical_state'] != '健康':
@@ -7159,6 +7174,25 @@ def _build_constraints(novel_id: str, next_chapter: int) -> str:
             parts.append(f"当前在{c['location']}")
         if len(parts) > 1:
             constraints.append(' - '.join(parts))
+
+    # Dormant characters (not appeared in 5+ chapters)
+    if chars and len(chars) > 2:
+        all_names = set(c['char_name'] for c in chars)
+        recent_names = set(c['char_name'] for c in chars[-5:])
+        dormant = all_names - recent_names
+        if dormant:
+            constraints.append(f"💤 久未出场：{', '.join(list(dormant)[:3])} — 考虑本章让其出现或暗示存在")
+
+    # ── 世界观约束 ──
+    if novel.get('power_system'):
+        constraints.append(f"🌍 修炼体系：{novel['power_system'][:60]}")
+    if novel.get('world_rules'):
+        try:
+            rules = json.loads(novel['world_rules']) if isinstance(novel['world_rules'], str) else novel['world_rules']
+            if isinstance(rules, list) and rules:
+                constraints.append(f"🌍 世界规则：{'；'.join(str(r)[:40] for r in rules[:3])}")
+        except Exception:
+            pass
 
     # ── 伏笔约束 ──
     fs = db.get_active_foreshadowing(novel_id)
