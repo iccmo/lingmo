@@ -5890,6 +5890,25 @@ def seed_bible_from_existing(novel_id: str):
     return {"status": "seeded", "seeded": seeded, "chapters": len(gen_chapters)}
 
 
+@app.get("/api/novels/{novel_id}/test-constraints")
+def test_constraint_compression(novel_id: str):
+    """A/B test: compare all 4 constraint compression levels."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    from .stations.compression_tester import CompressionTester
+    tester = CompressionTester(db)
+    novel = db.get_novel(novel_id)
+    next_ch = (novel.get("total_chapters") or 0) + 1
+    return tester.test_novel(novel_id, next_ch)
+
+
+@app.get("/api/test-all-constraints")
+def test_all_constraints():
+    """A/B test constraint compression across all novels."""
+    from .stations.compression_tester import CompressionTester
+    tester = CompressionTester(db)
+    return tester.test_all_novels()
+
+
 @app.get("/api/novels/{novel_id}/quality-gate")
 def get_quality_gate(novel_id: str):
     """Brain Agent quality gate for the latest chapter."""
