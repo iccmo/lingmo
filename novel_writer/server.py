@@ -5892,6 +5892,21 @@ def seed_bible_from_existing(novel_id: str):
     return {"status": "seeded", "seeded": seeded, "chapters": len(gen_chapters)}
 
 
+@app.post("/api/seed-all-bibles")
+def seed_all_bibles():
+    """Seed story bible for all novels with generated chapters."""
+    novels = db.list_novels()
+    results = {}
+    for n in novels:
+        if n.get("total_chapters", 0) > 0:
+            try:
+                r = seed_bible_from_existing(n["id"])
+                results[n["id"]] = r.get("seeded", {})
+            except Exception as e:
+                results[n["id"]] = {"error": str(e)[:100]}
+    return {"seeded": len(results), "results": results}
+
+
 @app.get("/api/novels/{novel_id}/preview-constraints")
 def preview_constraints(novel_id: str, level: str = "L1"):
     """Preview constraints that will be injected into next chapter generation."""
