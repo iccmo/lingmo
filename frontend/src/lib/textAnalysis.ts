@@ -201,3 +201,41 @@ export function analyzeWhitespace(text: string): WhitespaceReport {
 
   return { explicitChars, impliedCount, density, assessment };
 }
+
+/**
+ * Body sense analysis (§46).
+ * Counts sensory words to determine how much the reader's body engages.
+ */
+export interface SenseReport {
+  visual: number;
+  auditory: number;
+  tactile: number;
+  olfactory: number;
+  gustatory: number;
+  bodyTotal: number;
+  bodyDensity: number;
+  assessment: string;
+}
+
+export function analyzeBodySense(text: string): SenseReport {
+  const visual = (text.match(/看|见|望|盯|瞪|瞟|瞥|观|视|光|亮|暗|黑|白|红|蓝|绿|色|彩/g) || []).length;
+  const auditory = (text.match(/听|闻|声|响|音|说|道|问|答|喊|叫|吼|静|默/g) || []).length;
+  const tactile = (text.match(/碰|触|摸|握|抓|按|压|推|拉|冷|热|凉|暖|烫|疼|痛|麻|痒/g) || []).length;
+  const olfactory = (text.match(/闻|嗅|香|臭|气|味/g) || []).length;
+  const gustatory = (text.match(/尝|吃|喝|甜|酸|苦|辣|咸|涩/g) || []).length;
+
+  const total = visual + auditory + tactile + olfactory + gustatory;
+  const chars = text.replace(/\s/g, '').length;
+  const density = chars > 0 ? +(total / (chars / 100)).toFixed(1) : 0;
+
+  let assessment: string;
+  if (density > 15) assessment = '感官极密——读者身体高度参与';
+  else if (density > 8) assessment = '感官丰富——读者有身体共鸣';
+  else if (density > 3) assessment = '感官适中——可接受';
+  else assessment = '感官稀疏——增加触觉和视觉细节可提升沉浸';
+
+  return {
+    visual, auditory, tactile, olfactory, gustatory,
+    bodyTotal: total, bodyDensity: density, assessment,
+  };
+}

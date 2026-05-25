@@ -4552,6 +4552,75 @@ def constraint_collapse(novel_id: str, data: dict):
     return {"original":len(choices),"survivors":survivors,"eliminated":eliminated,"collapsed":len(survivors)==1}
 
 
+# ═══════════════ Wound Agent (§48) + Energy Form (§63) ═══════════════
+
+@app.get("/api/novels/{novel_id}/wound-arc")
+def get_wound_arc(novel_id: str):
+    """Track the narrative wound arc across chapters (§48)."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    chars = db.get_character_state(novel_id)
+    timeline = db.get_timeline(novel_id)
+    costs = db.get_cost_ledger(novel_id)
+
+    # Wound = cumulative losses / total chapters = how much the story "costs"
+    losses = [e for e in costs if e.get('loss')]
+    wound_score = len(losses) / max(1, len(timeline)) if timeline else 0
+
+    # Find the primary wound carrier (character with most losses)
+    char_losses: dict[str, int] = {}
+    for e in costs:
+        if e.get('loss') and e.get('character_name'):
+            char_losses[e['character_name']] = char_losses.get(e['character_name'], 0) + 1
+    primary = max(char_losses, key=char_losses.get) if char_losses else "未知"
+
+    return {
+        "primary_carrier": primary,
+        "wound_score": round(wound_score, 2),
+        "total_losses": len(losses),
+        "arc_stage": "深化" if wound_score > 0.3 else "建立" if wound_score > 0 else "未启动",
+        "suggestion": "伤口足够深，可以开始愈合弧线" if wound_score > 0.3 else "需要更多代价来建立伤口深度",
+    }
+
+
+@app.get("/api/novels/{novel_id}/energy-form")
+def get_energy_form(novel_id: str):
+    """Track energy transformation across chapters (§63)."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    tl = db.get_timeline(novel_id)
+    costs = db.get_cost_ledger(novel_id)
+    chars = db.get_character_state(novel_id)
+
+    if not tl:
+        return {"current": "潜在", "history": [], "suggestion": "故事尚未开始"}
+
+    # Map energy: gains=kinetic, losses=potential, emotions=thermal, reveals=explosive
+    recent_losses = [e for e in costs if e.get('loss')][-3:]
+    recent_emotions = [c.get('emotion','') for c in chars[-5:] if c.get('emotion')]
+
+    # Determine current energy form
+    if any('愤怒' in e or '恨' in e for e in recent_emotions):
+        current = "动能"
+    elif len(recent_losses) >= 2:
+        current = "势能"
+    elif any('悲伤' in e or '悔' in e for e in recent_emotions):
+        current = "热"
+    elif len(costs) > len(tl) * 0.5:
+        current = "爆炸"
+    else:
+        current = "潜在"
+
+    return {
+        "current": current,
+        "chapter_count": len(tl),
+        "loss_density": round(len(recent_losses) / max(1, len(tl)), 2),
+        "suggestion": (
+            "能量积累充足，适合释放（高潮章节）" if current == "势能"
+            else "能量正在释放，注意释放后的余波处理" if current == "爆炸"
+            else "能量平稳，适合推进或铺垫"
+        ),
+    }
+
+
 # ═══════════════ System Self-Check Matrix (§57) ═══════════════
 
 @app.get("/api/novels/{novel_id}/self-check")
