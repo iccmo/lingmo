@@ -23,6 +23,7 @@ import { SoulWorkshop } from 'src/components/novels/SoulWorkshop';
 import { CharacterSoul } from 'src/components/novels/CharacterSoul';
 import { CharacterGraph } from 'src/components/novels/CharacterGraph';
 import { StoryBibleView } from 'src/components/novels/StoryBibleView';
+import { UnsaidPanel } from 'src/components/novels/UnsaidPanel';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
 import { NovelArchitect } from 'src/components/novels/NovelArchitect';
 import { QualityWorkflow } from 'src/components/novels/QualityWorkflow';
@@ -1140,8 +1141,14 @@ export function NovelDetail({ mode }: Props) {
 
           {/* 📖 圣经 Tab: Story Bible */}
           {analysisTab === 'bible' && (
-            <div className="p-4 bg-card border border-border rounded-xl">
-              <StoryBibleView novelId={novel.id} />
+            <div className="space-y-4">
+              <div className="p-4 bg-card border border-border rounded-xl">
+                <h3 className="font-heading text-base font-semibold text-ink mb-3">🧊 冰山 — 不说之书</h3>
+                <UnsaidPanel novelId={novel.id} />
+              </div>
+              <div className="p-4 bg-card border border-border rounded-xl">
+                <StoryBibleView novelId={novel.id} />
+              </div>
             </div>
           )}
 
