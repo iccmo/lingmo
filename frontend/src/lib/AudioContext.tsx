@@ -7,8 +7,10 @@ const VOICES = [
   { id: 'zh-CN-YunxiNeural', name: '云希', gender: '男', style: '沉稳' },
   { id: 'zh-CN-XiaoyiNeural', name: '晓伊', gender: '女', style: '活泼' },
   { id: 'zh-CN-YunyangNeural', name: '云扬', gender: '男', style: '新闻' },
-  { id: 'zh-CN-XiaochenNeural', name: '晓辰', gender: '女', style: '自然' },
   { id: 'zh-CN-YunjianNeural', name: '云健', gender: '男', style: '运动' },
+  { id: 'zh-CN-YunxiaNeural', name: '云夏', gender: '男', style: '深情' },
+  { id: 'zh-CN-liaoning-XiaobeiNeural', name: '晓北', gender: '女', style: '东北话' },
+  { id: 'zh-CN-shaanxi-XiaoniNeural', name: '晓妮', gender: '女', style: '陕西话' },
 ] as const;
 
 export type PlaylistItem = {
@@ -178,7 +180,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState(0);
   const [positionSec, setPositionSec] = useState(0);
   const [speed, setSpeed] = useState(1.0);
-  const [voice, setVoice] = useState(() => localStorage.getItem('tts-voice') || 'zh-CN-XiaoxiaoNeural');
+  const [voice, setVoice] = useState(() => {
+    const saved = localStorage.getItem('tts-voice');
+    // Fallback if saved voice no longer exists (e.g., XiaochenNeural was removed)
+    const valid = VOICES.map(v => v.id);
+    return saved && valid.includes(saved) ? saved : 'zh-CN-XiaoxiaoNeural';
+  });
   const [playlist, setPlaylist] = useState<PlaylistItem[]>(loadPlaylist);
   const [sleepTimer, setSleepTimer] = useState(0);
   const [autoContinue, setAutoContinue] = useState(() => localStorage.getItem('audio-autocontinue') !== 'false');
