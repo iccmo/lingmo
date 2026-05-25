@@ -383,3 +383,14 @@ CREATE TABLE IF NOT EXISTS unsaid_book (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_unsaid_novel ON unsaid_book(novel_id);
+
+-- V13: Voice Profile — track author edits to learn preferences
+CREATE TABLE IF NOT EXISTS voice_profile (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id    TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num INTEGER NOT NULL,
+    before_text TEXT NOT NULL DEFAULT '',
+    after_text  TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_voice_novel ON voice_profile(novel_id);

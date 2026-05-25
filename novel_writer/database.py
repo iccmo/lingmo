@@ -629,3 +629,14 @@ class Database:
     def delete_unsaid(self, entry_id: int):
         with self.conn() as c:
             c.execute("DELETE FROM unsaid_book WHERE id=?", (entry_id,))
+
+    def save_voice_sample(self, novel_id: str, chapter_num: int, before_text: str, after_text: str):
+        with self.conn() as c:
+            c.execute("INSERT INTO voice_profile (novel_id, chapter_num, before_text, after_text) VALUES (?,?,?,?)",
+                (novel_id, chapter_num, before_text[:500], after_text[:500]))
+
+    def get_voice_samples(self, novel_id: str, limit: int = 20) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT * FROM voice_profile WHERE novel_id=? ORDER BY id DESC LIMIT ?",
+                (novel_id, limit)).fetchall()]

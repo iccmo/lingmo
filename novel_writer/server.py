@@ -230,7 +230,15 @@ def get_chapter(novel_id: str, chapter_num: int):
 def save_chapter(novel_id: str, chapter_num: int, data: dict):
     if not db.get_novel(novel_id):
         raise HTTPException(404, "Not found")
-    db.update_chapter(novel_id, chapter_num, content=data.get("content", ""),
+    new_content = data.get("content", "")
+    # Track edit for Voice Profile learning
+    try:
+        old = db.get_chapter(novel_id, chapter_num)
+        if old and old.get("content") and old["content"] != new_content:
+            db.save_voice_sample(novel_id, chapter_num, old["content"][:500], new_content[:500])
+    except Exception:
+        pass
+    db.update_chapter(novel_id, chapter_num, content=new_content,
                       edit_ratio=data.get("edit_ratio", 0))
     return {"ok": True}
 
@@ -4750,4 +4758,46 @@ def reverse_polish(novel_id: str, chapter_num: int):
         return {"polished": result, "original_length": len(ch['content']), "polished_length": len(result)}
     except Exception as e:
         raise HTTPException(500, str(e)[:200])
+
+
+# ═══════════════ Foreshadowing Management ═══════════════
+
+@app.get("/api/novels/{novel_id}/foreshadowing/all")
+def get_all_foreshadowing(novel_id: str):
+    """Get all foreshadowing (active + resolved + overdue)."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    with db.conn() as c:
+        rows = c.execute("SELECT * FROM foreshadowing_tracker WHERE novel_id=? ORDER BY created_chapter",
+            (novel_id,)).fetchall()
+        return {"items": [dict(r) for r in rows]}
+
+
+@app.post("/api/novels/{novel_id}/foreshadowing/{fs_id}/resolve")
+def resolve_foreshadowing(novel_id: str, fs_id: int, data: dict):
+    """Mark foreshadowing as resolved."""
+    chapter_num = data.get("chapter_num", 0)
+    text = data.get("text", "")
+    db.resolve_foreshadowing(fs_id, chapter_num, text)
+    return {"ok": True}
+
+
+@app.post("/api/novels/{novel_id}/foreshadowing")
+def add_foreshadowing_manual(novel_id: str, data: dict):
+    """Manually add foreshadowing."""
+    desc = (data.get("description") or "").strip()
+    if not desc: raise HTTPException(400, "Description required")
+    ch = data.get("chapter", 0)
+    hint = data.get("hint", "")
+    due = data.get("due_by")
+    db.save_foreshadowing(novel_id, int(ch), desc, hint, int(due) if due else None)
+    return {"ok": True}
+
+
+# ═══════════════ Voice Profile API ═══════════════
+
+@app.get("/api/novels/{novel_id}/voice-profile")
+def get_voice_profile(novel_id: str):
+    """Get voice profile samples for a novel."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    return {"samples": db.get_voice_samples(novel_id)}
 
