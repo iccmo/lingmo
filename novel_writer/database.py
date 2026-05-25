@@ -528,3 +528,92 @@ class Database:
             rows = c.execute("SELECT stat_key, stat_value FROM audio_stats").fetchall()
             return {r['stat_key']: r['stat_value'] for r in rows}
 
+
+    # ═══════════════════ Story Bible ═══════════════════
+
+    def save_character_state(self, novel_id: str, chapter_num: int, char_name: str,
+                              emotion: str = '', physical_state: str = '', knowledge: str = '[]',
+                              goal: str = '', location: str = '', relationships: str = '[]'):
+        with self.conn() as c:
+            c.execute("""INSERT INTO character_state (novel_id, chapter_num, char_name, emotion,
+                physical_state, knowledge, goal, location, relationships)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (novel_id, chapter_num, char_name, emotion, physical_state, knowledge, goal, location, relationships))
+
+    def get_character_state(self, novel_id: str, chapter_num: int = None) -> list[dict]:
+        with self.conn() as c:
+            if chapter_num:
+                rows = c.execute("""SELECT * FROM character_state WHERE novel_id=? AND chapter_num=?
+                    ORDER BY id""", (novel_id, chapter_num)).fetchall()
+            else:
+                rows = c.execute("""SELECT cs.* FROM character_state cs
+                    WHERE cs.novel_id=? AND cs.chapter_num = (
+                        SELECT MAX(chapter_num) FROM character_state WHERE novel_id=cs.novel_id AND char_name=cs.char_name
+                    ) ORDER BY cs.char_name""", (novel_id,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def save_foreshadowing(self, novel_id: str, chapter_num: int, description: str,
+                           hint_text: str = '', due_by: int = None):
+        with self.conn() as c:
+            c.execute("""INSERT INTO foreshadowing_tracker (novel_id, created_chapter, description, hint_text, due_by_chapter)
+                VALUES (?, ?, ?, ?, ?)""", (novel_id, chapter_num, description, hint_text, due_by))
+
+    def resolve_foreshadowing(self, f_id: int, chapter_num: int, resolved_text: str = ''):
+        with self.conn() as c:
+            c.execute("""UPDATE foreshadowing_tracker SET status='resolved', resolved_chapter=?,
+                resolved_text=? WHERE id=?""", (chapter_num, resolved_text, f_id))
+
+    def get_active_foreshadowing(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute("""SELECT * FROM foreshadowing_tracker WHERE novel_id=? AND status='active'
+                ORDER BY due_by_chapter""", (novel_id,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def save_location_history(self, novel_id: str, chapter_num: int, location_name: str,
+                              event: str = '', state_change: str = ''):
+        with self.conn() as c:
+            c.execute("INSERT INTO location_history (novel_id, chapter_num, location_name, event, state_change) VALUES (?,?,?,?,?)",
+                (novel_id, chapter_num, location_name, event, state_change))
+
+    def get_location_history(self, novel_id: str, location_name: str = None) -> list[dict]:
+        with self.conn() as c:
+            if location_name:
+                rows = c.execute("SELECT * FROM location_history WHERE novel_id=? AND location_name=? ORDER BY chapter_num",
+                    (novel_id, location_name)).fetchall()
+            else:
+                rows = c.execute("SELECT * FROM location_history WHERE novel_id=? ORDER BY chapter_num",
+                    (novel_id,)).fetchall()
+            return [dict(r) for r in rows]
+
+    def save_timeline_event(self, novel_id: str, chapter_num: int, absolute_time: str = '',
+                             relative_time: str = '', event_summary: str = ''):
+        with self.conn() as c:
+            c.execute("INSERT INTO story_timeline (novel_id, chapter_num, absolute_time, relative_time, event_summary) VALUES (?,?,?,?,?)",
+                (novel_id, chapter_num, absolute_time, relative_time, event_summary))
+
+    def get_timeline(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM story_timeline WHERE novel_id=? ORDER BY chapter_num",
+                (novel_id,)).fetchall()]
+
+    def save_world_state(self, novel_id: str, chapter_num: int, rule_name: str,
+                         rule_description: str = '', is_broken: bool = False):
+        with self.conn() as c:
+            c.execute("INSERT INTO world_state (novel_id, chapter_num, rule_name, rule_description, is_broken) VALUES (?,?,?,?,?)",
+                (novel_id, chapter_num, rule_name, rule_description, int(is_broken)))
+
+    def get_world_state(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM world_state WHERE novel_id=? ORDER BY chapter_num",
+                (novel_id,)).fetchall()]
+
+    def log_consistency_issue(self, novel_id: str, chapter_num: int, check_type: str,
+                               severity: str, description: str, fix_suggestion: str = ''):
+        with self.conn() as c:
+            c.execute("""INSERT INTO consistency_log (novel_id, chapter_num, check_type, severity, description, fix_suggestion)
+                VALUES (?,?,?,?,?,?)""", (novel_id, chapter_num, check_type, severity, description, fix_suggestion))
+
+    def get_consistency_log(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM consistency_log WHERE novel_id=? ORDER BY chapter_num DESC",
+                (novel_id,)).fetchall()]

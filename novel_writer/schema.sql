@@ -297,3 +297,80 @@ CREATE TABLE IF NOT EXISTS chapter_summaries (
     UNIQUE(novel_id, chapter_num)
 );
 CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id);
+
+-- V11: Story Bible — structured memory for novel consistency
+CREATE TABLE IF NOT EXISTS character_state (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    char_name       TEXT NOT NULL,
+    emotion         TEXT NOT NULL DEFAULT '',
+    physical_state  TEXT NOT NULL DEFAULT '',
+    knowledge       TEXT NOT NULL DEFAULT '[]',
+    goal            TEXT NOT NULL DEFAULT '',
+    location        TEXT NOT NULL DEFAULT '',
+    relationships   TEXT NOT NULL DEFAULT '[]',
+    notes           TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_char_state_novel ON character_state(novel_id, char_name, chapter_num);
+
+CREATE TABLE IF NOT EXISTS foreshadowing_tracker (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id            TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    created_chapter     INTEGER NOT NULL,
+    description         TEXT NOT NULL,
+    hint_text           TEXT NOT NULL DEFAULT '',
+    due_by_chapter      INTEGER,
+    status              TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved','overdue')),
+    resolved_chapter    INTEGER,
+    resolved_text       TEXT NOT NULL DEFAULT '',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_foreshadowing_novel ON foreshadowing_tracker(novel_id, status);
+
+CREATE TABLE IF NOT EXISTS location_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    location_name   TEXT NOT NULL,
+    event           TEXT NOT NULL DEFAULT '',
+    state_change    TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_location_novel ON location_history(novel_id, chapter_num);
+
+CREATE TABLE IF NOT EXISTS story_timeline (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    absolute_time   TEXT NOT NULL DEFAULT '',
+    relative_time   TEXT NOT NULL DEFAULT '',
+    event_summary   TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_timeline_novel ON story_timeline(novel_id, chapter_num);
+
+CREATE TABLE IF NOT EXISTS world_state (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id            TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num         INTEGER NOT NULL,
+    rule_name           TEXT NOT NULL,
+    rule_description    TEXT NOT NULL DEFAULT '',
+    is_broken           INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_world_novel ON world_state(novel_id, chapter_num);
+
+CREATE TABLE IF NOT EXISTS consistency_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    check_type      TEXT NOT NULL DEFAULT 'character',
+    severity        TEXT NOT NULL DEFAULT 'warning' CHECK(severity IN ('error','warning','info')),
+    description     TEXT NOT NULL DEFAULT '',
+    fix_suggestion  TEXT NOT NULL DEFAULT '',
+    was_fixed       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_consistency_novel ON consistency_log(novel_id, chapter_num);

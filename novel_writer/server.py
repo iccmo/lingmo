@@ -1437,6 +1437,14 @@ def _run_generation(novel_id: str):
         except Exception:
             pass
 
+        # V11: Extract story bible (non-blocking)
+        try:
+            import threading
+            final_content = cleaned_body or chapter.content or chapter.summary
+            threading.Thread(target=_extract_story_bible, args=(novel_id, chapter.number, final_content, chapter.title), daemon=True).start()
+        except Exception:
+            pass
+
         # Extract character voices from generated chapter
         try:
             gen._extract_character_voices(cleaned_body or chapter.content or "", state)
@@ -4427,6 +4435,23 @@ if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
 
 # SPA fallback: serve static files if they exist, otherwise index.html
+# ═══════════════ Story Bible API ═══════════════
+
+@app.get("/api/novels/{novel_id}/story-bible")
+def get_story_bible(novel_id: str):
+    """Get complete story bible for a novel."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+    return {
+        "characters": db.get_character_state(novel_id),
+        "foreshadowing": db.get_active_foreshadowing(novel_id),
+        "locations": db.get_location_history(novel_id),
+        "timeline": db.get_timeline(novel_id),
+        "world_rules": db.get_world_state(novel_id),
+        "consistency_log": db.get_consistency_log(novel_id)[:20],
+    }
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""
@@ -4447,3 +4472,110 @@ async def serve_root():
     if not index_path.exists():
         raise HTTPException(404, "Frontend not built")
     return FileResponse(index_path)
+
+# ═══════════════ Story Bible API ═══════════════
+
+def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_title: str):
+    """Auto-extract structured story data from generated chapter using LLM."""
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
+                     model=provider.get("models","deepseek-v4-pro")[0] if provider.get("models") else "gpt-4o")
+        gen = Generator(cfg)
+
+        prompt = f"""从以下小说章节中提取结构化信息。输出严格JSON格式，不要加任何解释。
+
+{{
+  "characters": [
+    {{"name": "角色名", "emotion": "当前情绪", "physical_state": "身体状态(健康/受伤/...)",
+      "knowledge": ["新获得的信息1", "新获得的信息2"],
+      "goal": "当前目标", "location": "当前位置",
+      "relationships": [{{"target": "关联角色名", "change": "态度变化描述"}}]
+    }}
+  ],
+  "foreshadowing": [
+    {{"description": "新埋的伏笔描述", "hint_text": "原文暗示片段(20字以内)", "due_by_chapter": "预计回收章节(数字)"}}
+  ],
+  "locations": [
+    {{"name": "地点名", "event": "发生的事件(10字)", "state_change": "状态变化"}}
+  ],
+  "timeline": {{"absolute_time": "故事内时间(如'第三天下午')", "relative_time": "距上一章的时间(如'三天后')", "event_summary": "本章事件一句话摘要"}},
+  "world_rules": [
+    {{"rule": "规则名", "description": "规则描述", "is_broken": false}}
+  ]
+}}
+
+章节标题：{chapter_title}
+章节正文（前3000字）：
+{content[:3000]}
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=1024)
+        if not result:
+            return
+
+        import json
+        # Try to extract JSON from response
+        json_start = result.find('{')
+        json_end = result.rfind('}') + 1
+        if json_start >= 0 and json_end > json_start:
+            data = json.loads(result[json_start:json_end])
+
+            # Save character states
+            for char in data.get("characters", []):
+                if char.get("name"):
+                    knowledge = char.get("knowledge", [])
+                    if isinstance(knowledge, list):
+                        knowledge = json.dumps(knowledge, ensure_ascii=False)
+                    relationships = char.get("relationships", [])
+                    if isinstance(relationships, list):
+                        relationships = json.dumps(relationships, ensure_ascii=False)
+                    db.save_character_state(
+                        novel_id, chapter_num, char["name"],
+                        emotion=char.get("emotion", ""),
+                        physical_state=char.get("physical_state", ""),
+                        knowledge=knowledge,
+                        goal=char.get("goal", ""),
+                        location=char.get("location", ""),
+                        relationships=relationships,
+                    )
+
+            # Save foreshadowing
+            for fs in data.get("foreshadowing", []):
+                if fs.get("description"):
+                    due = fs.get("due_by_chapter")
+                    db.save_foreshadowing(novel_id, chapter_num, fs["description"],
+                        hint_text=fs.get("hint_text", ""),
+                        due_by=int(due) if due and str(due).isdigit() else None,
+                    )
+
+            # Save locations
+            for loc in data.get("locations", []):
+                if loc.get("name"):
+                    db.save_location_history(novel_id, chapter_num, loc["name"],
+                        event=loc.get("event", ""),
+                        state_change=loc.get("state_change", ""),
+                    )
+
+            # Save timeline
+            tl = data.get("timeline", {})
+            if tl:
+                db.save_timeline_event(novel_id, chapter_num,
+                    absolute_time=tl.get("absolute_time", ""),
+                    relative_time=tl.get("relative_time", ""),
+                    event_summary=tl.get("event_summary", ""),
+                )
+
+            # Save world rules
+            for rule in data.get("world_rules", []):
+                if rule.get("rule"):
+                    db.save_world_state(novel_id, chapter_num, rule["rule"],
+                        rule_description=rule.get("description", ""),
+                        is_broken=rule.get("is_broken", False),
+                    )
+
+            print(f"[BIBLE] Extracted story bible for {novel_id} ch{chapter_num}")
+    except Exception as e:
+        print(f"[BIBLE] Extraction failed: {e}")
