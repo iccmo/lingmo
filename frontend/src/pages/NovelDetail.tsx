@@ -23,6 +23,7 @@ import { SoulWorkshop } from 'src/components/novels/SoulWorkshop';
 import { CharacterSoul } from 'src/components/novels/CharacterSoul';
 import { CharacterGraph } from 'src/components/novels/CharacterGraph';
 import { StoryBibleView } from 'src/components/novels/StoryBibleView';
+import { AgentDashboard } from 'src/components/novels/AgentDashboard';
 import { UnsaidPanel } from 'src/components/novels/UnsaidPanel';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
 import { NovelArchitect } from 'src/components/novels/NovelArchitect';
@@ -1080,6 +1081,7 @@ export function NovelDetail({ mode }: Props) {
             { key: 'bible', label: '📖 圣经' },
             { key: 'analysis', label: '分析' },
             { key: 'tools', label: '工具' },
+            { key: 'agent', label: '🤖 Agent' },
           ].map(tab => (
             <button
               key={tab.key}
@@ -1180,6 +1182,13 @@ export function NovelDetail({ mode }: Props) {
               </div>
               <OpeningABTest novelId={novel.id} genre={novel.genre} synopsis={novel.synopsis} />
               <PlatformChecklist chapters={novel.chapters} genre={novel.genre} />
+            </div>
+          )}
+
+          {/* 🤖 Agent Tab: 5种代理分析 */}
+          {analysisTab === 'agent' && (
+            <div className="space-y-4">
+              <AgentDashboard novelId={novel.id} />
             </div>
           )}
         </div>

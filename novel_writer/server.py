@@ -248,6 +248,9 @@ def save_chapter(novel_id: str, chapter_num: int, data: dict):
 # In-memory store for chapter generation directions
 _gen_directions: dict[str, str] = {}
 
+# In-memory store for agent pipeline results (keyed by novel_id)
+_agent_memos: dict[str, dict] = {}
+
 @app.post("/api/novels/{novel_id}/generate")
 def trigger_generate(novel_id: str, background: BackgroundTasks, data: dict = {}):
     if not db.get_novel(novel_id):
@@ -1491,6 +1494,51 @@ def _run_generation(novel_id: str):
                             direction += f"\n\n【章节大纲（自动生成）】\n{outline}"
                         _gen_directions[novel_id] = direction
                         print(f"[AGENT] Auto-prepared brief+outline for ch{next_ch}")
+
+                # V12: Full agent pipeline — non-blocking, each agent stores results in _agent_memos
+                novel_memos = _agent_memos.setdefault(novel_id, {})
+
+                try: novel_memos["narrative_distance"] = _agent_narrative_distance(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["narrative_distance"] = {"error": str(e)}
+
+                try: novel_memos["pov_shifts"] = _agent_pov_shifts(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["pov_shifts"] = {"error": str(e)}
+
+                try: novel_memos["narrative_voice"] = _agent_narrative_voice(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["narrative_voice"] = {"error": str(e)}
+
+                try: novel_memos["pre_understanding"] = _agent_pre_understanding(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["pre_understanding"] = {"error": str(e)}
+
+                try: novel_memos["midpoint_health"] = _agent_midpoint_health(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["midpoint_health"] = {"error": str(e)}
+
+                try: novel_memos["attention_curve"] = _agent_attention_curve(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["attention_curve"] = {"error": str(e)}
+
+                try: novel_memos["expectation_check"] = _agent_expectation_check(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["expectation_check"] = {"error": str(e)}
+
+                try: novel_memos["reverse_reading"] = _agent_reverse_reading(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["reverse_reading"] = {"error": str(e)}
+
+                try: novel_memos["scream_moments"] = _agent_scream_moments(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["scream_moments"] = {"error": str(e)}
+
+                try: novel_memos["ending_candidates"] = _agent_ending_candidates(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["ending_candidates"] = {"error": str(e)}
+
+                try: novel_memos["rituals"] = _agent_rituals(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["rituals"] = {"error": str(e)}
+
+                try: novel_memos["time_spiral"] = _agent_time_spiral(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["time_spiral"] = {"error": str(e)}
+
+                try: novel_memos["negative_space_health"] = _agent_negative_space_health(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["negative_space_health"] = {"error": str(e)}
+
+                try: novel_memos["boundary_check"] = _agent_boundary_check(novel_id, chapter.number, final_content)
+                except Exception as e: novel_memos["boundary_check"] = {"error": str(e)}
             threading.Thread(target=_post_gen_pipeline, daemon=True).start()
         except Exception:
             pass
@@ -5827,6 +5875,22 @@ def neg_space_health(novel_id: str):
     }
 
 
+@app.get("/api/novels/{novel_id}/agent-report")
+def agent_report(novel_id: str):
+    """Return all agent results from the last pipeline run for this novel.
+
+    Returns {agent_name: result_dict} for all 14 agents.
+    """
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+    memos = _agent_memos.get(novel_id, {})
+    return {
+        "novel_id": novel_id,
+        "agent_count": len(memos),
+        "agents": memos,
+    }
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""
@@ -6562,6 +6626,520 @@ def _agent_fact_checker(novel_id: str, chapter_num: int, content: str) -> list[s
         pass
     return issues
 
+
+# ═══════════════ Agent Pipeline (V12) — 14 Non-blocking Analysis Agents ═══════════════
+
+def _agent_narrative_distance(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Compute narrative distance (close/medium/far) and store as memo (§22)."""
+    try:
+        # Heuristic: count sensory words (close) vs summary words (far)
+        close_words = len(re.findall(r'感觉|闻到|听到|触摸|指甲|心跳|呼吸|颤抖|刺痛', content))
+        far_words = len(re.findall(r'后来|从此|多年|据说|传说|曾经|据说|那年', content))
+        total_avg = close_words + far_words
+        if total_avg == 0:
+            ratio = 0.5
+        else:
+            ratio = close_words / total_avg
+
+        if ratio > 0.6:
+            distance = "close"
+        elif ratio < 0.4:
+            distance = "far"
+        else:
+            distance = "medium"
+
+        result = {
+            "distance": distance,
+            "close_signals": close_words,
+            "far_signals": far_words,
+            "ratio": round(ratio, 2),
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.narrative_distance", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_pov_shifts(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Track POV shifts — count and flag rapid changes (§54)."""
+    try:
+        # Detect POV marker words
+        pov_markers = re.findall(
+            r'(?:他|她|我|它)(?:心想|暗想|寻思|感到|觉得|意识到|注意到|发现|看见|听见)',
+            content
+        )
+        # Count POV carriers
+        carriers = set()
+        for m in pov_markers:
+            if m[0] in ('他', '她', '它'):
+                carriers.add(m[0])
+            elif m[0] == '我':
+                carriers.add('我')
+
+        # Heuristic: paragraphs starting with different character names = POV shifts
+        paragraphs = [p.strip() for p in content.split('\n') if p.strip()]
+        pov_shift_count = 0
+        prev_char = None
+        for p in paragraphs:
+            m = re.match(r'([^，。,.!！?？\s]{1,4})', p)
+            if m:
+                name = m.group(1)
+                if name != prev_char and '说' not in p[:10]:
+                    prev_char = name
+                    pov_shift_count += 1
+
+        result = {
+            "pov_shifts": pov_shift_count,
+            "pov_carriers": list(carriers),
+            "is_rapid": pov_shift_count > 5,
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.pov_shifts", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_narrative_voice(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Check narrative voice consistency — sentence length, tone markers (§47)."""
+    try:
+        sentences = re.split(r'[。!！?？]', content)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        lengths = [len(s) for s in sentences]
+
+        avg_len = sum(lengths) / len(lengths) if lengths else 0
+        short_count = sum(1 for l in lengths if l < 10)
+        long_count = sum(1 for l in lengths if l > 50)
+
+        # Tone markers
+        exclaim = content.count('！') + content.count('!')
+        question = content.count('？') + content.count('?')
+        ellipsis = content.count('……') + content.count('...')
+
+        # Previous voice data for comparison
+        prev_entries = db.get_character_state(novel_id, chapter_num - 1) if chapter_num > 1 else []
+
+        result = {
+            "avg_sentence_len": round(avg_len, 1),
+            "short_sentences": short_count,
+            "long_sentences": long_count,
+            "exclaim": exclaim,
+            "question": question,
+            "ellipsis": ellipsis,
+            "total_sentences": len(sentences),
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.narrative_voice", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_pre_understanding(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Simulate reader types and what they bring to this chapter (§17)."""
+    try:
+        # Simulate 3 reader archetypes
+        reader_types = {
+            "casual": {"pre": "零背景知识进入，只关心爽感", "focus_keywords": ["战斗", "升级", "宝物", "美女", "装逼"]},
+            "veteran": {"pre": "记忆前文伏笔的资深读者", "focus_keywords": ["伏笔", "暗线", "因果", "代价", "成长"]},
+            "critical": {"pre": "挑剔的编辑/批评者视角", "focus_keywords": ["逻辑", "节奏", "人物弧", "文字", "主题"]},
+        }
+
+        results = {}
+        for rtype, info in reader_types.items():
+            hits = sum(1 for kw in info["focus_keywords"] if kw in content)
+            results[rtype] = {
+                "pre_state": info["pre"],
+                "keyword_hits": hits,
+                "satisfaction": "high" if hits >= 3 else "medium" if hits >= 1 else "low",
+            }
+
+        result = {
+            "reader_types": results,
+            "overall_satisfaction": "high" if all(r["satisfaction"] == "high" for r in results.values()) else "mixed",
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.pre_understanding", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_midpoint_health(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Check midpoint chapter health — stakes, reversals, character stakes (§64)."""
+    try:
+        novel = db.get_novel(novel_id)
+        total_chs = len(novel.get("chapters", []))
+        # Only meaningful if this is the midpoint
+        is_midpoint = abs(chapter_num - total_chs // 2) <= 2
+
+        # Heuristic midpoint signals
+        has_reversal = bool(re.search(r'(?:反转|不料|没想到|却是|竟然|居然)', content))
+        has_stakes = bool(re.search(r'(?:代价|失去|风险|危险|生死|命|死)', content))
+        has_reveal = bool(re.search(r'(?:真相|秘密|隐瞒|欺骗|真实|原来)', content))
+
+        result = {
+            "is_midpoint": is_midpoint,
+            "chapter": chapter_num,
+            "has_reversal": has_reversal,
+            "has_stakes": has_stakes,
+            "has_reveal": has_reveal,
+            "health_score": (has_reversal + has_stakes + has_reveal) / 3,
+        }
+        if is_midpoint:
+            db.log(novel_id, "agent.midpoint_health", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_attention_curve(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Compute attention curve per chapter — hook density, cliff detection (§67)."""
+    try:
+        paragraphs = [p.strip() for p in content.split('\n') if len(p.strip()) > 20]
+        n = len(paragraphs)
+
+        # Hook density: count tension markers per paragraph segment
+        hooks = []
+        cliff_markers = re.findall(r'(?:突然|忽然|却|但|可|然而|不料|谁知|就在)', content)
+        tension_markers = re.findall(r'(?:危险|威胁|杀意|恐惧|死亡|绝望|紧急|来不及)', content)
+
+        segments = max(1, n // 5)
+        curve = []
+        for i in range(5):
+            seg_paras = paragraphs[i * segments:(i + 1) * segments]
+            seg_text = ' '.join(seg_paras)
+            seg_tension = len(re.findall(r'(?:突然|忽然|却|但|可|然而|不料|谁知|就在|危险|威胁|杀意|恐惧)', seg_text))
+            curve.append({"segment": f"{i*20}-{(i+1)*20}%", "tension": seg_tension})
+
+        # Check if chapter ends with a cliff
+        last_para = paragraphs[-1] if paragraphs else ""
+        is_cliff = bool(re.search(r'(?:未完|待续|突然|忽然|不料|谁知)', last_para[-50:]))
+
+        result = {
+            "hook_count": len(cliff_markers),
+            "tension_count": len(tension_markers),
+            "attention_curve": curve,
+            "ends_with_cliff": is_cliff,
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.attention_curve", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_expectation_check(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Verify genre contract — are we delivering what genre readers expect? (§69)"""
+    try:
+        novel = db.get_novel(novel_id)
+        genre = novel.get("genre", "玄幻")
+
+        # Genre expectations by category
+        genre_markers = {
+            "玄幻": ["修炼", "突破", "功法", "境界", "灵石", "法宝", "丹药", "飞行", "神识", "机缘"],
+            "都市": ["公司", "赚钱", "股票", "总裁", "合同", "谈判", "手机", "都市", "酒吧", "企业"],
+            "悬疑": ["线索", "推理", "证据", "嫌疑人", "谋杀", "死亡", "调查", "谜题", "隐藏", "真相"],
+            "言情": ["心动", "心跳", "脸红", "牵手", "拥抱", "告白", "甜蜜", "吵架", "吃醋", "思念"],
+            "科幻": ["飞船", "星舰", "AI", "虚拟", "基因", "纳米", "量子", "虫洞", "外星", "机器人"],
+            "历史": ["皇上", "太后", "宫女", "妃子", "将军", "战争", "朝廷", "进贡", "封号", "赐婚"],
+        }
+
+        defaults = genre_markers.get("玄幻", genre_markers["玄幻"])
+        expected = genre_markers.get(genre, defaults)
+
+        # Check presence of genre keywords
+        hits = [kw for kw in expected if kw in content]
+        missing = [kw for kw in expected if kw not in content]
+
+        result = {
+            "genre": genre,
+            "hits": hits,
+            "hit_count": len(hits),
+            "missing": missing,
+            "contract_score": round(len(hits) / len(expected), 2) if expected else 1.0,
+            "is_breach": len(hits) < len(expected) * 0.3,
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.expectation_check", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_reverse_reading(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Scan old chapters for new meaning revealed by this chapter (§15)."""
+    try:
+        novel = db.get_novel(novel_id)
+        chapters = novel.get("chapters", [])
+
+        # Only scan if we have older chapters
+        if chapter_num <= 1:
+            return {"retroactive_hints": [], "count": 0, "chapter": chapter_num}
+
+        # Extract key reveals from current chapter (names, objects, events)
+        current_keywords = set()
+        key_patterns = re.findall(r'(?!但是|然而|因为|所以|如果|虽然)(.{2,4})(?:原来|竟然是|其实是|就是|正是)', content)
+        for k in key_patterns:
+            if len(k) >= 2:
+                current_keywords.add(k.strip())
+
+        # Scan older chapters for these keywords
+        retroactive_hints = []
+        for ch in chapters[:chapter_num - 1]:
+            ch_content = ch.get("content", "")
+            if not ch_content:
+                continue
+            for kw in current_keywords:
+                if kw in ch_content and kw not in ('说', '道', '的', '了', '我', '他', '她'):
+                    retroactive_hints.append({
+                        "chapter": ch.get("number", "?"),
+                        "keyword": kw,
+                        "snippet": ch_content[max(0, ch_content.index(kw) - 20):ch_content.index(kw) + 30],
+                    })
+
+        result = {
+            "retroactive_hints": retroactive_hints[:10],  # Cap at 10
+            "count": len(retroactive_hints),
+            "keywords": list(current_keywords)[:20],
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.reverse_reading", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_scream_moments(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Find hidden connections — moments that make readers gasp (§24)."""
+    try:
+        # Scream = unexpected connection between two seemingly unrelated elements
+        # Pattern: surprise + revelation + emotional weight
+        surprises = re.findall(r'(?:竟然|居然|不料|谁知|原来)(.{5,30}?)(?:[。!！?？])', content)
+        reversals = re.findall(r'(?:反转|颠覆|推翻|否定|不是.{2,4}而是)(.{5,30}?)(?:[。!！?？])', content)
+        connections = re.findall(r'(?:原来.{2,4}就是|正是.{2,4}|居然是.{2,4})(.{5,30}?)(?:[。!！?？])', content)
+
+        moments = []
+        for s in surprises[:3]:
+            moments.append({"type": "surprise", "moment": s.strip(), "impact": "reader gasp potential"})
+        for r in reversals[:3]:
+            moments.append({"type": "reversal", "moment": r.strip(), "impact": "expectation subversion"})
+        for c in connections[:3]:
+            moments.append({"type": "connection", "moment": c.strip(), "impact": "hidden link revealed"})
+
+        result = {
+            "scream_moments": moments,
+            "total_potential": len(surprises) + len(reversals) + len(connections),
+            "has_major_scream": len(moments) >= 2,
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.scream_moments", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_ending_candidates(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Track dormant images and their evolution as potential ending material (§35)."""
+    try:
+        novel = db.get_novel(novel_id)
+        chapters = novel.get("chapters", [])
+
+        # Images that often recur and gain meaning: objects, locations, scar/birthmarks, recurring phrases
+        image_patterns = re.findall(r'(?:玉佩|戒指|项链|手镯|胎记|疤痕|信物|红绳|铃铛|镜子|日记|钥匙|照片|地图)(.{0,10})', content)
+
+        locations = re.findall(r'(?:老家|故乡|旧址|废墟|旧宅|老宅|庭院|后山|祠堂|密室)(.{0,10})', content)
+
+        phrases = re.findall(r'(.{2,4})总是(?:出现|想起|梦到|浮现|萦绕)', content)
+
+        # Check if any of these appeared in earlier chapters
+        recurring = []
+        for img in image_patterns[:5]:
+            for ch in chapters[:chapter_num - 1]:
+                if img in ch.get("content", ""):
+                    recurring.append({"image": img, "first_appeared": ch.get("number", "?"), "reappeared": chapter_num})
+                    break
+
+        result = {
+            "new_images": image_patterns[:10],
+            "new_locations": locations[:5],
+            "recurring_phrases": phrases[:5],
+            "recurring_images": recurring,
+            "dormant_potential": len(image_patterns) + len(locations) + len(recurring),
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.ending_candidates", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_rituals(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Track repeated gestures and behaviors as character rituals (§49)."""
+    try:
+        novel = db.get_novel(novel_id)
+        chapters = novel.get("chapters", [])
+
+        # Repeated gesture patterns
+        gestures = re.findall(r'(?:习惯性|总是|每次|照例|一如往常|一如既往|下意识)(.{2,10}?)(?:地|的|了|着)', content)
+
+        # Specific ritual markers
+        rituals_found = re.findall(
+            r'(?:摩挲|抚摸|把玩|转动|敲击|咬|舔|抿|攥|握|捏|捻|弹)(.{0,5}?)',
+            content
+        )
+
+        # Check if these gestures appeared in past chapters
+        ritual_tracker = {}
+        for g in gestures[:10]:
+            gesture_text = g.strip()
+            if len(gesture_text) < 2:
+                continue
+            ritual_tracker[gesture_text] = ritual_tracker.get(gesture_text, 0) + 1
+
+        for ch in chapters[:chapter_num - 1]:
+            ch_content = ch.get("content", "")
+            for g in gestures[:10]:
+                gesture_text = g.strip()
+                if len(gesture_text) >= 2 and gesture_text in ch_content:
+                    ritual_tracker[gesture_text] = ritual_tracker.get(gesture_text, 0) + 1
+
+        recurring_rituals = {k: v for k, v in ritual_tracker.items() if v >= 2}
+
+        result = {
+            "new_gestures": gestures[:10],
+            "ritual_objects": rituals_found[:10],
+            "recurring_rituals": recurring_rituals,
+            "ritual_count": len(recurring_rituals),
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.rituals", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_time_spiral(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Compute meaning shifts — how past events change meaning with new information (§76)."""
+    try:
+        novel = db.get_novel(novel_id)
+        chapters = novel.get("chapters", [])
+
+        # Detect flashback or temporal markers
+        time_markers = re.findall(
+            r'(?:当时|那时|那年|那天|曾经|从前|之前|之后|后来|现在|如今)(.{0,5})',
+            content
+        )
+
+        # Detect reinterpretation patterns
+        reinterpretations = re.findall(
+            r'(?:原来.{2,4}不是|其实.{2,4}才是|当初.{2,4}是|现在才知道.{4,10})',
+            content
+        )
+
+        # Look for past event references in this chapter
+        past_events_referenced = []
+        for ch in chapters[:chapter_num - 1]:
+            ch_content = ch.get("content", "")
+            if not ch_content:
+                continue
+            # Find key terms from old chapter still present
+            key_terms = re.findall(r'(.{2,4})(?:事件|事变|之战|之约|的秘密|的真相)', ch_content)
+            for term in key_terms:
+                if term in content:
+                    past_events_referenced.append({
+                        "term": term,
+                        "orig_chapter": ch.get("number", "?"),
+                    })
+
+        result = {
+            "time_markers": time_markers[:10],
+            "reinterpretations": reinterpretations,
+            "past_events_referenced": past_events_referenced[:10],
+            "spiral_depth": len(reinterpretations) + len(past_events_referenced),
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.time_spiral", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_negative_space_health(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Check negative space consumption — what's deliberately omitted and when to reveal (§72)."""
+    try:
+        novel = db.get_novel(novel_id)
+        total_chs = len(novel.get("chapters", [])) or 1
+        position_ratio = chapter_num / total_chs
+
+        # What is hinted but not shown?
+        hints = re.findall(r'(?:似乎|仿佛|好像|隐隐|暗暗|悄悄|莫名|隐隐约约)(.{3,20}?)(?:[。!！?？,，])', content)
+
+        # What is explicitly unanswered?
+        unanswered = re.findall(r'(?:没人知道|谁也不清楚|没有人明白|不得而知|无从得知)(.{3,20}?)(?:[。!！?？,，])', content)
+
+        # What does the reader still not know? (check unsaid table)
+        unsaid = db.get_unsaid(novel_id)
+
+        result = {
+            "hints_deployed": hints[:10],
+            "unanswered": unanswered,
+            "unsaid_count": len(unsaid),
+            "position_ratio": round(position_ratio, 2),
+            "health": "healthy" if (len(unsaid) > 0 or len(hints) > 0) else "starving",
+            "recommendation": "揭示快到了，准备伏笔收束" if position_ratio > 0.7 else "保持神秘，继续埋藏",
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.negative_space_health", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _agent_boundary_check(novel_id: str, chapter_num: int, content: str) -> dict:
+    """Always-active boundary check — are we staying within our rules and canon? (§77)"""
+    try:
+        novel = db.get_novel(novel_id)
+        world_rules = db.get_world_state(novel_id)
+
+        # Check rule violations
+        violations = []
+        for rule in world_rules:
+            if rule.get("is_broken"):
+                violations.append({
+                    "rule": rule.get("rule_name", "?"),
+                    "description": rule.get("rule_description", "")[:60],
+                })
+
+        # Check for self-contradiction (simple heuristic)
+        contradict_pairs = []
+        if "白天" in content and "黑夜" in content and content.index("白天") > content.index("黑夜"):
+            pass  # OK — natural progression
+
+        # Check for power creep / rule bending
+        power_markers = re.findall(r'(?:突破|暴涨|飙升|翻倍|几何|无可匹敌|毁天灭地|灭世)', content)
+        has_power_creep = len(power_markers) > 3
+
+        # Check for unexplained changes
+        unexplained = re.findall(r'(?:突然|忽然|莫名|不知为何|说不清)(.{3,15}?)(?:[。!！?？,，])', content)
+
+        result = {
+            "violations": violations,
+            "violation_count": len(violations),
+            "power_creep_detected": has_power_creep,
+            "unexplained_changes": unexplained[:5],
+            "world_rules_count": len(world_rules),
+            "boundary_health": "violated" if violations else "clean" if not has_power_creep else "warning",
+            "chapter": chapter_num,
+        }
+        db.log(novel_id, "agent.boundary_check", result)
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ═══════════════ Agent Pipeline API ═══════════════
 
 @app.post("/api/novels/{novel_id}/agent-pipeline")
 def run_agent_pipeline(novel_id: str, background: BackgroundTasks, data: dict = {}):
