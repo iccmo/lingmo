@@ -320,3 +320,83 @@ export function analyzeEmotionLending(text: string): EmotionLendingReport {
       : '情感稀疏——可加强',
   };
 }
+
+/**
+ * Rhetoric precision analysis (§71).
+ * Detects generic words that could be replaced with more precise alternatives.
+ */
+export interface RhetoricReport {
+  genericWords: Array<{word: string; count: number; suggestion: string}>;
+  precisionScore: number;
+  assessment: string;
+}
+
+export function analyzeRhetoricPrecision(text: string): RhetoricReport {
+  const genericPatterns: Array<{regex: RegExp; word: string; suggestion: string}> = [
+    { regex: /很美|很漂亮|很好看/g, word: '很美/很漂亮', suggestion: '用具体细节替代——"她眼角有颗痣，笑起来先弯左边嘴角"' },
+    { regex: /很生气|非常愤怒/g, word: '很生气', suggestion: '用身体反应替代——"他把茶杯放在桌上。很轻。但指节是白的"' },
+    { regex: /\b说道\b/g, word: '说道', suggestion: '删掉"道"——"说"就够了' },
+    { regex: /\b问道\b/g, word: '问道', suggestion: '删掉"道"——"问"就够了' },
+    { regex: /\b答道\b/g, word: '答道', suggestion: '删掉"道"——"答"就够了' },
+    { regex: /\b有些\b/g, word: '有些', suggestion: '删掉——直接写后面的形容词' },
+    { regex: /\b似乎\b/g, word: '似乎', suggestion: '让读者自己判断——不要替读者加"似乎"' },
+    { regex: /\b其实\b/g, word: '其实', suggestion: '删掉——不需要告诉读者这是"真相"' },
+  ];
+
+  const results: RhetoricReport['genericWords'] = [];
+  for (const p of genericPatterns) {
+    const matches = text.match(p.regex);
+    if (matches && matches.length > 0) {
+      results.push({ word: p.word, count: matches.length, suggestion: p.suggestion });
+    }
+  }
+
+  const totalGeneric = results.reduce((s, r) => s + r.count, 0);
+  const chars = text.replace(/\s/g, '').length;
+  const precisionScore = chars > 0 ? Math.max(0, 100 - (totalGeneric / (chars / 100)) * 10) : 100;
+
+  return {
+    genericWords: results.slice(0, 8),
+    precisionScore: Math.round(precisionScore),
+    assessment: precisionScore >= 90 ? '用词精准' : precisionScore >= 70 ? '可进一步打磨' : '存在较多泛化用词',
+  };
+}
+
+/**
+ * Opening strength / Reconnection analysis (§52).
+ * Analyzes how strongly the first 3 sentences pull the reader in.
+ */
+export interface OpeningReport {
+  strength: number;
+  mode: 'neutral' | 'strong' | 'extreme';
+  hasBodyHook: boolean;
+  hasExpectationHook: boolean;
+  hasReversalHook: boolean;
+  assessment: string;
+}
+
+export function analyzeOpening(text: string): OpeningReport {
+  const firstThree = text.split(/[。！？.!?\n]/).slice(0, 3).join('。');
+  
+  // Body hook: sensory/tactile words
+  const hasBodyHook = /碰|触|摸|握|冷|热|疼|痛|看|见|听|闻/.test(firstThree);
+  
+  // Expectation hook: question or unresolved statement
+  const hasExpectationHook = /[？?…]/.test(firstThree) || /但是|可是|然而|不过/.test(firstThree);
+  
+  // Reversal hook: surprise or negation
+  const hasReversalHook = /没有|不是|从未|竟然|居然|原来/.test(firstThree);
+
+  const score = (hasBodyHook ? 1 : 0) + (hasExpectationHook ? 1 : 0) + (hasReversalHook ? 1 : 0);
+  
+  return {
+    strength: score,
+    mode: score >= 2 ? 'extreme' : score === 1 ? 'strong' : 'neutral',
+    hasBodyHook,
+    hasExpectationHook,
+    hasReversalHook,
+    assessment: score >= 2 ? '开头强——读者被立即拉入'
+      : score === 1 ? '开头可——可加强身体或期待钩子'
+      : '开头弱——试着用身体感受或未完成的动作开始',
+  };
+}
