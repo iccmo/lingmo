@@ -22,6 +22,7 @@ import { CreativeLab } from 'src/components/novels/CreativeLab';
 import { SoulWorkshop } from 'src/components/novels/SoulWorkshop';
 import { CharacterSoul } from 'src/components/novels/CharacterSoul';
 import { CharacterGraph } from 'src/components/novels/CharacterGraph';
+import { StoryBibleView } from 'src/components/novels/StoryBibleView';
 import { SoulEngine } from 'src/components/novels/SoulEngine';
 import { NovelArchitect } from 'src/components/novels/NovelArchitect';
 import { QualityWorkflow } from 'src/components/novels/QualityWorkflow';
@@ -775,7 +776,7 @@ export function NovelDetail({ mode }: Props) {
           // Map tab to section nav id for active dot
           const map: Record<string, string> = {
             quality: 'quality', rhythm: 'rhythm', character: 'character',
-            analysis: 'analysis', tools: 'tools',
+            bible: 'bible', analysis: 'analysis', tools: 'tools',
           };
           return map[analysisTab] || 'quality';
         })()}
@@ -1075,6 +1076,7 @@ export function NovelDetail({ mode }: Props) {
             { key: 'quality', label: '质量' },
             { key: 'rhythm', label: '节奏' },
             { key: 'character', label: '角色' },
+            { key: 'bible', label: '📖 圣经' },
             { key: 'analysis', label: '分析' },
             { key: 'tools', label: '工具' },
           ].map(tab => (
@@ -1133,6 +1135,13 @@ export function NovelDetail({ mode }: Props) {
               <div id="section-soul"><SoulWorkshop novelId={novel.id} chapters={novel.chapters} /></div>
               <div id="section-engine"><SoulEngine novelId={novel.id} genre={novel.genre} /></div>
               <CharacterVoices novelId={novel.id} chapters={novel.chapters} />
+            </div>
+          )}
+
+          {/* 📖 圣经 Tab: Story Bible */}
+          {analysisTab === 'bible' && (
+            <div className="p-4 bg-card border border-border rounded-xl">
+              <StoryBibleView novelId={novel.id} />
             </div>
           )}
 
