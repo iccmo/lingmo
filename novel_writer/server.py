@@ -1348,7 +1348,9 @@ def _run_generation(novel_id: str):
             "novel_id": novel_id, "chapter_num": chapter.number, "db": db
         })
         compressor = ConstraintCompressor()
-        compressed = compressor.compress(constraint_result, "L1")  # 标准压缩：只保留硬约束
+        # Configurable compression level (default L1, override via _gen_directions)
+        comp_level = _gen_directions.pop(novel_id + "_compression", "L1")
+        compressed = compressor.compress(constraint_result, comp_level)
         if compressed["text"]:
             author_direction = f"【硬约束】\n{compressed['text']}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
         _set_status(novel_id, "generating", f"正在生成候选版本…（约束{compressed['char_count']}字）", 20)
@@ -5888,6 +5890,30 @@ def seed_bible_from_existing(novel_id: str):
             relative_time="未知", event_summary=(ch.get('summary') or ch.get('title',''))[:100])
         seeded["tl"] += 1
     return {"status": "seeded", "seeded": seeded, "chapters": len(gen_chapters)}
+
+
+@app.get("/api/novels/{novel_id}/preview-constraints")
+def preview_constraints(novel_id: str, level: str = "L1"):
+    """Preview constraints that will be injected into next chapter generation."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    from .stations.constraint_builder import ConstraintBuilder
+    from .stations.constraint_compressor import ConstraintCompressor
+    novel = db.get_novel(novel_id)
+    next_ch = (novel.get("total_chapters") or 0) + 1
+
+    builder = ConstraintBuilder()
+    compressor = ConstraintCompressor()
+    result = builder.run({"novel_id": novel_id, "chapter_num": next_ch, "db": db})
+    all_levels = compressor.generate_all_levels(result)
+
+    return {
+        "next_chapter": next_ch,
+        "hard_count": result["hard_count"],
+        "soft_count": result["soft_count"],
+        "selected_level": level,
+        "preview": all_levels[level]["text"][:500],
+        "all_levels": {l: {"chars": a["char_count"], "lines": a["line_count"]} for l, a in all_levels.items()},
+    }
 
 
 @app.get("/api/novels/{novel_id}/test-constraints")
