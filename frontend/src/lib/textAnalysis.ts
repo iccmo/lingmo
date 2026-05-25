@@ -239,3 +239,84 @@ export function analyzeBodySense(text: string): SenseReport {
     bodyTotal: total, bodyDensity: density, assessment,
   };
 }
+
+/**
+ * Ambiguity precision analysis (§56).
+ * Detects sentences that support multiple simultaneous interpretations.
+ */
+export interface AmbiguityReport {
+  score: number;
+  ambiguousCount: number;
+  totalSentences: number;
+  topAmbiguous: string[];
+  assessment: string;
+}
+
+export function analyzeAmbiguity(text: string): AmbiguityReport {
+  const sentences = text.split(/[。！？.!?\n]+/).filter(s => s.trim().length > 5);
+  const ambiguous: string[] = [];
+
+  for (const s of sentences) {
+    let layers = 0;
+    // Layer 1: can be read as literal or metaphorical
+    if (s.match(/像|好像|仿佛|如同|似乎/) && s.match(/不是|没有|不会/)) layers++;
+    // Layer 2: contains negation that could flip meaning
+    if ((s.match(/不是|没有|不会|从未/g) || []).length >= 1) layers++;
+    // Layer 3: subject could refer to multiple entities
+    if (s.match(/她|他|它|他们|她们|那个人|这个人/) && !s.match(/林尘|秦默|慕听澜/)) layers++;
+    // Layer 4: open-ended question or trailing
+    if (s.match(/[？?…]$/)) layers++;
+
+    if (layers >= 2) ambiguous.push(s.slice(0, 60));
+  }
+
+  const score = sentences.length > 0 ? +(ambiguous.length / sentences.length).toFixed(2) : 0;
+
+  return {
+    score,
+    ambiguousCount: ambiguous.length,
+    totalSentences: sentences.length,
+    topAmbiguous: ambiguous.slice(0, 5),
+    assessment: score > 0.3 ? '歧义丰富——文本层次深' : score > 0.1 ? '歧义适中' : '文本过于直白，增加多层解读空间',
+  };
+}
+
+/**
+ * Emotional lending balance (§70).
+ * Tracks emotional impact density to avoid burnout.
+ */
+export interface EmotionLendingReport {
+  impactCount: number;
+  impactDensity: number;
+  distribution: 'sparse' | 'balanced' | 'dense' | 'overwhelming';
+  assessment: string;
+}
+
+export function analyzeEmotionLending(text: string): EmotionLendingReport {
+  const chars = text.replace(/\s/g, '').length;
+  
+  // Detect emotional impact signals
+  const impacts = [
+    ...(text.match(/死|亡|杀|血|伤|痛|哭|泪|恨|悔/g) || []),
+    ...(text.match(/抱|握|碰|触|拉|推/g) || []),
+    ...(text.match(/说|道|问|答|喊|叫/g) || []),
+  ];
+
+  const density = chars > 0 ? +(impacts.length / (chars / 100)).toFixed(1) : 0;
+  
+  let distribution: EmotionLendingReport['distribution'];
+  if (density < 1) distribution = 'sparse';
+  else if (density < 5) distribution = 'balanced';
+  else if (density < 10) distribution = 'dense';
+  else distribution = 'overwhelming';
+
+  return {
+    impactCount: impacts.length,
+    impactDensity: density,
+    distribution,
+    assessment: distribution === 'overwhelming' ? '情感冲击过密——读者可能麻木'
+      : distribution === 'dense' ? '情感密集——注意间隔恢复'
+      : distribution === 'balanced' ? '情感节奏良好'
+      : '情感稀疏——可加强',
+  };
+}
