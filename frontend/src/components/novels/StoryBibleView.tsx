@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
 import { api } from 'src/lib/api';
 
+interface ReaderState {
+  current_chapter: number; reader_mood: string; suggestion: string;
+  known_characters: Array<{name: string; emotion: string}>;
+  expecting: Array<{desc: string; due: number | null}>;
+  cost_balance: {gains: number; losses: number};
+}
+
 interface StoryBibleData {
   characters: Array<{
     char_name: string; emotion: string; physical_state: string;
@@ -23,14 +30,17 @@ interface Props { novelId: string }
 
 export function StoryBibleView({ novelId }: Props) {
   const [data, setData] = useState<StoryBibleData | null>(null);
+  const [reader, setReader] = useState<ReaderState | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/novels/${novelId}/story-bible`)
-      .then(r => r.json())
-      .then(setData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch(`/api/novels/${novelId}/story-bible`).then(r => r.json()),
+      fetch(`/api/novels/${novelId}/reader-state`).then(r => r.json()).catch(() => null),
+    ]).then(([bible, rstate]) => {
+      setData(bible);
+      setReader(rstate);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [novelId]);
 
   if (loading) return <div className="skeleton h-20 rounded-lg" />;
@@ -50,6 +60,26 @@ export function StoryBibleView({ novelId }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Reader State (§67) */}
+      {reader && (
+        <div className="p-2 rounded-lg bg-accent-soft/20 border border-accent/10">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-semibold text-ink">👁️ 读者状态</span>
+            <span className={`text-[10px] font-medium ${
+              reader.reader_mood === 'engaged' ? 'text-emerald-500' : 'text-amber-500'
+            }`}>
+              {reader.reader_mood === 'engaged' ? '投入' : '漂移'}
+            </span>
+          </div>
+          <p className="text-[10px] text-ink-muted">{reader.suggestion}</p>
+          <div className="flex gap-3 mt-1 text-[9px] text-ink-subtle">
+            <span>知道 {reader.known_characters.length} 角色</span>
+            <span>期待 {reader.expecting.length} 伏笔</span>
+            <span>收支 {reader.cost_balance.gains}/{reader.cost_balance.losses}</span>
+          </div>
+        </div>
+      )}
+
       {/* Character States */}
       {data.characters.length > 0 && (
         <div>
