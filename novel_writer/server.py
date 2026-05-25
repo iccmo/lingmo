@@ -4779,6 +4779,1054 @@ def get_reader_state(novel_id: str):
     }
 
 
+# ═══════════════ Narrative Distance Agent (§22) ═══════════════
+
+@app.get("/api/novels/{novel_id}/narrative-distance")
+def get_narrative_distance(novel_id: str):
+    """Measure narrative distance: immersion (近距离) vs observation (远距离)."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+    novel = db.get_novel(novel_id)
+    total = novel.get("total_chapters", 0)
+    if total == 0:
+        return {"distance_0_pct": 0, "distance_1_pct": 0, "distance_2_pct": 0,
+                "assessment": "无章节数据"}
+
+    # Read up to 3 latest chapters
+    start = max(1, total - 2)
+    texts: list[str] = []
+    for n in range(start, total + 1):
+        ch = db.get_chapter(novel_id, n)
+        if ch:
+            texts.append(ch.get("content", ""))
+    all_text = " ".join(texts)
+
+    if len(all_text) < 50:
+        return {"distance_0_pct": 0, "distance_1_pct": 0, "distance_2_pct": 0,
+                "assessment": "内容不足"}
+
+    # Immersion signals (近距离): 1st-person markers, sensory immediacy, interior thought
+    first_person = len(re.findall(r'我|我的|我们', all_text))
+    sensory = len(re.findall(r'疼|痛|冷|热|凉|暖|触|摸|碰|气味|味道|听见|闻到', all_text))
+    interior = len(re.findall(r'想|觉得|知道|明白|心里|暗自|心底|记得|忘了', all_text))
+    immersion = first_person + sensory + interior
+
+    # Observation signals (远距离): 3rd-person markers, visual description, measurement
+    third_person = len(re.findall(r'他|她|他们|她们|它', all_text))
+    visual = len(re.findall(r'看|见|望|看见|望去|凝望|远望|眺|盯|瞪', all_text))
+    measurement = len(re.findall(r'米|公里|步|分钟|小时|秒|丈|尺|寸', all_text))
+    observation = third_person + visual + measurement
+
+    total_signals = immersion + observation
+    if total_signals == 0:
+        return {"distance_0_pct": 0, "distance_1_pct": 0, "distance_2_pct": 0,
+                "assessment": "无法判定"}
+
+    # Distance 0: immediate (close, immersive) — mainly immersion signals
+    d0 = round(immersion / total_signals * 100, 1)
+    # Distance 2: distant (observer) — mainly observation signals
+    d2 = round(observation / total_signals * 100, 1)
+    # Distance 1: intermediate (mixed signals)
+    d1 = round(100 - d0 - d2, 1)
+
+    if d0 > 55:
+        assessment = "近距离主导：读者高度沉浸于角色感知"
+    elif d2 > 55:
+        assessment = "远距离主导：叙述者保持旁观距离"
+    else:
+        assessment = "中距离：沉浸与观察交替"
+
+    return {"distance_0_pct": d0, "distance_1_pct": max(0, d1), "distance_2_pct": d2,
+            "assessment": assessment}
+
+
+# ═══════════════ Information Gradient Agent (§43) ═══════════════
+
+@app.get("/api/novels/{novel_id}/info-gradient")
+def get_info_gradient(novel_id: str, chapter: int = 0):
+    """Analyze dialogue for information asymmetry between characters."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+
+    novel = db.get_novel(novel_id)
+    total = novel.get("total_chapters", 0)
+    if total == 0:
+        return {"gradient_level": 1, "hot_spots": [], "assessment": "无章节数据"}
+
+    # Use specified chapter or latest
+    target = chapter if chapter > 0 else total
+    ch = db.get_chapter(novel_id, target)
+    if not ch:
+        raise HTTPException(404, f"Chapter {target} not found")
+    content = ch.get("content", "")
+
+    if len(content) < 50:
+        return {"gradient_level": 1, "hot_spots": [], "assessment": "内容不足"}
+
+    # Extract dialogue lines (lines between quotes)
+    dialogue_pattern = re.compile(r'[「『"](.+?)[」』"]')
+    dialogues = dialogue_pattern.findall(content)
+
+    # Negation + subtext markers: information is being hidden or distorted
+    negation_markers = r'没说|没有说|不说|沉默|其实|真正|不是你想的那样|不是那样的|不是这样'
+    subtext_markers = r'弦外之音|言外之意|话中有话|暗示|言下之意|暗指|别有深意|意味深长'
+
+    hot_spots: list[str] = []
+    gradient_score = 0
+    for d in dialogues:
+        if len(d) < 5:
+            continue
+        neg_count = len(re.findall(negation_markers, d))
+        sub_count = len(re.findall(subtext_markers, d))
+        if neg_count + sub_count > 0:
+            hot_spots.append(d[:80] + ("..." if len(d) > 80 else ""))
+            gradient_score += neg_count + sub_count
+
+    # Normalize to 1-5 scale
+    if len(dialogues) == 0:
+        gradient_level = 1
+    elif gradient_score >= 6:
+        gradient_level = 5
+    elif gradient_score >= 4:
+        gradient_level = 4
+    elif gradient_score >= 2:
+        gradient_level = 3
+    elif gradient_score >= 1:
+        gradient_level = 2
+    else:
+        gradient_level = 1
+
+    level_labels = {1: "信息透明", 2: "轻微不对称", 3: "明显不对称", 4: "高度不对称", 5: "信息极致失衡"}
+    assessment = f"{len(hot_spots)}处信息不对称，梯度等级{gradient_level}：{level_labels[gradient_level]}"
+
+    return {"gradient_level": gradient_level, "hot_spots": hot_spots[:10],
+            "dialogue_count": len(dialogues), "assessment": assessment}
+
+
+# ═══════════════ POV Shift Agent (§54) ═══════════════
+
+@app.get("/api/novels/{novel_id}/pov-shifts")
+def get_pov_shifts(novel_id: str):
+    """Detect POV per chapter and track when it shifts between chapters."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+
+    novel = db.get_novel(novel_id)
+    total = novel.get("total_chapters", 0)
+    if total == 0:
+        return {"shifts": [], "consistency": "consistent", "assessment": "无章节数据"}
+    if total < 2:
+        return {"shifts": [], "consistency": "consistent", "assessment": "仅一章，无法判断切换"}
+
+    # Get character states for available character names
+    chars = db.get_character_state(novel_id)
+    known_names = [c.get("char_name", "") for c in chars if c.get("char_name")]
+
+    # Per chapter: count name mentions to find dominant POV character
+    pov_per_chapter: list[dict] = []
+    for n in range(1, total + 1):
+        ch = db.get_chapter(novel_id, n)
+        if not ch:
+            continue
+        content = ch.get("content", "")
+        if len(content) < 20:
+            continue
+
+        name_counts: dict[str, int] = {}
+        for name in known_names:
+            count = content.count(name)
+            if count > 0:
+                name_counts[name] = count
+
+        # Fallback: generic pronouns as POV indicator
+        first_person = content.count("我") - content.count("我们") // 2
+        if name_counts:
+            dominant = max(name_counts, key=name_counts.get)
+            dominant_count = name_counts[dominant]
+        elif first_person > 3:
+            dominant = "我(第一人称)"
+            dominant_count = first_person
+        else:
+            dominant = "未知"
+            dominant_count = 0
+
+        pov_per_chapter.append({
+            "chapter": n,
+            "dominant_char": dominant,
+            "mentions": dominant_count,
+            "all_mentions": name_counts,
+        })
+
+    # Track shifts: when dominant character changes between adjacent chapters
+    shifts: list[dict] = []
+    for i in range(1, len(pov_per_chapter)):
+        prev = pov_per_chapter[i - 1]
+        curr = pov_per_chapter[i]
+        if prev["dominant_char"] != curr["dominant_char"] and prev["dominant_char"] != "未知":
+            shifts.append({
+                "from_chapter": prev["chapter"],
+                "from_char": prev["dominant_char"],
+                "to_chapter": curr["chapter"],
+                "to_char": curr["dominant_char"],
+            })
+
+    shift_ratio = len(shifts) / max(1, len(pov_per_chapter) - 1)
+    if shift_ratio == 0:
+        consistency = "consistent"
+    elif shift_ratio < 0.3:
+        consistency = "mostly_consistent"
+    elif shift_ratio < 0.6:
+        consistency = "shifting"
+    else:
+        consistency = "highly_shifting"
+
+    return {"shifts": shifts, "pov_per_chapter": pov_per_chapter,
+            "consistency": consistency,
+            "assessment": f"共{len(shifts)}次POV切换，{total}章"}
+
+
+# ═══════════════ Narrative Voice Agent (§47) ═══════════════
+
+@app.get("/api/novels/{novel_id}/narrative-voice")
+def get_narrative_voice(novel_id: str):
+    """Determine narrative person (1st vs 3rd) and tense hint."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+
+    novel = db.get_novel(novel_id)
+    total = novel.get("total_chapters", 0)
+    if total == 0:
+        return {"person": "unknown", "tense_hint": "unknown",
+                "consistency": "unknown", "assessment": "无章节数据"}
+
+    # Read first 3 chapters (or as many as available)
+    texts: list[str] = []
+    for n in range(1, min(4, total + 1)):
+        ch = db.get_chapter(novel_id, n)
+        if ch:
+            texts.append(ch.get("content", ""))
+    all_text = " ".join(texts)
+
+    if len(all_text) < 50:
+        return {"person": "unknown", "tense_hint": "unknown",
+                "consistency": "unknown", "assessment": "内容不足"}
+
+    # Count 1st vs 3rd person markers
+    first_count = len(re.findall(r'我[^们]|我的', all_text))  # Exclude collective "we"
+    third_count = len(re.findall(r'他[^们]|她[^们]|他的|她的', all_text))
+
+    total_person = first_count + third_count
+    if total_person == 0:
+        person = "unknown"
+    elif first_count > third_count * 2:
+        person = "first"
+    elif third_count > first_count * 2:
+        person = "third"
+    else:
+        person = "mixed"
+
+    # Tense hint: check common past/present markers
+    past_markers = len(re.findall(r'了|过|曾经|那时|当年|从前|已经|已', all_text))
+    present_markers = len(re.findall(r'正在|现在|此刻|着|在(?!了)', all_text))
+
+    if past_markers > present_markers * 3:
+        tense_hint = "past"
+    elif present_markers > past_markers * 3:
+        tense_hint = "present"
+    else:
+        tense_hint = "mixed"
+
+    # Check consistency: sample later chapters for shifts
+    if total >= 5:
+        mid = total // 2
+        late_texts: list[str] = []
+        for n in [mid, total]:
+            ch = db.get_chapter(novel_id, n)
+            if ch:
+                late_texts.append(ch.get("content", ""))
+        late_text = " ".join(late_texts)
+        late_first = len(re.findall(r'我[^们]|我的', late_text))
+        late_third = len(re.findall(r'他[^们]|她[^们]|他的|她的', late_text))
+
+        if person == "first" and late_third > late_first * 2:
+            consistency = "shifting"
+        elif person == "third" and late_first > late_third * 2:
+            consistency = "shifting"
+        else:
+            consistency = "consistent"
+    else:
+        consistency = "consistent"
+
+    person_labels = {"first": "第一人称", "third": "第三人称", "mixed": "混合人称", "unknown": "未确定"}
+    ratio = round(first_count / max(1, total_person) * 100, 1)
+
+    return {"person": person, "tense_hint": tense_hint,
+            "first_pct": ratio, "third_pct": round(100 - ratio, 1),
+            "consistency": consistency,
+            "assessment": f"{person_labels[person]}主导，{consistency}"}
+
+
+# ═══════════════ Anti-Narrative Agent (§60) ═══════════════
+
+@app.post("/api/novels/{novel_id}/anti-narrative")
+def get_anti_narrative(novel_id: str, data: dict):
+    """Generate the anti-narrative: what happens when conventions are inverted."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Novel not found")
+
+    chapter_num = data.get("chapter_num", 0)
+    scene_description = (data.get("scene_description") or "").strip()
+    expected_next = data.get("expected_next", [])
+
+    if not scene_description:
+        raise HTTPException(400, "scene_description is required")
+    if not isinstance(expected_next, list) or len(expected_next) == 0:
+        raise HTTPException(400, "expected_next must be a non-empty list")
+
+    # For each expected event, produce its opposite
+    anti_events: list[str] = []
+    outcome_pairs: list[dict] = []
+
+    # Simple inversion rules based on common narrative patterns
+    invert_map = {
+        "成功": "失败", "失败": "成功", "赢": "输", "输": "赢",
+        "活着": "死亡", "死": "复活", "相遇": "错过", "错过": "相遇",
+        "拯救": "毁灭", "毁灭": "拯救", "得到": "失去", "失去": "得到",
+        "和解": "决裂", "决裂": "和解", "留下": "离开", "离开": "留下",
+        "前进": "后退", "后退": "前进", "开放": "封闭", "封闭": "开放",
+        "战斗": "谈判", "谈判": "放弃",
+        "揭露": "隐藏", "隐藏": "揭露", "坦白": "撒谎", "撒谎": "坦白",
+        "爱": "恨", "恨": "理解",
+    }
+
+    for event in (expected_next or []):
+        if not isinstance(event, str) or not event.strip():
+            continue
+        text = event.strip()
+        anti_text = text
+        # Apply inversion rules
+        for pos, neg in invert_map.items():
+            if pos in text:
+                anti_text = text.replace(pos, f"__ANTI_{pos}__")
+                break
+        for pos, neg in invert_map.items():
+            anti_text = anti_text.replace(f"__ANTI_{pos}__", neg)
+
+        if anti_text == text:
+            # No direct inversion found — add negation prefix
+            anti_text = f"不是{text}，而是相反的情况"
+
+        anti_events.append(anti_text)
+        outcome_pairs.append({"expected": text, "anti": anti_text})
+
+    # Generate suggestion
+    if len(anti_events) >= 3:
+        suggestion = "试完全反写：反写高潮、反写结尾、反写情感 —— 全部逆行"
+    elif len(anti_events) >= 2:
+        suggestion = "选一个反事件放大为核心反转"
+    else:
+        suggestion = f"试试'{anti_events[0]}'这个方向"
+
+    return {
+        "scene": scene_description[:120],
+        "chapter_num": chapter_num,
+        "expected": expected_next,
+        "anti": anti_events,
+        "pairs": outcome_pairs,
+        "suggestion": suggestion,
+    }
+
+
+# ═══════════════ Reverse Reading Agent (§15) ═══════════════
+
+@app.get("/api/novels/{novel_id}/reverse-reading")
+def reverse_reading(novel_id: str):
+    """Scan earliest chapters for sentences that gain new meaning given later reveals."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    patterns = re.compile(r'不知道|没说|没问|沉默|看起来|似乎|好像|也许|大概|其实|未必|不敢|不敢说')
+    sentences: list[dict] = []
+    for ch in chapters[:3]:
+        content = ch.get("content", "")
+        for m in re.finditer(r'[^。！？\n]{6,}[。！？]', content):
+            sent = m.group().strip()
+            if patterns.search(sent):
+                sentences.append({
+                    "chapter": ch["number"],
+                    "text": sent[:100],
+                    "potential_new_meaning": "读者已知后续，这句话可能另有深意"
+                })
+    return {"sentences": sentences[:10], "count": len(sentences)}
+
+
+# ═══════════════ Scream Moment Agent (§24) ═══════════════
+
+@app.get("/api/novels/{novel_id}/scream-moments")
+def scream_moments(novel_id: str):
+    """Find hidden connections: repeated unique phrases appearing in chapters far apart."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    phrase_map: dict[str, list[int]] = {}
+    for ch in chapters:
+        content = ch.get("content", "")
+        words = re.findall(r'[一-鿿]{3,}', content)
+        for w in set(words):
+            phrase_map.setdefault(w, []).append(ch["number"])
+    connections: list[dict] = []
+    for phrase, chs in phrase_map.items():
+        if len(chs) >= 2:
+            chs_sorted = sorted(set(chs))
+            for i in range(len(chs_sorted)):
+                for j in range(i + 1, len(chs_sorted)):
+                    gap = chs_sorted[j] - chs_sorted[i]
+                    if gap > 5:
+                        connections.append({"phrase": phrase, "ch1": chs_sorted[i], "ch2": chs_sorted[j], "gap": gap})
+    connections.sort(key=lambda x: x["gap"], reverse=True)
+    strongest = (
+        f"'{connections[0]['phrase']}' 在第{connections[0]['ch1']}章和第{connections[0]['ch2']}章之间相隔{connections[0]['gap']}章出现"
+        if connections else "暂无跨章节呼应"
+    )
+    return {"connections": connections[:15], "strongest": strongest}
+
+
+# ═══════════════ Ending Agent (§35) ═══════════════
+
+@app.get("/api/novels/{novel_id}/ending-candidates")
+def ending_candidates(novel_id: str):
+    """Scan for dormant images — unique details appearing only 1-2 times across all chapters."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    phrase_chs: dict[str, list[int]] = {}
+    for ch in chapters:
+        content = ch.get("content", "")
+        phrases = re.findall(r'[一-鿿]{2,4}', content)
+        for p in set(phrases):
+            phrase_chs.setdefault(p, []).append(ch["number"])
+    dormant: list[dict] = []
+    for phrase, chs in phrase_chs.items():
+        if 1 <= len(chs) <= 2 and len(phrase) >= 3:
+            dormant.append({
+                "image": phrase,
+                "first_appearance_chapter": chs[0],
+                "last_appearance_chapter": chs[-1],
+            })
+    dormant.sort(key=lambda x: x["first_appearance_chapter"])
+    recommendation = (
+        f"建议在终章回收意象：'{dormant[0]['image']}'（首现第{dormant[0]['first_appearance_chapter']}章）"
+        if dormant else "暂无休眠意象，可继续铺垫"
+    )
+    return {"dormant": dormant[:20], "recommendation": recommendation}
+
+
+# ═══════════════ Midpoint Agent (§64) ═══════════════
+
+@app.get("/api/novels/{novel_id}/midpoint-health")
+def midpoint_health(novel_id: str):
+    """Check if the story's midpoint has enough hangout time vs plot density."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    total = len(chapters)
+    if total == 0: return {"midpoint_chapter": 0, "plot_density": 0, "hangout_score": 0, "assessment": "暂无章节"}
+    mid = max(1, total // 2)
+    plot_kw = ['杀', '死', '逃', '追', '战', '打', '破', '碎', '险', '危', '急', '决', '变', '转']
+    hangout_kw = ['说', '笑', '吃', '喝', '走', '看', '坐', '聊', '问', '答', '想', '等', '陪', '一起']
+    start, end = max(0, mid - 2), min(total, mid + 3)
+    plot_count = 0
+    hangout_count = 0
+    for ch in chapters[start:end]:
+        content = ch.get("content", "")[:500]
+        plot_count += sum(1 for kw in plot_kw if kw in content)
+        hangout_count += sum(1 for kw in hangout_kw if kw in content)
+    window = max(1, end - start)
+    plot_density = round(plot_count / window, 1)
+    hangout_score = round(hangout_count / window, 1)
+    if 3 < plot_density < 8:
+        assessment = "剧情密度适中，节奏良好"
+    elif plot_density >= 8:
+        assessment = "事件过密，缺少喘息空间——建议在中点前后插入相处场景"
+    else:
+        assessment = "相处时间充足，读者对角色投入足够"
+    return {
+        "midpoint_chapter": mid, "plot_density": plot_density,
+        "hangout_score": hangout_score, "assessment": assessment,
+    }
+
+
+# ═══════════════ Ritual Agent (§49) ═══════════════
+
+@app.get("/api/novels/{novel_id}/rituals")
+def rituals(novel_id: str):
+    """Track repeated gestures/phrases (2-4 chars) appearing in 3+ different chapters."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    phrase_chs: dict[str, list[int]] = {}
+    for ch in chapters:
+        content = ch.get("content", "")
+        phrases = re.findall(r'[一-鿿]{2,4}', content)
+        for p in set(phrases):
+            phrase_chs.setdefault(p, []).append(ch["number"])
+    result: list[dict] = []
+    for phrase, chs in phrase_chs.items():
+        if len(chs) >= 3:
+            chs_sorted = sorted(set(chs))
+            first = chs_sorted[0]
+            last = chs_sorted[-1]
+            total_chs = len(chapters)
+            if last - first > total_chs * 0.5:
+                progression = "growing"
+            elif first < total_chs * 0.3 and last < total_chs * 0.3:
+                progression = "fading"
+            else:
+                progression = "stable"
+            result.append({"phrase": phrase, "chapters": chs_sorted, "meaning_progression": progression})
+    result.sort(key=lambda x: len(x["chapters"]), reverse=True)
+    return {"rituals": result[:15]}
+
+
+# ═══════════════ Time Spiral Agent (§76) ═══════════════
+
+@app.get("/api/novels/{novel_id}/time-spiral")
+def time_spiral(novel_id: str):
+    """What would early chapters mean now that the author knows how the story ends?"""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    total = len(chapters)
+    if total < 6: return {"early_state": "故事太短", "late_state": "暂无", "meaning_shift": "需要更多章节才能分析"}
+    early = chapters[:3]
+    late = chapters[-3:]
+    early_chars = set()
+    late_chars = set()
+    for ch in early:
+        content = ch.get("content", "")[:500]
+        found = re.findall(r'(他|她|它|我|你)[一-鿿]{2,6}', content)
+        early_chars.update(found[:5])
+    for ch in late:
+        content = ch.get("content", "")[:500]
+        found = re.findall(r'(他|她|它|我|你)[一-鿿]{2,6}', content)
+        late_chars.update(found[:5])
+    early_state = f"前3章角色状态：{', '.join(list(early_chars)[:3]) or '未知'}"
+    late_state = f"后3章角色状态：{', '.join(list(late_chars)[:3]) or '未知'}"
+    meaning_shift = "回头再看开头，那些看似寻常的细节——一句话、一个眼神、一次犹豫——都在后来的故事里获得了全新的重量。读者此时才明白，那不是闲笔，是伏笔。" if early_chars != late_chars else "开篇与结尾状态一致，首尾形成闭环"
+    return {"early_state": early_state, "late_state": late_state, "meaning_shift": meaning_shift}
+
+
+# ═══════════════ First Draft Protection Agent (§73) ═══════════════
+
+_protected_drafts: dict[str, set[int]] = {}
+
+@app.post("/api/novels/{novel_id}/draft-protect")
+def draft_protect(novel_id: str, body: dict):
+    """Mark a chapter as first-draft protected — no auto-analysis runs on it."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    chapter_num = body.get("chapter_num")
+    is_first_draft = body.get("is_first_draft", False)
+    if chapter_num is None:
+        raise HTTPException(400, "chapter_num is required")
+    key = f"{novel_id}"
+    if key not in _protected_drafts:
+        _protected_drafts[key] = set()
+    if is_first_draft:
+        _protected_drafts[key].add(chapter_num)
+    else:
+        _protected_drafts[key].discard(chapter_num)
+    return {
+        "protected": is_first_draft,
+        "note": "First draft protected. No analysis will run." if is_first_draft else "Protection removed.",
+    }
+
+
+# ═══════════════ Abandonment Agent (§74) ═══════════════
+
+@app.get("/api/novels/{novel_id}/abandonment-candidates")
+def abandonment_candidates(novel_id: str):
+    """Identify chapters that might be candidates for deletion or restructuring."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    novel = db.get_novel(novel_id)
+    chapters = novel.get("chapters", [])
+    candidates: list[dict] = []
+    for i, ch in enumerate(chapters):
+        wc = ch.get("word_count", 0) or 0
+        content = ch.get("content", "")
+        chars = db.get_character_state(novel_id, ch["number"])
+        reasons: list[str] = []
+        if wc < 500 and wc > 0:
+            reasons.append(f"字数极低({wc}字)")
+        if not chars and wc > 0:
+            reasons.append("未提取到角色状态")
+        if i > 0 and i < len(chapters) - 1:
+            prev_content = chapters[i - 1].get("content", "")[:200]
+            curr_content = content[:200]
+            overlap = len(set(prev_content) & set(curr_content))
+            if overlap > 80:
+                reasons.append("与前一章内容高度重复")
+        if reasons:
+            suggestion = "merge" if "重复" in reasons[0] else ("delete" if wc < 300 else "move")
+            candidates.append({"chapter": ch["number"], "reason": "；".join(reasons), "suggestion": suggestion})
+    assessment = f"发现{len(candidates)}个可优化章节" if candidates else "所有章节状态良好"
+    return {"candidates": candidates, "assessment": assessment}
+
+
+# ═══════════════ Boundary Agent (§77) ═══════════════
+
+@app.get("/api/novels/{novel_id}/boundary-check")
+def boundary_check(novel_id: str):
+    """Return rules for when the system should stay silent."""
+    if not db.get_novel(novel_id): raise HTTPException(404)
+    return {
+        "rules": [
+            "never give final answer",
+            "never rush human choice",
+            "never pretend to feel",
+            "never exploit vulnerability",
+            "never replace the moment of not-looking-away",
+        ],
+        "active": True,
+    }
+
+
+# ═══════════════ 7 Agent API (Pure Heuristics — No LLM) ═══════════════
+
+# Genre → expected tropes for reader pre-understanding
+GENRE_TROPES: dict[str, list[str]] = {
+    "玄幻": ["修炼", "突破", "金丹", "元婴", "灵气", "法宝", "丹药", "战斗", "功法", "境界"],
+    "都市": ["总裁", "契约", "复仇", "逆袭", "千金", "豪门", "公司", "谈判", "酒会", "项目"],
+    "悬疑": ["线索", "谜题", "反转", "凶手", "秘密", "证据", "推理", "嫌疑人", "真相", "诡计"],
+    "科幻": ["科技", "外星", "基因", "意识", "虚拟", "飞船", "人工智能", "数据", "程序", "实验室"],
+    "仙侠": ["仙", "魔", "道", "剑", "宗门", "飞升", "天劫", "元气", "法宝", "灵脉"],
+    "穿越": ["穿越", "系统", "任务", "奖励", "金手指", "历史", "改变", "预知", "碾压", "打脸"],
+    "言情": ["告白", "误会", "分手", "重逢", "心动", "吻", "牵手", "情敌", "约会", "暗恋"],
+    "恐怖": ["鬼", "尸体", "诅咒", "噩梦", "死亡", "诡异", "阴森", "血", "尖叫", "逃"],
+}
+GENRE_TROPES_DEFAULT: list[str] = ["主角", "冲突", "成长", "转折", "结局"]
+
+SUBVERSION_SIGNALS: list[str] = [
+    "但", "却", "竟然", "没想到", "并非如此", "反而不是", "出乎意料", "不料", "谁知", "哪知",
+]
+
+NARRATIVE_SIGNALS: dict[str, list[str]] = {
+    "非线": ["回到了", "那天", "那年", "当时", "之前", "曾经", "回忆", "那时"],
+    "留白": ["……", "沉默", "无言", "——"],
+    "多视角": ["视角", "眼中", "看来", "心想", "暗想", "寻思"],
+}
+
+ATTENTION_HOOKS: list[str] = ["？", "！", "但", "却", "竟然", "突然", "不料", "谁知", "原来"]
+
+WARMTH_SIGNALS: list[str] = ["烫", "热", "暖", "温", "火", "阳光", "灯光", "炉"]
+CARE_SIGNALS: list[str] = [
+    "等", "做", "给", "留", "帮", "守", "陪", "护", "照顾", "关心", "担心", "想念", "思念",
+]
+PAIN_SIGNALS: list[str] = [
+    "疼", "痛", "伤", "哭", "血", "死", "泪", "恨", "绝望", "崩溃", "挣扎",
+]
+
+GENRE_CONTRACT: dict[str, list[str]] = {
+    "玄幻": ["修炼", "突破", "法宝", "丹药", "战斗", "功法", "金手指"],
+    "都市": ["身份", "逆袭", "打脸", "冲突", "势力", "美女", "金钱"],
+    "悬疑": ["谜题", "线索", "死者", "秘密", "嫌疑人", "转折", "伏笔"],
+    "科幻": ["科技", "设定", "冲突", "概念", "未来", "危机", "方案"],
+    "仙侠": ["修炼", "飞升", "剑", "宗门", "历练", "机缘", "天劫"],
+    "穿越": ["穿越", "系统", "身份", "金手指", "碾压", "打脸", "优势"],
+    "言情": ["相遇", "冲突", "心动", "误会", "男主", "女主", "告白"],
+    "恐怖": ["恐怖", "诡异", "死亡", "规则", "逃生", "怪物", "诅咒"],
+}
+GENRE_CONTRACT_DEFAULT: list[str] = ["主角", "冲突", "目标", "反转", "成长"]
+
+TIME_MARKERS: dict[str, float] = {
+    "秒": 0.016667,
+    "分钟": 1,
+    "分": 1,
+    "小时": 60,
+    "时辰": 120,
+    "天": 1440,
+    "日": 1440,
+    "周": 10080,
+    "星期": 10080,
+    "月": 43200,
+    "年": 525600,
+    "载": 525600,
+}
+
+
+# --- 1. Pre-understanding Agent (§17) ---
+@app.get("/api/novels/{novel_id}/pre-understanding")
+def pre_understanding(novel_id: str):
+    """Simulate 3 reader types: novice, veteran, critic (pure heuristic, no LLM)."""
+    novel = db.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(404)
+
+    genre = novel.get("genre", "") or ""
+    chapters = novel.get("chapters", [])
+
+    # Gather all available text
+    all_text_parts: list[str] = []
+    for ch in chapters:
+        c = db.get_chapter(novel_id, ch["number"])
+        if c and c.get("content"):
+            all_text_parts.append(c["content"])
+    all_text = " ".join(all_text_parts)
+    if not all_text.strip():
+        all_text = novel.get("synopsis", "") or ""
+
+    tropes = GENRE_TROPES.get(genre, GENRE_TROPES_DEFAULT)
+
+    # --- novice: count genre trope presence ---
+    novice_hits = sum(1 for t in tropes if t in all_text)
+    novice_score = min(100, round(novice_hits / max(1, len(tropes)) * 100))
+
+    # --- veteran: count tropes that are SUBVERTED ---
+    # A trope is considered subverted when a subversion signal follows within 60 chars
+    veteran_hits = 0
+    for trope in tropes:
+        for m in re.finditer(re.escape(trope), all_text):
+            after = all_text[m.end():m.end() + 60]
+            if any(sig in after for sig in SUBVERSION_SIGNALS):
+                veteran_hits += 1
+                break
+    veteran_score = min(100, round(veteran_hits / max(1, len(tropes)) * 100))
+
+    # --- critic: count narrative technique signals ---
+    critic_raw = 0
+    for _technique, signals in NARRATIVE_SIGNALS.items():
+        for sig in signals:
+            critic_raw += all_text.count(sig)
+    critic_score = min(100, critic_raw * 3)
+
+    # --- suggested adjustment ---
+    if veteran_score > novice_score:
+        suggested = (
+            f"资深读者感知到{veteran_score}%的反套路——建议继续强化反套路叙事，"
+            f"当前套路符合度仅{novice_score}%"
+        )
+    elif critic_score > 50:
+        suggested = (
+            f"叙事技巧密度较高({critic_score}%)——适合文学向读者，"
+            "但可能牺牲可读性，建议适度简化"
+        )
+    elif novice_score > 70:
+        suggested = (
+            f"套路符合度高({novice_score}%)——新手读者友好，"
+            f"建议加入{veteran_hits}个反套路点提升老读者体验"
+        )
+    else:
+        suggested = "建议明确体裁定位，增加核心套路元素以匹配读者预期"
+
+    return {
+        "novice_score": novice_score,
+        "veteran_score": veteran_score,
+        "critic_score": critic_score,
+        "suggested_adjustment": suggested,
+        "genre": genre,
+    }
+
+
+# --- 2. Psychological Time Agent (§51) ---
+@app.get("/api/novels/{novel_id}/psych-time")
+def psych_time(novel_id: str, chapter: int):
+    """Estimate reading time vs story time for a chapter."""
+    ch = db.get_chapter(novel_id, chapter)
+    if not ch:
+        raise HTTPException(404)
+    content = ch.get("content", "") or ""
+
+    # Story time: sum all time markers weighted by their duration
+    story_minutes = 0.0
+    for marker, minutes in TIME_MARKERS.items():
+        count = content.count(marker)
+        story_minutes += count * minutes
+
+    # Reading time: char count / 400 chars-per-min → seconds
+    clean = content.replace(" ", "").replace("\n", "")
+    chars = len(clean)
+    reading_seconds = round(chars / 400 * 60)
+
+    # Time stretch ratio: story_minutes : reading_minutes
+    if reading_seconds > 0:
+        time_stretch_ratio = round(story_minutes / (reading_seconds / 60), 2)
+    else:
+        time_stretch_ratio = 0.0
+
+    if time_stretch_ratio > 10:
+        assessment = "高度压缩——故事时间远大于阅读时间（跳跃式叙事）"
+    elif time_stretch_ratio > 1:
+        assessment = "适度拉伸——故事时间与阅读时间接近，场景描写较充分"
+    elif time_stretch_ratio > 0.1:
+        assessment = "实时叙事——阅读时间接近故事时间，接近'实时'体验"
+    else:
+        assessment = "时间膨胀——大量描写/内心活动，阅读时间远超故事时间"
+
+    return {
+        "story_minutes": round(story_minutes, 1),
+        "reading_seconds": reading_seconds,
+        "time_stretch_ratio": time_stretch_ratio,
+        "assessment": assessment,
+        "chapter": chapter,
+    }
+
+
+# --- 3. Attention Agent (§67) ---
+@app.get("/api/novels/{novel_id}/attention-curve")
+def attention_curve(novel_id: str, chapter: int):
+    """Model reader attention across a chapter in 200-char windows."""
+    ch = db.get_chapter(novel_id, chapter)
+    if not ch:
+        raise HTTPException(404)
+    content = ch.get("content", "") or ""
+
+    if not content:
+        return {"curve": [], "min_attention": 0, "recovery_points": 0, "chapter": chapter}
+
+    window_size = 200
+    attention = 100.0
+    curve: list[dict] = []
+    recovery_points = 0
+    min_attention = 100.0
+
+    for i in range(0, len(content), window_size):
+        window = content[i:i + window_size]
+        has_hook = any(hook in window for hook in ATTENTION_HOOKS)
+
+        if has_hook:
+            attention = 90.0
+            recovery_points += 1
+        else:
+            attention = max(10.0, attention - 15.0)
+
+        curve.append({
+            "char_position": i,
+            "attention_level": round(attention, 1),
+        })
+        min_attention = min(min_attention, attention)
+
+    return {
+        "curve": curve,
+        "min_attention": round(min_attention, 1),
+        "recovery_points": recovery_points,
+        "chapter": chapter,
+        "total_windows": len(curve),
+    }
+
+
+# --- 4. Expectation Management Agent (§69) ---
+@app.get("/api/novels/{novel_id}/expectation-check")
+def expectation_check(novel_id: str):
+    """Check genre contract compliance — what readers expect in first 3 chapters."""
+    novel = db.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(404)
+
+    genre = novel.get("genre", "") or ""
+    expected = GENRE_CONTRACT.get(genre, GENRE_CONTRACT_DEFAULT)
+
+    chapters = novel.get("chapters", [])[:3]
+    all_text_parts: list[str] = []
+    for ch in chapters:
+        c = db.get_chapter(novel_id, ch["number"])
+        if c and c.get("content"):
+            all_text_parts.append(c["content"])
+    all_text = " ".join(all_text_parts)
+    if not all_text.strip():
+        all_text = novel.get("synopsis", "") or ""
+
+    found = [elem for elem in expected if elem in all_text]
+    missing = [elem for elem in expected if elem not in all_text]
+    fulfillment_pct = round(len(found) / max(1, len(expected)) * 100)
+
+    if fulfillment_pct >= 80:
+        contract_status = "fulfilled"
+    elif fulfillment_pct >= 50:
+        contract_status = "partial"
+    else:
+        contract_status = "breached"
+
+    return {
+        "genre": genre,
+        "expected_elements": expected,
+        "found_elements": found,
+        "missing_elements": missing,
+        "fulfillment_pct": fulfillment_pct,
+        "contract_status": contract_status,
+    }
+
+
+# --- 5. Touch Agent (§37) ---
+@app.post("/api/text/touch-analysis")
+def touch_analysis(data: dict):
+    """Analyze what memory (sensory) channels a text opens."""
+    text = data.get("text", "")
+    if not text:
+        raise HTTPException(400, "text is required")
+
+    channels: list[dict] = []
+
+    warmth_count = sum(text.count(s) for s in WARMTH_SIGNALS)
+    channels.append({"name": "温暖", "strength": min(100, warmth_count * 15)})
+
+    care_count = sum(text.count(s) for s in CARE_SIGNALS)
+    channels.append({"name": "关怀", "strength": min(100, care_count * 10)})
+
+    pain_count = sum(text.count(s) for s in PAIN_SIGNALS)
+    channels.append({"name": "疼痛", "strength": min(100, pain_count * 10)})
+
+    dominant = max(channels, key=lambda c: c["strength"])
+
+    if dominant["strength"] < 20:
+        assessment = "文字距离较远，感官通道未充分打开——建议增加触觉细节"
+    elif dominant["name"] == "疼痛":
+        assessment = "疼痛通道主导——文字有强烈的身体感，读者易被卷入"
+    elif dominant["name"] == "温暖":
+        assessment = "温暖通道主导——营造安全/治愈氛围"
+    else:
+        assessment = "关怀通道主导——角色间的互动感强烈"
+
+    return {
+        "channels": channels,
+        "dominant_channel": dominant["name"],
+        "assessment": assessment,
+    }
+
+
+# --- 6. Negative Space Agent (§32) ---
+@app.post("/api/text/negative-space")
+def negative_space(data: dict):
+    """Estimate what the reader fills in — unsaid / implied content."""
+    text = data.get("text", "")
+    if not text:
+        raise HTTPException(400, "text is required")
+
+    # Split into sentences
+    sentences = re.split(r'[。！？；\n]', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    total_sentences = len(sentences)
+
+    if total_sentences == 0:
+        return {
+            "gap_count": 0, "gap_density": 0, "optimal_zone": "under",
+            "breakdown": {"action_gaps": 0, "emotional_gaps": 0, "info_gaps": 0},
+            "total_sentences": 0,
+        }
+
+    # Action gaps: 3+ action verbs in one sentence = skipped intermediate steps
+    action_pattern = re.compile(
+        r'[打走跑跳拿放推拉开关杀砍刺射拔穿脱吃喝说喊叫哭笑坐站躺跪爬飞落升降进出]'
+    )
+    action_gaps = 0
+    for s in sentences:
+        if len(action_pattern.findall(s)) >= 3:
+            action_gaps += 1
+
+    # Emotional gaps: action present but no emotion label
+    emotion_words = [
+        "喜", "怒", "哀", "乐", "悲", "恐", "惊", "忧", "愁", "恨",
+        "高兴", "难过", "愤怒", "害怕", "紧张", "兴奋", "失望", "感动",
+        "幸福", "痛苦", "焦虑", "恐惧", "开心", "伤心",
+    ]
+    emotion_gaps = 0
+    for s in sentences:
+        has_action = bool(action_pattern.search(s))
+        has_emotion = any(ew in s for ew in emotion_words)
+        if has_action and not has_emotion:
+            emotion_gaps += 1
+
+    # Info gaps: sentences ending with ? minus answer signals
+    question_count = sum(1 for s in sentences if s.endswith("？"))
+    answer_signals = ["因为", "所以", "于是", "原来", "其实", "结果"]
+    answer_count = sum(text.count(a) for a in answer_signals)
+    info_gaps = max(0, question_count - answer_count)
+
+    total_gaps = action_gaps + emotion_gaps + info_gaps
+    gap_density = round(total_gaps / total_sentences, 2)
+
+    if gap_density < 0.1:
+        optimal_zone = "under"
+    elif gap_density > 0.5:
+        optimal_zone = "over"
+    else:
+        optimal_zone = "optimal"
+
+    return {
+        "gap_count": total_gaps,
+        "gap_density": gap_density,
+        "optimal_zone": optimal_zone,
+        "breakdown": {
+            "action_gaps": action_gaps,
+            "emotional_gaps": emotion_gaps,
+            "info_gaps": info_gaps,
+        },
+        "total_sentences": total_sentences,
+    }
+
+
+# --- 7. Negative Space Consumption (§72) ---
+@app.get("/api/novels/{novel_id}/neg-space-health")
+def neg_space_health(novel_id: str):
+    """Check if later chapters 'consume' negative space created earlier."""
+    novel = db.get_novel(novel_id)
+    if not novel:
+        raise HTTPException(404)
+
+    chapters = novel.get("chapters", [])
+
+    if len(chapters) < 2:
+        return {
+            "intact_spaces": 0,
+            "consumed_spaces": 0,
+            "health": "healthy",
+            "total_chapters": len(chapters),
+            "note": "章节不足，无法判断",
+        }
+
+    mystery_signals = [
+        "？", "神秘", "未知", "秘密", "谜", "不为人知", "隐藏", "到底", "究竟",
+        "为何", "为什么", "是谁", "什么东西", "怎么回事",
+    ]
+    reveal_signals = [
+        "原来", "真相", "其实", "揭秘", "答案", "原因是", "真相是", "竟然是",
+    ]
+
+    # Count mysteries in first 3 chapters
+    early_chapters = chapters[:3]
+    early_text_parts: list[str] = []
+    for ch in early_chapters:
+        c = db.get_chapter(novel_id, ch["number"])
+        if c and c.get("content"):
+            early_text_parts.append(c["content"])
+    early_text = " ".join(early_text_parts)
+    mystery_count = sum(1 for sig in mystery_signals if sig in early_text)
+
+    # Count reveals in later chapters
+    later_chapters = chapters[3:]
+    later_text_parts: list[str] = []
+    for ch in later_chapters:
+        c = db.get_chapter(novel_id, ch["number"])
+        if c and c.get("content"):
+            later_text_parts.append(c["content"])
+    later_text = " ".join(later_text_parts)
+    reveal_count = sum(1 for sig in reveal_signals if sig in later_text)
+
+    intact_spaces = max(0, mystery_count - reveal_count)
+    consumed_spaces = min(mystery_count, reveal_count)
+
+    # Health: if too many spaces consumed without new ones, it's depleting
+    if mystery_count > 0 and consumed_spaces >= mystery_count * 0.7:
+        health = "depleting"
+    else:
+        health = "healthy"
+
+    return {
+        "intact_spaces": intact_spaces,
+        "consumed_spaces": consumed_spaces,
+        "health": health,
+        "total_chapters": len(chapters),
+    }
+
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Serve static file if it exists, otherwise fallback to SPA index.html"""
