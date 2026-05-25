@@ -395,13 +395,9 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     // Clean up old audio completely before creating new one
     const oldAudio = audioRef.current;
     if (oldAudio) {
-      oldAudio.onloadedmetadata = null;
-      oldAudio.ontimeupdate = null;
-      oldAudio.onended = null;
       oldAudio.onerror = null;
       oldAudio.pause();
       oldAudio.src = '';
-      oldAudio.load();
       audioRef.current = null;
     }
 
@@ -417,9 +413,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       preloadRef.current = null;
     } else {
       if (preloadRef.current) {
-        preloadRef.current.onerror = null;
         preloadRef.current.src = '';
-        preloadRef.current.load();
         preloadRef.current = null;
       }
       audioRef.current = new Audio(ttsUrl(item));
