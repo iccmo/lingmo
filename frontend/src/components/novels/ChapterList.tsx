@@ -94,6 +94,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   const [showProofread, setShowProofread] = useState(false);
   // Word frequency analysis
   const [showWordFreq, setShowWordFreq] = useState(false);
+  // Reverse polish
+  const [polishing, setPolishing] = useState(false);
+  const [polishedText, setPolishedText] = useState('');
   // Chapter approval status: 'draft' | 'approved' | 'revise'
   const [approvals, setApprovals] = useState<Record<number, string>>(() => {
     try { return JSON.parse(localStorage.getItem(`approvals-${novelId}`) || '{}'); }
@@ -602,6 +605,22 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
       toast.error('校对失败: ' + (e as Error).message);
     } finally {
       setProofreading(false);
+    }
+  }
+
+  async function handleReversePolish() {
+    if (!expanded || !content) return;
+    setPolishing(true);
+    setPolishedText('');
+    try {
+      const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/polish-reverse`, { method: 'POST' });
+      const d = await r.json();
+      setPolishedText(d.polished);
+      toast.success(`克制编辑完成: ${d.original_length} → ${d.polished_length} 字`);
+    } catch (e: unknown) {
+      toast.error('克制编辑失败: ' + (e as Error).message);
+    } finally {
+      setPolishing(false);
     }
   }
 

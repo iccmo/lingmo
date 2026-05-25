@@ -4538,12 +4538,27 @@ def _extract_story_bible(novel_id: str, chapter_num: int, content: str, chapter_
         if not result:
             return
 
-        import json
-        # Try to extract JSON from response
+        import json, re
+        # Extract JSON — handle truncated/malformed responses
         json_start = result.find('{')
         json_end = result.rfind('}') + 1
         if json_start >= 0 and json_end > json_start:
-            data = json.loads(result[json_start:json_end])
+            raw_json = result[json_start:json_end]
+            # Fix common JSON issues
+            raw_json = re.sub(r',\s*}', '}', raw_json)  # trailing commas
+            raw_json = re.sub(r',\s*]', ']', raw_json)
+            try:
+                data = json.loads(raw_json)
+            except json.JSONDecodeError:
+                # Try to salvage: close unclosed strings and braces
+                # Count braces
+                open_braces = raw_json.count('{') - raw_json.count('}')
+                raw_json += '}' * max(0, open_braces)
+                try:
+                    data = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    print(f"[BIBLE] JSON parse failed, skipping")
+                    return
 
             # Save character states
             for char in data.get("characters", []):
@@ -4677,4 +4692,46 @@ def _run_consistency_check(novel_id: str, chapter_num: int):
         print(f"[CONSISTENCY] Check complete for {novel_id} ch{chapter_num}")
     except Exception as e:
         print(f"[CONSISTENCY] Check failed: {e}")
+
+
+# ═══════════════ Reverse Polish (克制编辑) ═══════════════
+
+@app.post("/api/novels/{novel_id}/chapters/{chapter_num}/polish-reverse")
+def reverse_polish(novel_id: str, chapter_num: int):
+    """克制编辑：删除冗余词句，只删不加。"""
+    ch = db.get_chapter(novel_id, chapter_num)
+    if not ch or not ch.get("content"):
+        raise HTTPException(400, "No content")
+
+    try:
+        from .generator import Generator
+        from .config import Config
+        provider = _get_provider(novel_id)
+        cfg = Config(openai_api_key=provider.get("api_key",""), openai_base_url=provider.get("base_url",""),
+                     model=provider.get("models","deepseek-v4-flash")[0] if provider.get("models") else "gpt-4o")
+        gen = Generator(cfg)
+
+        prompt = f"""以下是小说正文。你的任务是删减——只删不加，不改写。
+
+删减规则（严格按顺序）：
+1. 删掉所有「突然」「竟然」「似乎」「有些」「其实」「不由得」「仿佛」
+2. 删掉所有解释情绪的句子（让动作和对话自己说话）
+3. 如果上一段已经暗示的信息，下一段不要再明说——删掉重复的
+4. 删掉所有「说道」「问道」「答道」中的「道」——改成「说」「问」「答」
+5. 删掉所有不必要的「的」「地」「得」
+6. 如果删完某段不足原来一半字数——那段不需要删，恢复原样
+
+直接返回删减后的全文。不要加任何解释。
+
+原文：
+{ch['content'][:4000]}
+"""
+        messages = [{"role": "user", "content": prompt}]
+        result = gen._call_llm_with_retry(messages, max_tokens=4096)
+        if not result:
+            raise HTTPException(500, "LLM returned empty")
+
+        return {"polished": result, "original_length": len(ch['content']), "polished_length": len(result)}
+    except Exception as e:
+        raise HTTPException(500, str(e)[:200])
 
