@@ -1473,14 +1473,25 @@ def _run_generation(novel_id: str):
         except Exception:
             pass
 
-        # V11: Extract story bible + consistency check (non-blocking)
+        # V11: Extract story bible + consistency check → Agent prep next chapter (non-blocking)
         try:
             import threading
             final_content = cleaned_body or chapter.content or chapter.summary
-            def _bible_pipeline():
+            next_ch = chapter.number + 1
+            def _post_gen_pipeline():
                 _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
                 _run_consistency_check(novel_id, chapter.number)
-            threading.Thread(target=_bible_pipeline, daemon=True).start()
+                # Agent auto-prep: Editor-in-Chief → brief for next chapter
+                brief = _agent_editor_in_chief(novel_id, next_ch)
+                if brief:
+                    outline = _agent_architect(novel_id, next_ch, brief)
+                    if brief or outline:
+                        direction = f"【总编简报（自动生成）】\n{brief}"
+                        if outline:
+                            direction += f"\n\n【章节大纲（自动生成）】\n{outline}"
+                        _gen_directions[novel_id] = direction
+                        print(f"[AGENT] Auto-prepared brief+outline for ch{next_ch}")
+            threading.Thread(target=_post_gen_pipeline, daemon=True).start()
         except Exception:
             pass
 
