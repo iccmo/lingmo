@@ -1083,6 +1083,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
                 )}
                 {content && <span className="text-[10px] text-ink-subtle">|</span>}
                 {content && (
+                  <button onClick={e => { e.stopPropagation(); handleReversePolish(); }}
+                    disabled={polishing}
+                    className="text-[10px] text-ink-subtle hover:text-accent disabled:opacity-50">
+                    {polishing ? '⏳ 删减中...' : '✂️ 克制'}
+                  </button>
+                )}
+                <span className="text-[10px] text-ink-subtle">|</span>
+                {content && (
                   <button onClick={e => { e.stopPropagation(); handleProofread(); }}
                     disabled={proofreading}
                     className="text-[10px] text-ink-subtle hover:text-accent disabled:opacity-50">
@@ -1149,6 +1157,24 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
               )}
 
               {/* Proofreading Results */}
+              {polishedText && (
+                <div className="mt-3 p-3 rounded-lg bg-purple-50/50 dark:bg-purple-950/10 border border-purple-200 dark:border-purple-800 animate-[fadeSlideIn_0.2s_ease-out]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-semibold text-purple-700 dark:text-purple-400">
+                      ✂️ 克制编辑结果
+                    </span>
+                    <button onClick={() => {
+                      setContent(polishedText);
+                      setPolishedText('');
+                      toast.success('已应用克制编辑');
+                    }}
+                      className="text-[10px] text-accent hover:underline">应用</button>
+                  </div>
+                  <div className="text-[13px] text-ink leading-[2.1] font-[var(--font-editor)] whitespace-pre-wrap max-h-[300px] overflow-y-auto">
+                    {polishedText}
+                  </div>
+                </div>
+              )}
               {showProofread && proofreadIssues.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200 dark:border-amber-800 animate-[fadeSlideIn_0.2s_ease-out]">
                   <div className="flex items-center justify-between mb-2">
