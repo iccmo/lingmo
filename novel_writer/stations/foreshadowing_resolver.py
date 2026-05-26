@@ -1,0 +1,214 @@
+"""
+工位：伏笔回收检测
+输入：novel_id, chapter_num, chapter_content, db
+输出：检查是否有活跃伏笔在本章被回收，更新数据库并返回摘要
+"""
+import json
+import re
+
+
+class ForeshadowingResolver:
+    name = "foreshadowing_resolver"
+    required_every_chapter = True
+
+    def run(self, ctx: dict) -> dict:
+        """
+        使用 LLM 检查本章内容是否回收了任何活跃伏笔。
+        如果 LLM 不可用，回退到规则检测。
+        """
+        novel_id = ctx["novel_id"]
+        chapter_num = ctx["chapter_num"]
+        chapter_content = ctx.get("chapter_content", "")
+        db = ctx["db"]
+
+        if not chapter_content:
+            return {"status": "no_content", "resolved": 0, "threads": []}
+
+        active_threads = db.get_active_foreshadowing(novel_id)
+        if not active_threads:
+            return {"status": "skip", "resolved": 0, "threads": [], "message": "无活跃伏笔"}
+
+        # Trim content for LLM
+        content_snippet = chapter_content[:3000]
+
+        # Try LLM resolution
+        resolved = self._llm_check(novel_id, chapter_num, content_snippet, active_threads, db)
+
+        if resolved is None:
+            # Fallback: rules-based keyword detection
+            resolved = self._rules_check(novel_id, chapter_num, content_snippet, active_threads, db)
+
+        # Update DB for each resolved thread
+        for thread in resolved:
+            db.resolve_foreshadowing(
+                thread["id"], chapter_num, thread.get("resolved_text", "")
+            )
+
+        return {
+            "status": "ok",
+            "resolved": len(resolved),
+            "threads": resolved,
+        }
+
+    def _llm_check(
+        self,
+        novel_id: str,
+        chapter_num: int,
+        content: str,
+        active_threads: list[dict],
+        db,
+    ) -> list[dict] | None:
+        """Use LLM to check which active threads are resolved in this chapter."""
+        try:
+            from ..generator import Generator
+            from ..config import Config
+
+            # Fetch provider config
+            from ..server import _get_provider
+            provider = _get_provider(novel_id)
+        except ImportError:
+            return None
+
+        try:
+            models = provider.get("models", ["deepseek-v4-pro"])
+            model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
+            cfg = Config(
+                openai_api_key=provider.get("api_key", ""),
+                openai_base_url=provider.get("base_url", ""),
+                model=model,
+            )
+            gen = Generator(cfg)
+        except Exception:
+            return None
+
+        # Build concise thread summaries
+        thread_list = "\n".join(
+            f"  #{t['id']} (第{t['created_chapter']}章埋下): {t['description']}"
+            for t in active_threads
+        )
+
+        prompt = f"""你是小说伏笔检测员。以下是活跃伏笔列表和本章正文。判断哪些伏笔在本章被回收或显著推进。
+
+活跃伏笔：
+{thread_list}
+
+本章正文（前3000字）：
+{content}
+
+返回严格JSON格式，不要加任何解释：
+{{
+  "resolved": [
+    {{"id": 伏笔ID数字, "resolved_text": "本章中回收该伏笔的关键句子(20字以内)"}}
+  ]
+}}
+
+如果没有任何伏笔被回收，返回 {{"resolved": []}}。
+判断标准：
+- "回收"意味着读者得到了明确答案，疑问被解答
+- "显著推进"意味着出现了重大线索，离答案很近
+- 仅仅提到相关人物或地点不算回收
+"""
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            result = gen._call_llm_with_retry(messages, max_tokens=1024)
+            if not result:
+                return None
+
+            # Extract JSON
+            json_start = result.find("{")
+            json_end = result.rfind("}") + 1
+            if json_start >= 0 and json_end > json_start:
+                raw_json = result[json_start:json_end]
+                raw_json = re.sub(r",\s*}", "}", raw_json)
+                raw_json = re.sub(r",\s*]", "]", raw_json)
+                try:
+                    data = json.loads(raw_json)
+                except json.JSONDecodeError:
+                    return None
+
+                resolved_items = data.get("resolved", [])
+                if not isinstance(resolved_items, list):
+                    return None
+
+                # Validate against actual active threads
+                valid_ids = {t["id"] for t in active_threads}
+                valid_resolved = [
+                    item for item in resolved_items
+                    if isinstance(item, dict) and item.get("id") in valid_ids
+                ]
+                if valid_resolved:
+                    print(f"[FORESHADOW] LLM resolved {len(valid_resolved)} thread(s) in ch{chapter_num}: "
+                          f"{[r['id'] for r in valid_resolved]}")
+                return valid_resolved
+        except Exception as e:
+            print(f"[FORESHADOW] LLM check failed: {e}")
+            return None
+
+    def _rules_check(
+        self,
+        novel_id: str,
+        chapter_num: int,
+        content: str,
+        active_threads: list[dict],
+        db,
+    ) -> list[dict]:
+        """Rules-based fallback: keyword proximity detection."""
+        resolved = []
+
+        resolution_signals = [
+            "原来", "真相是", "终于明白", "揭开", "揭秘", "揭露",
+            "原来如此", "竟然", "难怪", "怪不得", "果然是",
+            "答案", "谜底", "真相大白",
+        ]
+
+        has_resolution_signal = any(s in content for s in resolution_signals)
+
+        for thread in active_threads:
+            # Extract key nouns from description as search terms
+            desc = thread.get("description", "")
+            hint = thread.get("hint_text", "")
+
+            # Score: how many resolution signals appear near the thread's keywords
+            score = 0
+            if has_resolution_signal:
+                # Check if thread keywords appear near resolution signals
+                keywords = self._extract_keywords(desc)
+                for kw in keywords[:3]:
+                    if kw and kw in content:
+                        # Find positions of keyword and nearest resolution signal
+                        kw_pos = content.find(kw)
+                        for sig in resolution_signals:
+                            sig_pos = content.find(sig)
+                            if sig_pos >= 0 and abs(kw_pos - sig_pos) < 200:
+                                score += 1
+                                break
+
+            # Also check if due_by_chapter matches
+            due_by = thread.get("due_by_chapter")
+            if due_by and chapter_num >= due_by:
+                score += 1
+
+            if score >= 2:
+                resolved.append({
+                    "id": thread["id"],
+                    "resolved_text": hint[:50] if hint else desc[:50],
+                })
+
+        if resolved:
+            print(f"[FORESHADOW] Rules resolved {len(resolved)} thread(s) in ch{chapter_num}")
+        return resolved
+
+    @staticmethod
+    def _extract_keywords(description: str) -> list[str]:
+        """Extract meaningful keywords (Chinese 2-4 char words) from description."""
+        # Simple extraction: remove common stop words, return unique 2-4 char segments
+        stop_words = {"的", "了", "是", "在", "和", "也", "就", "都", "而", "及", "与",
+                      "着", "或", "一个", "没有", "我们", "你们", "他们", "这个", "那个"}
+        # Split by common punctuation
+        parts = re.split(r"[，。！？、；：“”‘’（）\s]+", description)
+        keywords = []
+        for part in parts:
+            part = part.strip()
+            if 2 <= len(part) <= 6 and part not in stop_words:
+                keywords.append(part)
+        return list(dict.fromkeys(keywords))  # dedup preserve order

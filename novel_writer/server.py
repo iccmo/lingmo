@@ -1516,6 +1516,25 @@ def _run_generation(novel_id: str):
             final_content = cleaned_body or chapter.content or chapter.summary
             _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
             _run_consistency_check(novel_id, chapter.number)
+            # Foreshadowing auto-resolution: detect resolved threads
+            try:
+                from .stations.foreshadowing_resolver import ForeshadowingResolver
+                resolver = ForeshadowingResolver()
+                fs_result = resolver.run({
+                    "novel_id": novel_id,
+                    "chapter_num": chapter.number,
+                    "chapter_content": final_content,
+                    "db": db,
+                })
+                if fs_result.get("resolved", 0) > 0:
+                    print(f"[FORESHADOW] Auto-resolved {fs_result['resolved']} thread(s) in ch{chapter.number}")
+                    db.log(novel_id, "foreshadowing.resolved", {
+                        "chapter": chapter.number,
+                        "resolved_count": fs_result["resolved"],
+                        "threads": fs_result.get("threads", []),
+                    })
+            except Exception as e:
+                print(f"[FORESHADOW] Auto-resolution failed: {e}")
             _constraints_cache[novel_id] = _build_constraints(novel_id, chapter.number + 1)
         except Exception:
             pass

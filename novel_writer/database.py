@@ -24,6 +24,11 @@ class Database:
                 conn.execute("ALTER TABLE novels ADD COLUMN provider_id TEXT DEFAULT 'openai'")
             except Exception:
                 pass  # Column already exists
+            # V11: Add updated_at column to foreshadowing_tracker
+            try:
+                conn.execute("ALTER TABLE foreshadowing_tracker ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))")
+            except Exception:
+                pass  # Column already exists
             # V9-V10: Create cost_logs and chapter_summaries tables if schema didn't run
             try:
                 conn.execute("""CREATE TABLE IF NOT EXISTS cost_logs (
@@ -558,10 +563,12 @@ class Database:
             c.execute("""INSERT INTO foreshadowing_tracker (novel_id, created_chapter, description, hint_text, due_by_chapter)
                 VALUES (?, ?, ?, ?, ?)""", (novel_id, chapter_num, description, hint_text, due_by))
 
-    def resolve_foreshadowing(self, f_id: int, chapter_num: int, resolved_text: str = ''):
+    def resolve_foreshadowing(self, fs_id: int, resolved_chapter: int, resolved_text: str = ""):
         with self.conn() as c:
-            c.execute("""UPDATE foreshadowing_tracker SET status='resolved', resolved_chapter=?,
-                resolved_text=? WHERE id=?""", (chapter_num, resolved_text, f_id))
+            c.execute(
+                "UPDATE foreshadowing_tracker SET status='resolved', resolved_chapter=?, resolved_text=?, updated_at=datetime('now') WHERE id=?",
+                (resolved_chapter, resolved_text, fs_id)
+            )
 
     def get_active_foreshadowing(self, novel_id: str) -> list[dict]:
         with self.conn() as c:

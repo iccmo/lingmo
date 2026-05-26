@@ -12,6 +12,7 @@ from .stations.constraint_builder import ConstraintBuilder
 from .stations.consistency_checker import ConsistencyChecker
 from .stations.consistency_scorer import ConsistencyScorer
 from .stations.deslop_filter import DeslopFilter
+from .stations.foreshadowing_resolver import ForeshadowingResolver
 
 
 class BrainAgent:
@@ -23,6 +24,7 @@ class BrainAgent:
         self.consistency_checker = ConsistencyChecker()
         self.consistency_scorer = ConsistencyScorer()
         self.deslop_filter = DeslopFilter()
+        self.foreshadowing_resolver = ForeshadowingResolver()
         self.log: list[dict] = []
 
     def produce_chapter(self, novel_id: str, chapter_num: int, generator, state, style,

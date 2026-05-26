@@ -13,3 +13,4 @@ from .bible_extractor import BibleExtractor
 from .editor_review import EditorReview
 from .deslop_filter import DeslopFilter
 from .chapter_writer import ChapterWriter
+from .foreshadowing_resolver import ForeshadowingResolver

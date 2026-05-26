@@ -325,7 +325,8 @@ CREATE TABLE IF NOT EXISTS foreshadowing_tracker (
     status              TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved','overdue')),
     resolved_chapter    INTEGER,
     resolved_text       TEXT NOT NULL DEFAULT '',
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_foreshadowing_novel ON foreshadowing_tracker(novel_id, status);
 
