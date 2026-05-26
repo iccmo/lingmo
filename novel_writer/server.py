@@ -1511,18 +1511,12 @@ def _run_generation(novel_id: str):
         except Exception as e:
             print(f"[BRAIN] Post-check failed: {e}")
 
-        # V11: Extract story bible + consistency check → Agent prep next chapter (non-blocking)
+        # V11: Extract story bible + consistency check → Agent prep next chapter (synchronous)
         try:
-            import threading
             final_content = cleaned_body or chapter.content or chapter.summary
-            next_ch = chapter.number + 1
-            def _post_gen_pipeline():
-                # Only extract structured data + check consistency
-                _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
-                _run_consistency_check(novel_id, chapter.number)
-                # Pre-compute constraints for next chapter
-                _constraints_cache[novel_id] = _build_constraints(novel_id, chapter.number + 1)
-            threading.Thread(target=_post_gen_pipeline, daemon=True).start()
+            _extract_story_bible(novel_id, chapter.number, final_content, chapter.title)
+            _run_consistency_check(novel_id, chapter.number)
+            _constraints_cache[novel_id] = _build_constraints(novel_id, chapter.number + 1)
         except Exception:
             pass
 
