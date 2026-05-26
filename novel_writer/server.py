@@ -1362,6 +1362,30 @@ def _run_generation(novel_id: str):
             if compressed["text"]:
                 author_direction = f"【硬约束】\n{compressed['text']}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
             _set_status(novel_id, "generating", f"正在生成候选版本…（约束{compressed['char_count']}字）", 20)
+
+        # 【技法顾问】场景分析 → 写作指导注入
+        technique_guidance = ""
+        try:
+            from .stations.technique_advisor import TechniqueAdvisor
+            advisor = TechniqueAdvisor()
+            prev_chs = [c for c in state.chapters if c.word_count > 0]
+            prev_hook = prev_chs[-1].ending_hook if prev_chs else ""
+            tech_result = advisor.run({
+                "novel_id": novel_id,
+                "chapter_num": next_ch,
+                "db": db,
+                "outline": outline,
+                "prev_hook": prev_hook,
+                "genre": state.genre,
+                "constraints": compressed.get("text", "") if comp_level != "NONE" else "",
+            })
+            if tech_result.get("guidance"):
+                technique_guidance = tech_result["guidance"]
+                author_direction = author_direction + "\n\n【技法指导】\n" + technique_guidance
+                print(f"[TECHNIQUE] {novel_id} Ch{next_ch}: {technique_guidance[:60]}...")
+        except Exception as e:
+            print(f"[TECHNIQUE] skipped: {e}")
+
         chapter, quality = gen.batch_generate(state, n=2, rag_context=rag_context, outline=outline, style=style, author_input=author_direction)
         gen_duration = (_time.time() - t0) * 1000
         body = chapter.content or chapter.summary
@@ -1502,8 +1526,11 @@ def _run_generation(novel_id: str):
         try:
             final_body = cleaned_body or body
             brain = BrainAgent(db)
-            deslop_result = brain.deslop_filter.run({"content": final_body})
-            print(f"[BRAIN] Deslop score: {deslop_result['score']}/50 ({deslop_result['grade']})")
+            deslop_ctx = {"content": final_body}
+            if technique_guidance:
+                deslop_ctx["technique_guidance"] = technique_guidance
+            deslop_result = brain.deslop_filter.run(deslop_ctx)
+            print(f"[BRAIN] Deslop score: {deslop_result['score']}/{deslop_result.get('max_score', 50)} ({deslop_result['grade']})")
             consistency_result = brain.consistency_checker.run({
                 "novel_id": novel_id, "chapter_num": chapter.number, "db": db
             })
