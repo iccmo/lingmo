@@ -654,6 +654,60 @@ class Database:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM cost_ledger WHERE novel_id=? ORDER BY chapter_num", (novel_id,)).fetchall()]
 
+    def get_character_location(self, novel_id: str, char_name: str) -> str | None:
+        """Get a character's latest known location from character_state table."""
+        with self.conn() as c:
+            row = c.execute(
+                """SELECT location FROM character_state
+                   WHERE novel_id=? AND char_name=? AND location != ''
+                   ORDER BY chapter_num DESC LIMIT 1""",
+                (novel_id, char_name)
+            ).fetchone()
+            return row["location"] if row else None
+
+    def get_relationship_changes(self, novel_id: str) -> list[dict]:
+        """Get relationship state transitions from character_state.relationships JSON."""
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT chapter_num, char_name, relationships FROM character_state
+                   WHERE novel_id=? AND relationships != '[]' AND relationships != ''
+                   ORDER BY chapter_num""",
+                (novel_id,)
+            ).fetchall()
+        result: list[dict] = []
+        for r in rows:
+            try:
+                rels = json.loads(r["relationships"])
+                for rel in rels:
+                    result.append({
+                        "chapter_num": r["chapter_num"],
+                        "char_name": r["char_name"],
+                        "target": rel.get("target", ""),
+                        "relation": rel.get("relation", ""),
+                        "change": rel.get("change", ""),
+                    })
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return result
+
+    def get_knowledge_state(self, novel_id: str, char_name: str) -> list[str]:
+        """Get what a character knows (from character_state.knowledge JSON array)."""
+        with self.conn() as c:
+            rows = c.execute(
+                """SELECT knowledge FROM character_state
+                   WHERE novel_id=? AND char_name=? AND knowledge != '[]' AND knowledge != ''
+                   ORDER BY chapter_num DESC LIMIT 5""",
+                (novel_id, char_name)
+            ).fetchall()
+        all_knowledge: list[str] = []
+        for r in rows:
+            try:
+                items = json.loads(r["knowledge"])
+                all_knowledge.extend(items)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return list(dict.fromkeys(all_knowledge))  # dedup preserve order
+
     def mark_consistency_fixed(self, issue_id: int):
         with self.conn() as c:
             c.execute("UPDATE consistency_log SET was_fixed=1 WHERE id=?", (issue_id,))
