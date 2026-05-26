@@ -10,6 +10,7 @@ Pi 方法论：
 from typing import Any
 from .stations.constraint_builder import ConstraintBuilder
 from .stations.consistency_checker import ConsistencyChecker
+from .stations.consistency_scorer import ConsistencyScorer
 from .stations.deslop_filter import DeslopFilter
 
 
@@ -20,6 +21,7 @@ class BrainAgent:
         self.db = db
         self.constraint_builder = ConstraintBuilder()
         self.consistency_checker = ConsistencyChecker()
+        self.consistency_scorer = ConsistencyScorer()
         self.deslop_filter = DeslopFilter()
         self.log: list[dict] = []
 
@@ -60,14 +62,20 @@ class BrainAgent:
         else:
             self.log.append({"station": "deslop_filter", "result": "skipped (early chapter)"})
 
-        # ═══ 终检：质量关卡 ═══
+        # ═══ 终检：质量关卡（含跨章一致性） ═══
         errors = consistency_result.get("error_count", 0)
         deslop_score = result.get("deslop", {}).get("score", 50)
         confidence = consistency_result.get("confidence", 100)
 
-        if errors >= 3 or confidence < 50:
+        # Cross-chapter consistency score
+        cs_result = self.consistency_scorer.run({
+            "novel_id": novel_id, "db": self.db
+        })
+        result["cross_chapter_score"] = cs_result
+
+        if errors >= 3 or cs_result["grade"] in ("C", "D"):
             gate = "🔴 BLOCK"
-        elif errors >= 1 or deslop_score < 35 or confidence < 75:
+        elif errors >= 1 or deslop_score < 35 or cs_result["grade"] == "B":
             gate = "⚠️ WARN"
         else:
             gate = "✅ PASS"

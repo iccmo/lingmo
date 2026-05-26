@@ -272,6 +272,10 @@ def trigger_generate(novel_id: str, background: BackgroundTasks, data: dict = {}
     model_override = (data or {}).get("model", "").strip()
     if model_override:
         _gen_directions[novel_id + "_model"] = model_override
+    # Constraint compression level (L0/L1/L2/L3/none, default L1)
+    compression = (data or {}).get("compression", "").strip().upper()
+    if compression in ("L0", "L1", "L2", "L3", "NONE"):
+        _gen_directions[novel_id + "_compression"] = compression
     background.add_task(_run_generation, novel_id)
     ch_count = len(db.get_novel(novel_id).get("chapters", []))
     return {"status": "generating", "novel_id": novel_id, "next_chapter": ch_count + 1}
@@ -1343,17 +1347,21 @@ def _run_generation(novel_id: str):
         if soul_injection:
             author_direction = soul_injection + ("\n\n作者方向：" + author_direction if author_direction else "")
         # 【核心】Brain Agent + 约束压缩 —— 数据库写小说，AI只是笔
+        next_ch = len([c for c in state.chapters if c.word_count > 0]) + 1
         brain = BrainAgent(db)
         constraint_result = brain.constraint_builder.run({
-            "novel_id": novel_id, "chapter_num": chapter.number, "db": db
+            "novel_id": novel_id, "chapter_num": next_ch, "db": db
         })
         compressor = ConstraintCompressor()
-        # Configurable compression level (default L1, override via _gen_directions)
+        # Configurable compression level (default L1, "NONE" to skip constraints)
         comp_level = _gen_directions.pop(novel_id + "_compression", "L1")
-        compressed = compressor.compress(constraint_result, comp_level)
-        if compressed["text"]:
-            author_direction = f"【硬约束】\n{compressed['text']}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
-        _set_status(novel_id, "generating", f"正在生成候选版本…（约束{compressed['char_count']}字）", 20)
+        if comp_level == "NONE":
+            _set_status(novel_id, "generating", "正在生成候选版本…（无约束对照组）", 20)
+        else:
+            compressed = compressor.compress(constraint_result, comp_level)
+            if compressed["text"]:
+                author_direction = f"【硬约束】\n{compressed['text']}\n\n" + ("【作者方向】\n" + author_direction if author_direction else "")
+            _set_status(novel_id, "generating", f"正在生成候选版本…（约束{compressed['char_count']}字）", 20)
         chapter, quality = gen.batch_generate(state, n=2, rag_context=rag_context, outline=outline, style=style, author_input=author_direction)
         gen_duration = (_time.time() - t0) * 1000
         body = chapter.content or chapter.summary
@@ -2454,6 +2462,79 @@ def _load_state(novel_id: str):
                      generated_at=ch.get("generated_at",""))
                      for ch in novel.get("chapters", []) if ch.get("word_count", 0) > 0],
     )
+
+
+# ═══════════════ Consistency Scoring & Batch (Long-Run) ═══════════════
+
+def _run_single_generation(novel_id: str, compression: str, quality_threshold: float) -> dict:
+    """Wrapper for single chapter generation used by BatchRunner."""
+    _gen_directions[novel_id + "_compression"] = compression
+    _gen_directions[novel_id + "_qthreshold"] = str(quality_threshold)
+    _run_generation(novel_id)
+    # Return captured quality info
+    status = _gen_status.get(novel_id, {})
+    return {
+        "quality": {
+            "overall": status.get("overall", 0),
+            "grade": status.get("grade", "?"),
+        },
+        "word_count": status.get("word_count", 0),
+        "retries": status.get("retries", 0),
+        "auto_recovery": status.get("auto_recovery", False),
+    }
+
+
+def _run_longrun_batch_generation(novel_id: str, chapters: int, compression: str, quality_threshold: float):
+    """Background task: run batch generation with metrics tracking."""
+    from .stations.batch_runner import BatchRunner
+    try:
+        runner = BatchRunner(db, _get_provider, _run_single_generation)
+        report = runner.run(novel_id, chapters, compression, quality_threshold)
+        _gen_status[novel_id] = {
+            "status": "batch_complete",
+            "message": f"批量生成完成: {report['chapters_generated']}/{chapters}章",
+            "progress": 100,
+            "batch_report": report,
+        }
+        print(runner.format_report(report))
+    except Exception as e:
+        import traceback
+        _gen_status[novel_id] = {
+            "status": "batch_failed",
+            "message": f"批量生成失败: {str(e)[:100]}",
+            "progress": 0,
+        }
+        traceback.print_exc()
+
+
+@app.get("/api/novels/{novel_id}/consistency-score")
+def get_consistency_score(novel_id: str):
+    """Get cross-chapter consistency score (5-dimension structural scoring)."""
+    from .stations.consistency_scorer import ConsistencyScorer
+    scorer = ConsistencyScorer()
+    result = scorer.run({"novel_id": novel_id, "db": db})
+    return result
+
+
+@app.post("/api/novels/{novel_id}/batch-generate")
+def trigger_batch_generate(novel_id: str, background: BackgroundTasks, data: dict = {}):
+    """Generate N chapters sequentially with fixed constraint level for long-run testing."""
+    if not db.get_novel(novel_id):
+        raise HTTPException(404)
+    chapters = int((data or {}).get("chapters", 10))
+    compression = (data or {}).get("compression", "L1").strip().upper()
+    quality_threshold = float((data or {}).get("quality_threshold", 0.75))
+    if compression not in ("L0", "L1", "L2", "L3", "NONE"):
+        compression = "L1"
+    if chapters < 1 or chapters > 20:
+        raise HTTPException(400, "chapters must be 1-20")
+    background.add_task(_run_longrun_batch_generation, novel_id, chapters, compression, quality_threshold)
+    return {
+        "status": "batch_started",
+        "novel_id": novel_id,
+        "chapters": chapters,
+        "compression": compression,
+    }
 
 
 # ═══════════════ Publish ═══════════════
