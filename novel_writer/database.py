@@ -576,6 +576,13 @@ class Database:
                 ORDER BY due_by_chapter""", (novel_id,)).fetchall()
             return [dict(r) for r in rows]
 
+    def get_all_foreshadowing(self, novel_id: str) -> list[dict]:
+        """Get ALL foreshadowing threads regardless of status (for scoring)."""
+        with self.conn() as c:
+            rows = c.execute("""SELECT * FROM foreshadowing_tracker WHERE novel_id=?
+                ORDER BY created_chapter""", (novel_id,)).fetchall()
+            return [dict(r) for r in rows]
+
     def save_location_history(self, novel_id: str, chapter_num: int, location_name: str,
                               event: str = '', state_change: str = ''):
         with self.conn() as c:

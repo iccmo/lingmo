@@ -125,8 +125,8 @@ class ConsistencyScorer:
         """
         Score foreshadowing health: resolution rate, overdue count, avg resolution time.
         """
-        fs = db.get_active_foreshadowing(novel_id)
-        all_fs = fs  # includes resolved
+        fs = db.get_all_foreshadowing(novel_id)
+        all_fs = fs
         if not all_fs:
             return {"score": self.MAX_SCORES["foreshadowing_health"], "max": 25,
                     "detail": "无伏笔数据", "issues": []}
@@ -138,9 +138,10 @@ class ConsistencyScorer:
         score = self.MAX_SCORES["foreshadowing_health"]
         issues: list[str] = []
 
-        # Each overdue foreshadowing: -5
-        score = max(0, score - len(overdue) * 5)
-        for f in overdue:
+        # Each overdue foreshadowing: -3 (capped at -15)
+        overdue_penalty = min(len(overdue) * 3, 15)
+        score = max(0, score - overdue_penalty)
+        for f in overdue[:3]:
             issues.append(f"伏笔#{f['id']}已过期(Ch{f.get('created_chapter','?')}→{f.get('due_by_chapter','?')})")
 
         # Resolution rate below 30% with >3 active: -4
@@ -205,8 +206,9 @@ class ConsistencyScorer:
         issues: list[str] = []
 
         broken = [w for w in world if w.get("is_broken")]
-        score = max(0, score - len(broken) * 5)
-        for b in broken:
+        broken_penalty = min(len(broken) * 3, 12)
+        score = max(0, score - broken_penalty)
+        for b in broken[:2]:
             issues.append(f"规则'{b['rule_name']}'已被破坏(Ch{b.get('chapter_num','?')})")
 
         return {"score": score, "max": self.MAX_SCORES["world_integrity"],
