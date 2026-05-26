@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from 'src/lib/api';
+import { ConsistencyScoreView } from './ConsistencyScoreView';
 
 interface ReaderState {
   current_chapter: number; reader_mood: string; suggestion: string;
@@ -32,7 +33,6 @@ export function StoryBibleView({ novelId }: Props) {
   const [data, setData] = useState<StoryBibleData | null>(null);
   const [reader, setReader] = useState<ReaderState | null>(null);
   const [counterpoint, setCounterpoint] = useState<any>(null);
-  const [selfCheck, setSelfCheck] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [constraintPreview, setConstraintPreview] = useState<any>(null);
 
@@ -41,12 +41,10 @@ export function StoryBibleView({ novelId }: Props) {
       fetch(`/api/novels/${novelId}/story-bible`).then(r => r.json()),
       fetch(`/api/novels/${novelId}/reader-state`).then(r => r.json()).catch(() => null),
       fetch(`/api/novels/${novelId}/counterpoint`).then(r => r.json()).catch(() => null),
-      fetch(`/api/novels/${novelId}/self-check`).then(r => r.json()).catch(() => null),
-    ]).then(([bible, rstate, cp, sc]) => {
+    ]).then(([bible, rstate, cp]) => {
       setData(bible);
       setReader(rstate);
       setCounterpoint(cp);
-      setSelfCheck(sc);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [novelId]);
 
@@ -67,19 +65,8 @@ export function StoryBibleView({ novelId }: Props) {
 
   return (
     <div className="space-y-3">
-      {/* System Grade (§57) */}
-      {selfCheck && (
-        <div className={`p-2 rounded-lg text-center ${
-          selfCheck.grade === 'S' ? 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200' :
-          selfCheck.grade === 'A' ? 'bg-sky-50 dark:bg-sky-950/20 border border-sky-200' :
-          'bg-amber-50 dark:bg-amber-950/20 border border-amber-200'
-        }`}>
-          <span className={`text-lg font-bold ${
-            selfCheck.grade === 'S' ? 'text-emerald-500' : selfCheck.grade === 'A' ? 'text-sky-500' : 'text-amber-500'
-          }`}>{selfCheck.grade}</span>
-          <span className="text-[10px] text-ink-subtle ml-2">信心 {selfCheck.confidence}% · {selfCheck.ready_for_next ? '✅ 可续写' : '⚠️ 需修复'}</span>
-        </div>
-      )}
+      {/* Cross-Chapter Consistency Score (跨章一致性评分) */}
+      <ConsistencyScoreView novelId={novelId} />
 
       {/* Counterpoint (§16) */}
       {counterpoint && (
