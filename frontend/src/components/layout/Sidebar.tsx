@@ -95,6 +95,7 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
         const inNovel = location.pathname.startsWith(novelPath);
         const memActive = location.pathname === `${novelPath}/memory`;
         const foreshadowActive = location.pathname === `${novelPath}/foreshadowing`;
+        const writeActive = location.pathname === `${novelPath}/write`;
         // Activity indicator: updated in last 24h
         const recent = n.latest_chapter?.generated_at
           ? (Date.now() - new Date(n.latest_chapter.generated_at + 'Z').getTime()) < 86400000
@@ -159,6 +160,14 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
               }`}
             >
               🔮 伏笔
+            </button>
+            <button
+              onClick={() => { navigate(`${novelPath}/write`); onClose?.(); }}
+              className={`flex items-center gap-2 px-3 py-0.5 mx-3 rounded-md text-[10px] sm:text-[11px] transition-colors text-left w-full ml-4 ${
+                writeActive ? 'text-accent font-medium' : 'text-ink-subtle hover:text-ink'
+              }`}
+            >
+              ✏️ 写作
             </button>
           </div>
         );

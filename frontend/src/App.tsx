@@ -25,6 +25,7 @@ const Outline = lazy(() => import('src/pages/Outline').then(m => ({ default: m.O
 const Foreshadowing = lazy(() => import('src/pages/Foreshadowing').then(m => ({ default: m.Foreshadowing })));
 const Stats = lazy(() => import('src/pages/Stats').then(m => ({ default: m.Stats })));
 const ListenPage = lazy(() => import('src/pages/ListenPage').then(m => ({ default: m.ListenPage })));
+const WriterView = lazy(() => import('src/pages/WriterView').then(m => ({ default: m.WriterView })));
 
 function PageLoader() {
   return (
@@ -101,6 +102,7 @@ function AppLayout({ mode, setMode, dark, toggleDark, sidebarOpen, toggleSidebar
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/listen" element={<ListenPage />} />
+            <Route path="/novels/:id/write" element={<WriterView />} />
             <Route path="/novels/:id" element={<NovelDetail mode={mode} />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/logs" element={<Logs />} />
