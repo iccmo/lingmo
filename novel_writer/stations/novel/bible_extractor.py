@@ -3,7 +3,7 @@
 输入：novel_id, chapter_num, content, title
 输出：提取的角色/伏笔/地点/时间线数量
 """
-import json, re
+import re
 
 class BibleExtractor:
     name = "bible_extractor"

@@ -10,7 +10,6 @@
   4. 世界观完整性   (15pts) — 规则是否一致、破坏次数
   5. 结构平衡性     (15pts) — 代价账簿、章节长度方差、弧线节奏
 """
-from typing import Any
 
 
 class ConsistencyScorer:
@@ -199,20 +198,22 @@ class ConsistencyScorer:
 
     def _score_world_integrity(self, novel_id: str, db) -> dict:
         """
-        Check world rules: count broken rules, check for contradictions.
+        Check world rules: only penalize unintentional breaks.
+        Intentional breaks are plot developments, not errors.
         """
         world = db.get_world_state(novel_id)
         score = self.MAX_SCORES["world_integrity"]
         issues: list[str] = []
 
-        broken = [w for w in world if w.get("is_broken")]
+        broken = [w for w in world if w.get("is_broken") and not w.get("is_intentional")]
         broken_penalty = min(len(broken) * 3, 12)
         score = max(0, score - broken_penalty)
         for b in broken[:2]:
-            issues.append(f"规则'{b['rule_name']}'已被破坏(Ch{b.get('chapter_num','?')})")
+            issues.append(f"规则'{b['rule_name']}'被意外破坏(Ch{b.get('chapter_num','?')})")
 
+        intentional = [w for w in world if w.get("is_broken") and w.get("is_intentional")]
         return {"score": score, "max": self.MAX_SCORES["world_integrity"],
-                "detail": f"{len(world)}规则/{len(broken)}已破坏",
+                "detail": f"{len(world)}规则/{len(broken)}意外破坏/{len(intentional)}剧情破坏",
                 "issues": issues}
 
     def _score_structural_balance(self, novel_id: str, db) -> dict:

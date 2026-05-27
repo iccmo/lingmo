@@ -1,16 +1,37 @@
 """
-灵墨 Station 系统 — 每个工位独立模块，由 Brain Agent 按需调度。
+灵墨 Station 系统 — 4 模块架构
 
-每个 Station 实现标准接口：
-  def run(ctx: dict) -> dict:
-      ctx 包含 novel_id, chapter_num, content, quality, bible 等
-      返回 {status, data, next_action}
+模块子目录：
+  - novel/  : 小说写作工位（生成、质量、约束）
+  - script/ : 剧本工位（AI 导演、视觉圣经、Prompt）
+  - drama/  : 短剧工位（画面、配音、合成）
+
+共享基类保留在本目录：base.py, llm_mixin.py
+
+向后兼容：所有工位仍可从 stations.xxx 直接导入。
 """
 
-from .constraint_builder import ConstraintBuilder
-from .consistency_checker import ConsistencyChecker
-from .bible_extractor import BibleExtractor
-from .editor_review import EditorReview
-from .deslop_filter import DeslopFilter
-from .chapter_writer import ChapterWriter
-from .foreshadowing_resolver import ForeshadowingResolver
+# ── 共享基类 ──
+from .base import BaseStation as BaseStation
+from .base import StationContext as StationContext
+from .llm_mixin import LLMMixin as LLMMixin
+
+# ── 小说模块工位（向后兼容 re-export）──
+from .novel.bible_extractor import BibleExtractor as BibleExtractor
+from .novel.chapter_writer import ChapterWriter as ChapterWriter
+from .novel.consistency_checker import ConsistencyChecker as ConsistencyChecker
+from .novel.constraint_builder import ConstraintBuilder as ConstraintBuilder
+from .novel.deslop_filter import DeslopFilter as DeslopFilter
+from .novel.editor_review import EditorReview as EditorReview
+from .novel.foreshadowing_resolver import ForeshadowingResolver as ForeshadowingResolver
+
+# ── 剧本模块工位（向后兼容 re-export）──
+from .script.ai_director import AIDirector as AIDirector
+from .script.prompt_generator import PromptGenerator as PromptGenerator
+from .script.visual_bible import VisualBible as VisualBible
+
+# ── 短剧模块工位（向后兼容 re-export）──
+from .drama.compositor import Compositor as Compositor
+from .drama.image_generator import ImageGenerator as ImageGenerator
+from .drama.music_engine import MusicEngine as MusicEngine
+from .drama.voice_engine import VoiceEngine as VoiceEngine

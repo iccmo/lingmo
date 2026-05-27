@@ -7,8 +7,6 @@
   print(runner.format_report(report))
 """
 import time
-import json
-from typing import Any
 from .consistency_scorer import ConsistencyScorer
 
 

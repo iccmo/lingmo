@@ -10,7 +10,6 @@
   这段戏需要什么？冷一点还是热一点？快一点还是慢一点？
   然后给出一个具体的写作指令。
 """
-from typing import Any
 
 
 class TechniqueAdvisor:
@@ -78,8 +77,8 @@ class TechniqueAdvisor:
             return ""
 
         try:
-            from ..config import Config
-            from ..generator import Generator
+            from ...config import Config
+            from ...generator import Generator
 
             providers = _get_all_providers(db)
             if not providers:

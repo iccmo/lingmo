@@ -10,7 +10,6 @@ v2 增强：从角色标签升级为情节级约束
   - 知识一致性（X已知Z的秘密 → 不能表现不知情）
   - 情绪弧卫兵（情绪演化方向标记）
 """
-import json, re
 
 class ConstraintBuilder:
     name = "constraint_builder"

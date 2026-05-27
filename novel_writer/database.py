@@ -46,6 +46,18 @@ class Database:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id)")
             except Exception:
                 pass
+            # V12: chapter_versions table
+            try:
+                conn.execute("""CREATE TABLE IF NOT EXISTS chapter_versions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+                    content TEXT NOT NULL DEFAULT '',
+                    word_count INTEGER NOT NULL DEFAULT 0,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    reason TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')))""")
+            except Exception:
+                pass
 
     @contextmanager
     def conn(self):
@@ -62,9 +74,25 @@ class Database:
         finally:
             conn.close()
 
+    async def aconn(self):
+        """异步数据库连接上下文管理器（aiosqlite）。"""
+        import aiosqlite
+        conn = await aiosqlite.connect(self.db_path)
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield conn
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+        finally:
+            await conn.close()
+
     # ═══════════════════ Novel CRUD ═══════════════════
 
-    def create_novel(self, **kw) -> dict:
+    def create_novel(self, **kw: object) -> dict:
         defaults = dict(id='', title='', author='AI', synopsis='', genre='玄幻',
                         world_name='', world_era='', world_geo='', power_system='',
                         world_rules='[]', main_arc='', current_arc='开篇', arc_chapter_start=1)
@@ -78,17 +106,19 @@ class Database:
                 :world_name,:world_era,:world_geo,:power_system,:world_rules,
                 :main_arc,:current_arc,:arc_chapter_start)""", kw)
             if kw.get("tags"):
-                for tag in kw["tags"]:
+                for tag in kw["tags"]:  # type: ignore[attr-defined]
                     c.execute("INSERT OR IGNORE INTO novel_tags (novel_id,tag) VALUES (?,?)",
                               (kw["id"], tag))
             if kw.get("char_key"):
-                cdef = dict(secrets='[]', personality='', background='', power_level='')
+                cdef: dict[str, object] = dict(secrets='[]', personality='', background='', power_level='')
                 cdef.update(kw)
                 c.execute("""INSERT INTO characters (novel_id,char_key,name,role,
                     personality,background,power_level,secrets)
                     VALUES (:id,:char_key,:name,:role,
                     :personality,:background,:power_level,:secrets)""", cdef)
-        return self.get_novel(kw["id"])
+        result = self.get_novel(str(kw["id"]))
+        assert result is not None
+        return result
 
     def get_novel(self, novel_id: str) -> dict | None:
         with self.conn() as c:
@@ -300,15 +330,15 @@ class Database:
                 datetime('now'))""",
                 (novel_id, json.dumps(profile, ensure_ascii=False, default=str), novel_id))
 
-    def save_character_voice(self, novel_id: str, char_key: str, voice_data: dict):
-        """Persist character voice data to DB."""
+    def save_character_voice_style(self, novel_id: str, char_key: str, voice_data: dict):
+        """Persist character voice style data (writing patterns) to characters.voice_data."""
         with self.conn() as conn:
             conn.execute(
                 "UPDATE characters SET voice_data=?, updated_at=datetime('now') WHERE novel_id=? AND char_key=?",
                 (json.dumps(voice_data, ensure_ascii=False), novel_id, char_key))
 
-    def get_character_voices(self, novel_id: str) -> dict[str, dict]:
-        """Load all character voice data for a novel."""
+    def get_character_voice_styles(self, novel_id: str) -> dict[str, dict]:
+        """Load all character voice style data (writing patterns) for a novel."""
         with self.conn() as c:
             rows = c.execute(
                 "SELECT char_key, voice_data FROM characters WHERE novel_id=? AND voice_data IS NOT NULL AND voice_data != '{}'",
@@ -509,6 +539,19 @@ class Database:
             rows = c.execute("SELECT key, value FROM audio_settings").fetchall()
             return {r['key']: r['value'] for r in rows}
 
+    # ── Film Studio settings ────────────────────────────────────────
+
+    def save_film_setting(self, key: str, value: str) -> None:
+        with self.conn() as c:
+            c.execute("INSERT OR REPLACE INTO film_settings (key, value) VALUES (?, ?)", (key, value))
+
+    def load_film_settings(self) -> dict[str, str]:
+        with self.conn() as c:
+            rows = c.execute("SELECT key, value FROM film_settings").fetchall()
+            return {r["key"]: r["value"] for r in rows}
+
+    # ── Audio playlist ──────────────────────────────────────────────
+
     def save_audio_playlist(self, items: list[dict]):
         with self.conn() as c:
             c.execute("DELETE FROM audio_playlist")
@@ -538,14 +581,15 @@ class Database:
 
     def save_character_state(self, novel_id: str, chapter_num: int, char_name: str,
                               emotion: str = '', physical_state: str = '', knowledge: str = '[]',
-                              goal: str = '', location: str = '', relationships: str = '[]'):
+                              goal: str = '', location: str = '', relationships: str = '[]',
+                              notes: str = ''):
         with self.conn() as c:
             c.execute("""INSERT INTO character_state (novel_id, chapter_num, char_name, emotion,
-                physical_state, knowledge, goal, location, relationships)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (novel_id, chapter_num, char_name, emotion, physical_state, knowledge, goal, location, relationships))
+                physical_state, knowledge, goal, location, relationships, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (novel_id, chapter_num, char_name, emotion, physical_state, knowledge, goal, location, relationships, notes))
 
-    def get_character_state(self, novel_id: str, chapter_num: int = None) -> list[dict]:
+    def get_character_state(self, novel_id: str, chapter_num: int | None = None) -> list[dict]:
         with self.conn() as c:
             if chapter_num:
                 rows = c.execute("""SELECT * FROM character_state WHERE novel_id=? AND chapter_num=?
@@ -557,8 +601,32 @@ class Database:
                     ) ORDER BY cs.char_name""", (novel_id,)).fetchall()
             return [dict(r) for r in rows]
 
+    def get_all_character_states(self, novel_id: str, char_name: str = '',
+                                up_to_chapter: int = 9999) -> list[dict]:
+        """获取角色在所有章节的状态记录（含中间章节）。
+
+        与 get_character_state 不同，此方法返回所有章节的记录，
+        不限于最大章节号。用于角色视觉一致性记忆等需要历史追踪的场景。
+        """
+        with self.conn() as c:
+            if char_name:
+                rows = c.execute(
+                    """SELECT * FROM character_state
+                       WHERE novel_id=? AND char_name=? AND chapter_num<=?
+                       ORDER BY chapter_num, id""",
+                    (novel_id, char_name, up_to_chapter),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    """SELECT * FROM character_state
+                       WHERE novel_id=? AND chapter_num<=?
+                       ORDER BY char_name, chapter_num, id""",
+                    (novel_id, up_to_chapter),
+                ).fetchall()
+            return [dict(r) for r in rows]
+
     def save_foreshadowing(self, novel_id: str, chapter_num: int, description: str,
-                           hint_text: str = '', due_by: int = None):
+                           hint_text: str = '', due_by: int | None = None):
         with self.conn() as c:
             c.execute("""INSERT INTO foreshadowing_tracker (novel_id, created_chapter, description, hint_text, due_by_chapter)
                 VALUES (?, ?, ?, ?, ?)""", (novel_id, chapter_num, description, hint_text, due_by))
@@ -589,7 +657,7 @@ class Database:
             c.execute("INSERT INTO location_history (novel_id, chapter_num, location_name, event, state_change) VALUES (?,?,?,?,?)",
                 (novel_id, chapter_num, location_name, event, state_change))
 
-    def get_location_history(self, novel_id: str, location_name: str = None) -> list[dict]:
+    def get_location_history(self, novel_id: str, location_name: str | None = None) -> list[dict]:
         with self.conn() as c:
             if location_name:
                 rows = c.execute("SELECT * FROM location_history WHERE novel_id=? AND location_name=? ORDER BY chapter_num",
@@ -725,3 +793,123 @@ class Database:
     def mark_consistency_fixed(self, issue_id: int):
         with self.conn() as c:
             c.execute("UPDATE consistency_log SET was_fixed=1 WHERE id=?", (issue_id,))
+
+    # ═══════════════════ AI Film Studio ═══════════════════
+
+    def save_visual_character(self, novel_id: str, char_key: str, data: dict):
+        with self.conn() as c:
+            c.execute("""INSERT INTO visual_characters
+                (novel_id, char_key, appearance, default_expression, signature_pose,
+                 color_palette, costume, injury_marks, voice_character, reference_images)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(novel_id, char_key) DO UPDATE SET
+                    appearance=excluded.appearance,
+                    default_expression=excluded.default_expression,
+                    signature_pose=excluded.signature_pose,
+                    color_palette=excluded.color_palette,
+                    costume=excluded.costume,
+                    injury_marks=excluded.injury_marks,
+                    voice_character=excluded.voice_character,
+                    reference_images=excluded.reference_images,
+                    updated_at=datetime('now')""",
+                (novel_id, char_key,
+                 data.get("appearance", ""),
+                 data.get("default_expression", ""),
+                 data.get("signature_pose", ""),
+                 data.get("color_palette", ""),
+                 data.get("costume", ""),
+                 data.get("injury_marks", ""),
+                 data.get("voice_character", ""),
+                 json.dumps(data.get("reference_images", []), ensure_ascii=False)))
+
+    def get_visual_characters(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT * FROM visual_characters WHERE novel_id=? ORDER BY id",
+                (novel_id,)
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["reference_images"] = json.loads(d.get("reference_images", "[]"))
+                result.append(d)
+            return result
+
+    def save_storyboard(self, novel_id: str, chapter_num: int, data: dict):
+        with self.conn() as c:
+            c.execute("""INSERT INTO storyboards
+                (novel_id, chapter_num, title, total_duration_sec, overall_mood,
+                 pacing, color_grade, music_theme, shots_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(novel_id, chapter_num) DO UPDATE SET
+                    title=excluded.title,
+                    total_duration_sec=excluded.total_duration_sec,
+                    overall_mood=excluded.overall_mood,
+                    pacing=excluded.pacing,
+                    color_grade=excluded.color_grade,
+                    music_theme=excluded.music_theme,
+                    shots_json=excluded.shots_json""",
+                (novel_id, chapter_num,
+                 data.get("title", ""),
+                 data.get("total_duration_sec", 0),
+                 data.get("overall_mood", ""),
+                 data.get("pacing", ""),
+                 data.get("color_grade", ""),
+                 data.get("music_theme", ""),
+                 json.dumps(data.get("shots", []), ensure_ascii=False)))
+
+    def get_storyboard(self, novel_id: str, chapter_num: int) -> dict | None:
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT * FROM storyboards WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num)
+            ).fetchone()
+            if not row:
+                return None
+            d = dict(row)
+            d["shots"] = json.loads(d.pop("shots_json", "[]"))
+            return d
+
+    def list_storyboards(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT * FROM storyboards WHERE novel_id=? ORDER BY chapter_num",
+                (novel_id,)
+            ).fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["shots"] = json.loads(d.pop("shots_json", "[]"))
+                result.append(d)
+            return result
+
+    # ─── Character Voices ───
+
+    def save_character_voice(self, novel_id: str, char_key: str, data: dict) -> None:
+        with self.conn() as c:
+            c.execute(
+                """INSERT INTO character_voices
+                   (novel_id, char_key, voice_id, speed, pitch, emotion_default, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                   ON CONFLICT(novel_id, char_key) DO UPDATE SET
+                     voice_id=excluded.voice_id,
+                     speed=excluded.speed,
+                     pitch=excluded.pitch,
+                     emotion_default=excluded.emotion_default,
+                     updated_at=datetime('now')""",
+                (
+                    novel_id, char_key,
+                    data.get("voice_id", ""),
+                    float(data.get("speed", 1.0)),
+                    data.get("pitch", "+0Hz"),
+                    data.get("emotion_default", "calm"),
+                ),
+            )
+
+    def get_character_voices(self, novel_id: str) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT * FROM character_voices WHERE novel_id=?",
+                (novel_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]

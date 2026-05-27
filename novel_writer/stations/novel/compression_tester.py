@@ -4,7 +4,6 @@
 
 Pi 方法论：用数据验证"最少即最优"
 """
-import json
 from .constraint_builder import ConstraintBuilder
 from .constraint_compressor import ConstraintCompressor
 
@@ -53,7 +52,7 @@ class CompressionTester:
                 results[nid] = self.test_novel(nid, chs + 1)
 
         # Aggregate stats
-        stats = {"L0": [], "L1": [], "L2": [], "L3": []}
+        stats: dict[str, list[int]] = {"L0": [], "L1": [], "L2": [], "L3": []}
         for nid, r in results.items():
             for level in ["L0", "L1", "L2", "L3"]:
                 stats[level].append(r["levels"][level]["char_count"])
@@ -80,4 +79,4 @@ class CompressionTester:
             for level in ["L3", "L2", "L1", "L0"]:
                 if r["levels"][level]["char_count"] > 0:
                     counts[level] += 1
-        return max(counts, key=counts.get)
+        return max(counts, key=lambda k: counts[k])

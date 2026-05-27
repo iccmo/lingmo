@@ -3,6 +3,7 @@
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from typing import Any
 from pathlib import Path
 
 
@@ -126,7 +127,7 @@ class StoryState:
     # --- 序列化 ---
     def to_dict(self) -> dict:
         """转为可 JSON 序列化的 dict"""
-        d = {}
+        d: dict[str, Any] = {}
         d["novel_id"] = self.novel_id
         d["title"] = self.title
         d["author"] = self.author

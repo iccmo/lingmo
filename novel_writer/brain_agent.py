@@ -7,12 +7,14 @@ Pi 方法论：
 - Brain 按章状态决定调度哪些工位（Pi Agent Loop）
 - 工位输出可验证、可重试（Pi 工具生命周期）
 """
+from __future__ import annotations
+
 from typing import Any
-from .stations.constraint_builder import ConstraintBuilder
-from .stations.consistency_checker import ConsistencyChecker
-from .stations.consistency_scorer import ConsistencyScorer
-from .stations.deslop_filter import DeslopFilter
-from .stations.foreshadowing_resolver import ForeshadowingResolver
+from .stations.novel.constraint_builder import ConstraintBuilder
+from .stations.novel.consistency_checker import ConsistencyChecker
+from .stations.novel.consistency_scorer import ConsistencyScorer
+from .stations.novel.deslop_filter import DeslopFilter
+from .stations.novel.foreshadowing_resolver import ForeshadowingResolver
 
 
 class BrainAgent:
@@ -33,10 +35,10 @@ class BrainAgent:
         生产一章的完整流程。Brain Agent 编排，不是固定流水线。
         """
         ctx = {"novel_id": novel_id, "chapter_num": chapter_num, "db": self.db}
-        result = {"chapter_num": chapter_num, "stations_used": []}
+        result: dict[str, Any] = {"chapter_num": chapter_num, "stations_used": []}
 
         # ═══ 工位1：约束编译（每章必跑） ═══
-        constraint_result = self.constraint_builder.run(ctx)
+        constraint_result: dict[str, Any] = self.constraint_builder.run(ctx)
         result["constraints"] = constraint_result
         self.log.append({"station": "constraint_builder", "result": "ok"})
 
@@ -52,7 +54,7 @@ class BrainAgent:
         # 这步在 generator 层完成，Brain 只决定是否重试
 
         # ═══ 工位4：一致性校验（每章必跑） ═══
-        consistency_result = self.consistency_checker.run(ctx)
+        consistency_result: dict[str, Any] = self.consistency_checker.run(ctx)
         result["consistency"] = consistency_result
         self.log.append({"station": "consistency_checker", "result": consistency_result["status"]})
 

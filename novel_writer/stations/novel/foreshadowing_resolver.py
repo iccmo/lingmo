@@ -3,11 +3,19 @@
 输入：novel_id, chapter_num, chapter_content, db
 输出：检查是否有活跃伏笔在本章被回收，更新数据库并返回摘要
 """
-import json
+from __future__ import annotations
+
+import logging
 import re
+from typing import Any
+
+from ..base import BaseStation
+from ..llm_mixin import LLMMixin
+
+logger = logging.getLogger(__name__)
 
 
-class ForeshadowingResolver:
+class ForeshadowingResolver(BaseStation, LLMMixin):
     name = "foreshadowing_resolver"
     required_every_chapter = True
 
@@ -56,31 +64,9 @@ class ForeshadowingResolver:
         chapter_num: int,
         content: str,
         active_threads: list[dict],
-        db,
+        db: Any,
     ) -> list[dict] | None:
         """Use LLM to check which active threads are resolved in this chapter."""
-        try:
-            from ..generator import Generator
-            from ..config import Config
-
-            # Fetch provider config
-            from ..server import _get_provider
-            provider = _get_provider(novel_id)
-        except ImportError:
-            return None
-
-        try:
-            models = provider.get("models", ["deepseek-v4-pro"])
-            model = "deepseek-v4-pro" if "deepseek-v4-pro" in str(models) else models[0]
-            cfg = Config(
-                openai_api_key=provider.get("api_key", ""),
-                openai_base_url=provider.get("base_url", ""),
-                model=model,
-            )
-            gen = Generator(cfg)
-        except Exception:
-            return None
-
         # Build concise thread summaries
         thread_list = "\n".join(
             f"  #{t['id']} (第{t['created_chapter']}章埋下): {t['description']}"
@@ -109,39 +95,32 @@ class ForeshadowingResolver:
 - 仅仅提到相关人物或地点不算回收
 """
         try:
-            messages = [{"role": "user", "content": prompt}]
-            result = gen._call_llm_with_retry(messages, max_tokens=1024)
+            result = self.call_llm_with_fallback(prompt, db, max_tokens=1024)
             if not result:
                 return None
 
-            # Extract JSON
-            json_start = result.find("{")
-            json_end = result.rfind("}") + 1
-            if json_start >= 0 and json_end > json_start:
-                raw_json = result[json_start:json_end]
-                raw_json = re.sub(r",\s*}", "}", raw_json)
-                raw_json = re.sub(r",\s*]", "]", raw_json)
-                try:
-                    data = json.loads(raw_json)
-                except json.JSONDecodeError:
-                    return None
+            data = self.parse_json_response(result)
+            if not data:
+                return None
 
-                resolved_items = data.get("resolved", [])
-                if not isinstance(resolved_items, list):
-                    return None
+            resolved_items = data.get("resolved", [])
+            if not isinstance(resolved_items, list):
+                return None
 
-                # Validate against actual active threads
-                valid_ids = {t["id"] for t in active_threads}
-                valid_resolved = [
-                    item for item in resolved_items
-                    if isinstance(item, dict) and item.get("id") in valid_ids
-                ]
-                if valid_resolved:
-                    print(f"[FORESHADOW] LLM resolved {len(valid_resolved)} thread(s) in ch{chapter_num}: "
-                          f"{[r['id'] for r in valid_resolved]}")
-                return valid_resolved
+            # Validate against actual active threads
+            valid_ids = {t["id"] for t in active_threads}
+            valid_resolved = [
+                item for item in resolved_items
+                if isinstance(item, dict) and item.get("id") in valid_ids
+            ]
+            if valid_resolved:
+                logger.info(
+                    "LLM resolved %d thread(s) in ch%d: %s",
+                    len(valid_resolved), chapter_num, [r["id"] for r in valid_resolved],
+                )
+            return valid_resolved
         except Exception as e:
-            print(f"[FORESHADOW] LLM check failed: {e}")
+            logger.warning("LLM foreshadowing check failed: %s", e)
             return None
 
     def _rules_check(
@@ -150,7 +129,7 @@ class ForeshadowingResolver:
         chapter_num: int,
         content: str,
         active_threads: list[dict],
-        db,
+        db: Any,
     ) -> list[dict]:
         """Rules-based fallback: keyword proximity detection."""
         resolved = []
@@ -171,11 +150,9 @@ class ForeshadowingResolver:
             # Score: how many resolution signals appear near the thread's keywords
             score = 0
             if has_resolution_signal:
-                # Check if thread keywords appear near resolution signals
                 keywords = self._extract_keywords(desc)
                 for kw in keywords[:3]:
                     if kw and kw in content:
-                        # Find positions of keyword and nearest resolution signal
                         kw_pos = content.find(kw)
                         for sig in resolution_signals:
                             sig_pos = content.find(sig)
@@ -195,16 +172,14 @@ class ForeshadowingResolver:
                 })
 
         if resolved:
-            print(f"[FORESHADOW] Rules resolved {len(resolved)} thread(s) in ch{chapter_num}")
+            logger.info("Rules resolved %d thread(s) in ch%d", len(resolved), chapter_num)
         return resolved
 
     @staticmethod
     def _extract_keywords(description: str) -> list[str]:
         """Extract meaningful keywords (Chinese 2-4 char words) from description."""
-        # Simple extraction: remove common stop words, return unique 2-4 char segments
         stop_words = {"的", "了", "是", "在", "和", "也", "就", "都", "而", "及", "与",
                       "着", "或", "一个", "没有", "我们", "你们", "他们", "这个", "那个"}
-        # Split by common punctuation
         parts = re.split(r"[，。！？、；：“”‘’（）\s]+", description)
         keywords = []
         for part in parts:

@@ -97,7 +97,7 @@ class Scheduler:
                 pass
 
             # RAG context
-            rag_context = gen.retrieve_relevant_context(state.plot.current_arc, novel_id, top_k=5)
+            rag_context = gen.retrieve_relevant_context(state.plot.current_arc if state.plot else "", novel_id, top_k=5)
 
             # ── Generation + Quality + De-AI pipeline ──
             def _process(chapter, body):
@@ -117,7 +117,7 @@ class Scheduler:
                 )
                 # Store embeddings (non-blocking)
                 try:
-                    gen.store_chapter_embedding(cid, novel_id, chapter.summary)
+                    gen.store_chapter_embedding(cid, novel_id, chapter.summary)  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 return cid, cleaned_body, quality
@@ -170,10 +170,11 @@ class Scheduler:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         novels = self.db.list_novels()
-        active_ids = [
-            n["id"] for n in novels
-            if self.db.get_scheduler_state(n["id"]) and self.db.get_scheduler_state(n["id"]).get("is_running")
-        ]
+        active_ids = []
+        for n in novels:
+            ss = self.db.get_scheduler_state(n["id"])
+            if ss is not None and ss.get("is_running"):
+                active_ids.append(n["id"])
         if not active_ids:
             return
 

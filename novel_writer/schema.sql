@@ -85,6 +85,16 @@ CREATE TABLE IF NOT EXISTS chapters (
     UNIQUE(novel_id, number)
 );
 
+CREATE TABLE IF NOT EXISTS chapter_versions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chapter_id  INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+    content     TEXT NOT NULL DEFAULT '',
+    word_count  INTEGER NOT NULL DEFAULT 0,
+    version     INTEGER NOT NULL DEFAULT 1,
+    reason      TEXT DEFAULT '',
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS chapter_drafts (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     chapter_id      INTEGER REFERENCES chapters(id) ON DELETE CASCADE,
@@ -272,6 +282,12 @@ CREATE TABLE IF NOT EXISTS audio_progress (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Film Studio settings (image provider, API keys, etc.)
+CREATE TABLE IF NOT EXISTS film_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
+
 -- V9: Cost tracking log
 CREATE TABLE IF NOT EXISTS cost_logs (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -410,3 +426,54 @@ CREATE TABLE IF NOT EXISTS cost_ledger (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cost_novel ON cost_ledger(novel_id, chapter_num);
+
+-- ═══ AI Film Studio: 视觉圣经 ═══
+
+CREATE TABLE IF NOT EXISTS visual_characters (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    char_key        TEXT NOT NULL,
+    appearance      TEXT DEFAULT '',
+    default_expression TEXT DEFAULT '',
+    signature_pose  TEXT DEFAULT '',
+    color_palette   TEXT DEFAULT '',
+    costume         TEXT DEFAULT '',
+    injury_marks    TEXT DEFAULT '',
+    voice_character TEXT DEFAULT '',
+    reference_images TEXT DEFAULT '[]',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(novel_id, char_key)
+);
+
+-- ═══ AI Film Studio: 分镜脚本 ═══
+
+CREATE TABLE IF NOT EXISTS storyboards (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num     INTEGER NOT NULL,
+    title           TEXT NOT NULL DEFAULT '',
+    total_duration_sec REAL DEFAULT 0,
+    overall_mood    TEXT DEFAULT '',
+    pacing          TEXT DEFAULT '',
+    color_grade     TEXT DEFAULT '',
+    music_theme     TEXT DEFAULT '',
+    shots_json      TEXT NOT NULL DEFAULT '[]',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(novel_id, chapter_num)
+);
+
+-- ═══ AI Film Studio: 角色音色 ═══
+
+CREATE TABLE IF NOT EXISTS character_voices (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id        TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    char_key        TEXT NOT NULL,
+    voice_id        TEXT NOT NULL DEFAULT '',
+    speed           REAL NOT NULL DEFAULT 1.0,
+    pitch           TEXT NOT NULL DEFAULT '+0Hz',
+    emotion_default TEXT NOT NULL DEFAULT 'calm',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(novel_id, char_key)
+);

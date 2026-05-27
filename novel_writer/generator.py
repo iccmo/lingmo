@@ -5,6 +5,7 @@ import random
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from openai import OpenAI
 
@@ -604,7 +605,8 @@ class Generator:
             providers = db.list_providers()
             # Find a different provider with a valid key
             for p in providers:
-                key = db.get_provider(p["id"]).get("api_key", "") if hasattr(db, 'get_provider') else p.get("api_key", "")
+                provider = db.get_provider(p["id"])
+                key = provider.get("api_key", "") if provider else p.get("api_key", "")
                 if not key or len(key) < 8:
                     continue
                 # Skip if same base_url as main (would hit same API)
@@ -702,6 +704,7 @@ class Generator:
         # 恢复原始温度
         self.cfg.temperature = base_temp
 
+        assert best_chapter is not None, "batch_generate failed to produce any chapter"
         return best_chapter, best_quality
 
     def revise_opening(self, state: 'StoryState', target_chapters: int = 3,
@@ -1296,6 +1299,8 @@ AI写作的典型特征：
 
     def _foreshadowing_context(self, state: StoryState) -> str:
         """Compressed foreshadowing list — max 15 items, oldest tagged with source chapter."""
+        if state.plot is None:
+            return "已埋伏笔：暂无"
         items = state.plot.foreshadowing
         if not items:
             return "已埋伏笔：暂无"
@@ -1959,9 +1964,9 @@ AI写作的典型特征：
 {state.character_context()}
 
 ## 故事进度
-主线：{state.plot.main_arc}
-当前篇章：{state.plot.current_arc}（从第{state.plot.arc_chapter_start}章开始）
-后续剧情目标：{', '.join(state.plot.next_plot_points) if state.plot.next_plot_points else '自行发展'}
+主线：{state.plot.main_arc if state.plot else '待定'}
+当前篇章：{state.plot.current_arc if state.plot else '待定'}（从第{state.plot.arc_chapter_start if state.plot else 1}章开始）
+后续剧情目标：{', '.join(state.plot.next_plot_points) if state.plot and state.plot.next_plot_points else '自行发展'}
 {self._foreshadowing_context(state)}
 
 ## 最近章节摘要
@@ -2162,7 +2167,7 @@ AI写作的典型特征：
             try:
                 resp = self.client.chat.completions.create(
                     model=self.cfg.model,
-                    messages=messages,
+                    messages=messages,  # type: ignore[arg-type]
                     temperature=self.cfg.temperature,
                     max_tokens=max_tokens,
                 )
@@ -2191,7 +2196,7 @@ AI写作的典型特征：
                 try:
                     resp = self.fallback_client.chat.completions.create(
                         model=getattr(self, '_fallback_model', 'gpt-4o-mini'),
-                        messages=messages,
+                        messages=messages,  # type: ignore[arg-type]
                         temperature=0.85,
                         max_tokens=max_tokens,
                     )
@@ -2230,9 +2235,9 @@ AI写作的典型特征：
         # 尝试主模型（streaming）
         for attempt in range(3):
             try:
-                stream = self.client.chat.completions.create(
+                stream = self.client.chat.completions.create(  # type: ignore[call-overload]
                     model=self.cfg.model,
-                    messages=messages,
+                    messages=messages,  # type: ignore[arg-type]
                     temperature=self.cfg.temperature,
                     max_tokens=max_tokens,
                     stream=True,
@@ -2275,7 +2280,7 @@ AI写作的典型特征：
                 try:
                     resp = self.fallback_client.chat.completions.create(
                         model=getattr(self, '_fallback_model', 'gpt-4o-mini'),
-                        messages=messages,
+                        messages=messages,  # type: ignore[arg-type]
                         temperature=0.85,
                         max_tokens=max_tokens,
                     )
@@ -2346,7 +2351,7 @@ AI写作的典型特征：
         """按 ## 标题 分割文本为 key-value"""
         sections = {}
         current_key = "body"
-        current_content = []
+        current_content: list[str] = []
 
         for line in raw.split("\n"):
             m = re.match(r"^##\s+(.+)", line)
@@ -2483,6 +2488,8 @@ AI写作的典型特征：
         meta: dict,
     ):
         """在生成后更新故事状态"""
+        if state.plot is None:
+            return
         # 推进剧情 — 伏笔模糊匹配回收
         resolved = meta.get("resolved_foreshadowing", [])
         new_foreshadowing = meta.get("new_foreshadowing", [])
@@ -2582,7 +2589,7 @@ AI写作的典型特征：
             try:
                 from .database import Database
                 db = Database()
-                db.save_character_voice(state.novel_id, char.id, {
+                db.save_character_voice_style(state.novel_id, char.id, {
                     "avg_sentence_len": char.voice_avg_sentence_len,
                     "question_ratio": char.voice_question_ratio,
                     "common_words": char.voice_common_words,
@@ -2593,9 +2600,11 @@ AI写作的典型特征：
 
     def audit_foreshadowing(self, state: 'StoryState') -> dict:
         """每 10 章审计一次伏笔状态。返回未回收、超期列表和警告。"""
+        if state.plot is None:
+            return {"total_open": 0, "total_resolved": 0, "oldest_open_chapter": 0, "stale": [], "warning": ""}
         total_open = len(state.plot.foreshadowing)
         oldest_open = 0
-        stale = []
+        stale: list[dict[str, Any]] = []
         # Find oldest unrecovered — scan from current arc start
         chapter_num = state.total_chapters
         for item in state.plot.foreshadowing:
@@ -2806,7 +2815,7 @@ AI写作的典型特征：
         tension_hits = sum(1 for kw in hook_tension if kw in last_paras)
 
         # Bonus: literary cliffhanger — last para is very short (< 25 chars) AND has tension nearby
-        literary_bonus = 0
+        literary_bonus: float = 0
         if len(last_para) < 25 and (tension_hits > 0 or foreshadow_hits > 0):
             literary_bonus = 0.2
 
@@ -2863,7 +2872,7 @@ AI写作的典型特征：
             issues.append('存在连续纯叙述段落')
 
         # Genre-specific quality checks (modifier, not a scored dimension)
-        genre_penalty = 0
+        genre_penalty: float = 0
         genre_issues: list[str] = []
         if isinstance(style, StyleProfile) and style.quality_rules:
             for rule in style.quality_rules:
