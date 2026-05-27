@@ -103,7 +103,7 @@ class TechniqueAdvisor:
             for provider in providers[:3]:  # max 3 attempts
                 try:
                     models = provider.get("models", ["gpt-4o"])
-                    model = models[1] if len(models) > 1 else models[0]
+                    model = models[0]  # Use primary model (v4-flash returns empty)
                     cfg = Config(
                         openai_api_key=provider.get("api_key", ""),
                         openai_base_url=provider.get("base_url", ""),
@@ -112,7 +112,7 @@ class TechniqueAdvisor:
                     gen = Generator(cfg)
                     result = gen._call_llm_with_retry(
                         [{"role": "user", "content": prompt}],
-                        max_tokens=256,
+                        max_tokens=512,  # Higher for v4 reasoning overhead
                     )
                     if result and len(result.strip()) > 5:
                         lines = [l.strip().strip('"').strip("'").strip("。")
