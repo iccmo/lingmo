@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from 'src/components/ui/button';
 import { ChapterList } from 'src/components/novels/ChapterList';
 import { QualityTrend } from 'src/components/novels/QualityTrend';
@@ -51,6 +51,7 @@ interface GenStatus { status: string; message: string; progress: number; quality
 export function NovelDetail({ mode }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [novel, setNovel] = useState<NovelDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [genStatus, setGenStatus] = useState<GenStatus | null>(null);
@@ -65,7 +66,7 @@ export function NovelDetail({ mode }: Props) {
   const [cockpit, setCockpit] = useState<CockpitData | null>(null);
   const [showGenDialog, setShowGenDialog] = useState(false);
   const [prefillDirection, setPrefillDirection] = useState('');
-  const [analysisTab, setAnalysisTab] = useState<string>('quality');
+  const [analysisTab, setAnalysisTab] = useState<string>(searchParams.get('tab') || 'quality');
   const [justCompleted, setJustCompleted] = useState(false);
   const [suggestions, setSuggestions] = useState<{ title: string; hook: string; summary: string; tone: string }[] | null>(null);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
@@ -1193,6 +1194,7 @@ export function NovelDetail({ mode }: Props) {
             <FilmStudioTab
               novelId={novel.id}
               chapters={novel.chapters}
+              defaultSubTab={searchParams.get('sub') || undefined}
             />
           )}
 

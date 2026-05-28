@@ -180,14 +180,14 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
       {selectedNovelId ? (
         <>
           <NavItem label="视觉圣经" icon={Palette} indent
-            active={location.pathname.includes('/visual-bible')}
-            onClick={() => goTo(`/novels/${selectedNovelId}`)} />
+            active={location.search.includes('sub=visual')}
+            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=visual`)} />
           <NavItem label="分镜脚本" icon={Clapperboard} indent
-            active={location.pathname.includes('/storyboard')}
-            onClick={() => goTo(`/novels/${selectedNovelId}`)} />
+            active={location.search.includes('sub=storyboard')}
+            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=storyboard`)} />
           <NavItem label="制片中心" icon={Video} indent
-            active={location.pathname.includes('/produce')}
-            onClick={() => goTo(`/novels/${selectedNovelId}`)} />
+            active={location.search.includes('sub=produce')}
+            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=produce`)} />
         </>
       ) : (
         <p className="px-5 py-1 text-[10px] text-ink-subtle">选择小说后可用</p>

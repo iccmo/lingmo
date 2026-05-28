@@ -6,6 +6,7 @@ import { ProducePanel } from './ProducePanel';
 interface Props {
   novelId: string;
   chapters?: { number: number; title: string }[];
+  defaultSubTab?: string;
 }
 
 const SUB_TABS = [
@@ -14,8 +15,8 @@ const SUB_TABS = [
   { key: 'produce', label: '制片' },
 ];
 
-export function FilmStudioTab({ novelId, chapters = [] }: Props) {
-  const [subTab, setSubTab] = useState('visual');
+export function FilmStudioTab({ novelId, chapters = [], defaultSubTab }: Props) {
+  const [subTab, setSubTab] = useState(defaultSubTab || 'visual');
 
   return (
     <div className="space-y-4">
