@@ -1,5 +1,6 @@
 """Integration tests — full pipeline"""
 import os
+import tempfile
 
 import pytest
 from starlette.testclient import TestClient
@@ -92,17 +93,21 @@ def test_generator_de_ai():
 
 def test_database_transaction_integrity():
     """DB: Verify FK constraints and rollback"""
-    db = Database("/tmp/test_tx.db")
-    db.create_novel(id="tx", title="事务测试")
-    # Attempt FK violation
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
     try:
-        db.set_scheduler_state("nonexistent", is_running=1)
-        assert False, "Should have raised IntegrityError"
-    except Exception:
-        pass  # Expected
-    # Verify novel still exists
-    assert db.get_novel("tx") is not None
-    os.remove("/tmp/test_tx.db")
+        db = Database(db_path)
+        db.create_novel(id="tx", title="事务测试")
+        # Attempt FK violation
+        try:
+            db.set_scheduler_state("nonexistent", is_running=1)
+            assert False, "Should have raised IntegrityError"
+        except Exception:
+            pass  # Expected
+        # Verify novel still exists
+        assert db.get_novel("tx") is not None
+    finally:
+        os.remove(db_path)
 
 def test_publisher_params_validation():
     """Publisher: Instantiation with default config works"""
