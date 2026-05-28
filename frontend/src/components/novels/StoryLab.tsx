@@ -12,7 +12,7 @@ interface ABResult {
   scores?: Record<string, number>;
 }
 
-export function OpeningABTest({ novelId, genre, synopsis }: {
+export function OpeningABTest({ genre, synopsis }: {
   novelId: string;
   genre: string;
   synopsis: string;

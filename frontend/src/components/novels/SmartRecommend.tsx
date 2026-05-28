@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
 import type { ChapterMeta } from 'src/types';
 
 /* ─── Genre Blend Analysis ─── */

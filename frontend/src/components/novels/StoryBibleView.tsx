@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { api } from 'src/lib/api';
 import { ConsistencyScoreView } from './ConsistencyScoreView';
 
 interface ReaderState {
@@ -22,8 +21,8 @@ interface StoryBibleData {
     chapter_num: number; absolute_time: string; event_summary: string;
   }>;
   consistency_log: Array<{
-    chapter_num: number; check_type: string; severity: string;
-    description: string; fix_suggestion: string;
+    id: number; chapter_num: number; check_type: string; severity: string;
+    description: string; fix_suggestion: string; was_fixed?: boolean;
   }>;
 }
 
@@ -34,7 +33,7 @@ export function StoryBibleView({ novelId }: Props) {
   const [reader, setReader] = useState<ReaderState | null>(null);
   const [counterpoint, setCounterpoint] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [constraintPreview, setConstraintPreview] = useState<any>(null);
+  const [_constraintPreview] = useState<any>(null);
 
   useEffect(() => {
     Promise.all([

@@ -52,7 +52,6 @@ function runSoulCheck(text: string, profile: SoulProfile): SoulCheck {
   }
 
   const lines = text.split('\n').filter(l => l.trim().length > 5);
-  const dialogueBlocks = text.match(/[「「""''“”].*?[」」""''""]/g) || [];
   const narrationOnly = text.replace(/[「「""''“”].*?[」」""''""]/g, '');
 
   // ── Specificity: flag generic descriptions ──
@@ -116,7 +115,6 @@ function runSoulCheck(text: string, profile: SoulProfile): SoulCheck {
     }
   }
   // Score: 1 detail per 200 chars is decent
-  const detailDensity = detailLines.length / Math.max(1, text.length / 200);
 
   // ── Contradiction: check if profile contradictions appear ──
   let contradictionScore = 50;

@@ -11,7 +11,7 @@ export function WordSprint({ onComplete }: Props) {
   const [startWords, setStartWords] = useState(0);
   const [currentWords, setCurrentWords] = useState(0);
   const [show, setShow] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
     if (!running) return;

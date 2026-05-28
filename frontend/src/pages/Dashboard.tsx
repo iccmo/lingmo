@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NovelCard } from 'src/components/novels/NovelCard';
 import { NovelCompare } from 'src/components/novels/NovelCompare';
@@ -444,7 +444,6 @@ export function Dashboard() {
             return (
               <button
                 onClick={() => {
-                  const el = document.querySelector('select[value=""]');
                 }}
                 className="text-[11px] px-2 py-1 rounded border border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 transition-colors">
                 ⭐ 已收藏 ({starred.filter(id => novels.some(n => n.id === id)).length})

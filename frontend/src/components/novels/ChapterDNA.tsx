@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import type { ChapterMeta } from 'src/types';
 
 interface DNAProfile {
@@ -40,7 +40,7 @@ function analyzeDNA(ch: ChapterMeta, content?: string): DNAProfile {
   return { pacing, dialogue, description, action, emotion, hook };
 }
 
-function RadarChart({ a, b, labelA, labelB }: { a: DNAProfile; b?: DNAProfile; labelA: string; labelB?: string }) {
+function RadarChart({ a, b }: { a: DNAProfile; b?: DNAProfile; labelA: string; labelB?: string }) {
   const dims: { key: keyof DNAProfile; label: string }[] = [
     { key: 'pacing', label: '节奏' },
     { key: 'dialogue', label: '对话' },

@@ -96,7 +96,7 @@ function mergeScenes(scenes: Scene[]): string {
   return scenes.map(s => s.content).join('\n\n---\n\n');
 }
 
-export function SceneEditor({ chapterContent, chapterNumber, novelId, onSave, saving }: Props) {
+export function SceneEditor({ chapterContent, onSave, saving }: Props) {
   const [scenes, setScenes] = useState<Scene[]>(() => detectScenes(chapterContent));
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editContent, setEditContent] = useState('');

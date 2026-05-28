@@ -45,6 +45,7 @@ interface NovelWorld {
   world: WorldData;
   characters: Character[];
   factions: Faction[];
+  character_relations?: Array<{ char_1_id: string; char_2_id: string; c1_name: string; c2_name: string; relation_type: string }>;
 }
 
 const ROLES = ['主角', '反派', '配角', '导师', '路人'];

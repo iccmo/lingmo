@@ -111,7 +111,6 @@ function publishingAdvice(chapters: ChapterMeta[]): { bestChapter: number; bestD
   if (gen.length < 3) return { bestChapter: 0, bestDay: '—', bestTime: '—', strategy: '至少需要3章才能生成发布策略' };
 
   const best = gen.reduce((a, b) => (a.quality_score || 0) > (b.quality_score || 0) ? a : b);
-  const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
   const avgQ = gen.reduce((s, c) => s + (c.quality_score || 0), 0) / gen.length;
 
   return {
@@ -126,7 +125,7 @@ function publishingAdvice(chapters: ChapterMeta[]): { bestChapter: number; bestD
   };
 }
 
-export function CreativeLab({ chapters, genre, novelId }: { chapters?: ChapterMeta[]; genre: string; novelId: string }) {
+export function CreativeLab({ chapters, genre: _genre, novelId }: { chapters?: ChapterMeta[]; genre: string; novelId: string }) {
   const [tab, setTab] = useState<'reader' | 'trope' | 'heatmap' | 'publish' | 'deep'>('reader');
   const [personaIdx, setPersonaIdx] = useState(0);
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null);

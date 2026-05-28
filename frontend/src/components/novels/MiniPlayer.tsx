@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAudio, type PlaylistItem } from 'src/lib/AudioContext';
+import { useAudio } from 'src/lib/AudioContext';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -33,7 +33,7 @@ export function MiniPlayer() {
   const [vizTheme, setVizTheme] = useState(0);
   const [focusMode, setFocusMode] = useState(false);
   const idleRef = useRef(Date.now());
-  const idleCheckRef = useRef<ReturnType<typeof setInterval>>();
+  const idleCheckRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   // Swipe gesture tracking
   const touchStartX = useRef(0);
@@ -193,8 +193,6 @@ export function MiniPlayer() {
     toast.info(`已加载预设「${p.name}」`);
   }
 
-  const CIRC = { size: 56, stroke: 3, r: 24 };
-  const circLen = 2 * Math.PI * CIRC.r;
 
   // Reopen FAB — always show if closed, regardless of current
   if (!visible) {

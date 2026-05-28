@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ModeToggle } from './ModeToggle';
 import type { AppMode } from 'src/types';
+import { Sparkles, Headphones, PanelLeftClose, PanelLeft, Moon, Monitor, Sun } from 'lucide-react';
 
 interface Props {
   mode: AppMode;
@@ -38,9 +39,9 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
   }
 
   return (
-    <header className="h-14 bg-card/80 backdrop-blur border-b border-border flex items-center justify-between px-6 shrink-0">
+    <header className="h-14 bg-card/80 backdrop-blur-sm border-b border-border flex items-center justify-between px-6 shrink-0">
       <div className="flex items-center gap-3">
-        <span className="text-lg">✧</span>
+        <Sparkles size={18} className="text-accent" />
         <span className="font-heading text-lg text-ink font-semibold tracking-tight">
           <span className="text-accent">灵墨</span>
         </span>
@@ -53,23 +54,24 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
         )}
       </div>
       <div className="flex items-center gap-2">
-        <button onClick={() => navigate('/listen')} className="text-base sm:text-sm text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
+        <button onClick={() => navigate('/listen')} className="text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
           title="听书">
-          🎧
+          <Headphones size={16} />
         </button>
-        <button onClick={onSidebarToggle} className="text-sm text-ink-muted hover:text-ink transition-colors px-1.5"
+        <button onClick={onSidebarToggle} className="text-ink-muted hover:text-ink transition-colors p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
           title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
-          {sidebarOpen ? '◁' : '▷'}
+          {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
         </button>
         <ModeToggle mode={mode} onChange={handleChange} />
-        <button onClick={onDarkToggle} className="text-sm text-ink-muted hover:text-ink transition-colors px-2" title={dark ? '当前暗色 · 点切换自动' : '当前亮色 · 点切换暗色'}>
-          {dark ? '🌙' : localStorage.getItem('dark') === 'auto' ? '🔄' : '☀️'}
+        <button onClick={onDarkToggle} className="text-ink-muted hover:text-ink transition-colors p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          title={dark ? '当前暗色 · 点切换自动' : '当前亮色 · 点切换暗色'}>
+          {dark ? <Moon size={16} /> : localStorage.getItem('dark') === 'auto' ? <Monitor size={16} /> : <Sun size={16} />}
         </button>
         <span className="text-border mx-0.5">|</span>
         <button onClick={() => {
           sessionStorage.removeItem('session');
           window.location.href = '/';
-        }} className="text-xs text-ink-muted hover:text-red-500 transition-colors px-2" title="退出后台">
+        }} className="text-xs text-ink-muted hover:text-destructive transition-colors px-2 min-h-[44px] flex items-center" title="退出后台">
           退出
         </button>
       </div>

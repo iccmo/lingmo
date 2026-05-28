@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 interface GenStatus {
   status: string;
   message: string;

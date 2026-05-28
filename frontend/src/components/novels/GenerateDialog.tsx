@@ -124,7 +124,7 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
       if (e.key === 'Escape') onClose();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        onGenerate(direction, qualityThreshold);
+        onGenerate(direction, qualityThreshold, revisionMode);
       }
     };
     if (open) window.addEventListener('keydown', handler);
@@ -194,7 +194,6 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
           } catch { status.push({ key: 'laws', label: '世界法则', ready: false, autoFill: () => {} }); }
 
           const allReady = status.every(s => s.ready);
-          const hasUnready = status.some(s => !s.ready);
           // When all ready, just show a subtle indicator
           if (allReady) {
             return <div className="mb-3 text-[10px] text-emerald-500 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> 全部配置就绪</div>;

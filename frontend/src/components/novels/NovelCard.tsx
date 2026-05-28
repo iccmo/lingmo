@@ -30,7 +30,7 @@ export function NovelCard({ novel, onDelete, onGenerate, isGenerating }: {
 
   function toggleStar(e: { stopPropagation: () => void }) {
     e.stopPropagation();
-    setStarred(prev => {
+    setStarred((prev: boolean) => {
       const next = !prev;
       try {
         const list: string[] = JSON.parse(localStorage.getItem('starred-novels') || '[]');

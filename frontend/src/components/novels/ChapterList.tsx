@@ -23,10 +23,6 @@ const TAG_OPTIONS = [
   { key: '感情', emoji: '💕', label: '感情', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800' },
 ];
 
-const TAG_EMOJI_MAP: Record<string, string> = {
-  '高潮': '🔥', '过渡': '🌊', '伏笔': '🔮', '战斗': '⚔️',
-  '日常': '☕', '转折': '🔄', '感情': '💕',
-};
 
 const GRADE_COLORS: Record<string, string> = {
   S: 'bg-gradient-to-r from-emerald-100 to-accent-soft text-emerald-800 border-emerald-300 dark:from-emerald-900/40 dark:to-accent-soft/20 dark:text-emerald-300 dark:border-emerald-700 font-bold',
@@ -86,8 +82,6 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
   useEffect(() => { editContentRef.current = editContent; }, [editContent]);
   const [saving, setSaving] = useState(false);
   const [sceneView, setSceneView] = useState(false);
-  const [refineTarget, setRefineTarget] = useState('');
-  const [refining, setRefining] = useState(false);
   // AI Proofreading
   const [proofreading, setProofreading] = useState(false);
   const [proofreadIssues, setProofreadIssues] = useState<{ type: string; original: string; suggestion: string; reason: string }[]>([]);
@@ -106,8 +100,8 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     catch { return {}; }
   });
 
-  function cycleApproval(num: number, e: { stopPropagation: () => void }) {
-    e.stopPropagation();
+  function cycleApproval(num: number, e?: { stopPropagation: () => void }) {
+    e?.stopPropagation();
     setApprovals(prev => {
       const current = prev[num] || 'draft';
       const next = current === 'draft' ? 'approved' : current === 'approved' ? 'revise' : 'draft';
@@ -115,12 +109,6 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
       localStorage.setItem(`approvals-${novelId}`, JSON.stringify(updated));
       return updated;
     });
-  }
-
-  function approvalBadge(status: string) {
-    if (status === 'approved') return { icon: '✅', label: '已审', cls: 'text-emerald-500' };
-    if (status === 'revise') return { icon: '🔧', label: '待改', cls: 'text-amber-500' };
-    return null;
   }
 
   // ── Audio text sync ──
@@ -162,18 +150,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     }
   }
 
-  async function refineParagraph(text: string) {
-    setRefineTarget(text); setRefining(true);
-    try {
-      const dir = `请改写以下段落，使其更加生动、具体、有画面感。保持原意不变。\n\n原文：${text}`;
-      await fetch(`/api/novels/${novelId}/generate`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction: dir, quality_threshold: 0.7 }),
-      });
-      toast.success('段落精修已触发——生成完成后查看结果');
-    } catch { toast.error('精修失败'); }
-    finally { setRefining(false); setRefineTarget(''); }
-  }
+  // Paragraph refinement removed (unused)
 
   function enterEditMode() {
     setEditContent(content);
@@ -500,8 +477,8 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     });
   }
 
-  function toggleStyleRef(n: number, e: MouseEvent) {
-    e.stopPropagation();
+  function toggleStyleRef(n: number, e?: React.MouseEvent) {
+    e?.stopPropagation();
     setStyleRefs(prev => {
       const next = new Set(prev);
       if (next.has(n)) next.delete(n); else next.add(n);
@@ -547,8 +524,8 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
     };
   }, [tagPickerChapter]);
 
-  function togglePin(n: number, e: MouseEvent) {
-    e.stopPropagation();
+  function togglePin(n: number, e?: React.MouseEvent) {
+    e?.stopPropagation();
     setPinned(prev => {
       const next = new Set(prev);
       if (next.has(n)) next.delete(n); else next.add(n);
@@ -772,8 +749,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
       <div ref={listRef} className="max-h-[70vh] overflow-y-auto" onScroll={handleListScroll}>
         {/* Top spacer for virtual scroll */}
         <div style={{ height: startIdx * ROW_HEIGHT }} />
-        {sortedChapters.slice(startIdx, endIdx).map((ch, indexInSlice) => {
-        const i = startIdx + indexInSlice;
+        {sortedChapters.slice(startIdx, endIdx).map((ch) => {
         // Check if this chapter starts a new arc
         const arc = arcs.find(a => a.startChapter === ch.number);
         const prevArc = arcs.find(a => a.startChapter <= ch.number && arcs[arcs.indexOf(a) + 1]?.startChapter > ch.number) || arcs[arcs.length - 1];
@@ -800,7 +776,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
               setRewriteFocus('');
             }
           }},
-          { icon: '⭐', label: styleRefs.has(ch.number) ? '取消风格参考' : '设为风格参考', onClick: (e: MouseEvent) => toggleStyleRef(ch.number, e) },
+          { icon: '⭐', label: styleRefs.has(ch.number) ? '取消风格参考' : '设为风格参考', onClick: () => toggleStyleRef(ch.number) },
           { icon: '🧹', label: '去AI味', onClick: async () => {
             toast.success('已触发去AI味');
             await fetch(`/api/novels/${novelId}/chapters/${ch.number}/humanize`, { method: 'POST' });
@@ -813,9 +789,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
           { icon: '⬇', label: '导出 TXT', onClick: () => {
             window.open(`/api/novels/${novelId}/chapters/${ch.number}/export`, '_blank');
           }},
-          { icon: '📌', label: pinned.has(ch.number) ? '取消置顶' : '置顶', onClick: (e: MouseEvent) => togglePin(ch.number, e) },
+          { icon: '📌', label: pinned.has(ch.number) ? '取消置顶' : '置顶', onClick: () => togglePin(ch.number) },
           { icon: '🏷️', label: '标签', onClick: () => openTagPicker(ch.number) },
-          { icon: `${approvals[ch.number] === 'approved' ? '✅' : approvals[ch.number] === 'revise' ? '🔧' : '📝'}`, label: approvals[ch.number] === 'approved' ? '已审' : approvals[ch.number] === 'revise' ? '待改→草稿' : '草稿→已审', onClick: (e: MouseEvent) => cycleApproval(ch.number, e) },
+          { icon: `${approvals[ch.number] === 'approved' ? '✅' : approvals[ch.number] === 'revise' ? '🔧' : '📝'}`, label: approvals[ch.number] === 'approved' ? '已审' : approvals[ch.number] === 'revise' ? '待改→草稿' : '草稿→已审', onClick: () => cycleApproval(ch.number) },
           ...(onDelete ? [{
             icon: '🗑', label: '删除本章', danger: true as const,
             onClick: () => onDelete(ch.number),

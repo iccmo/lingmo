@@ -67,7 +67,6 @@ export function QualityWorkflow({ novelId, lastQuality, onNavigate }: {
       id: 'generate', label: '生成章节', icon: '⚡',
       check: () => ({ status: 'done', detail: '按 Ctrl+G 或点击生成按钮' }),
       action: () => {
-        const btn = document.querySelector('button') as HTMLButtonElement;
         // Find the generate button
         const allBtns = document.querySelectorAll('button');
         for (const b of allBtns) {

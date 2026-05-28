@@ -101,8 +101,6 @@ function analyzeDeep(text: string): DeepMetrics {
   // NOTE: This is NOT an AI detector. It flags common patterns that make
   // writing feel formulaic — whether written by AI or human. Context-aware:
   // patterns inside dialogue quotes are excluded from detection.
-  const dialogueBlocks = text.match(/[「「""''“”].*?[」」""''""]/g) || [];
-  const dialogueText = dialogueBlocks.join('');
   const narrationText = text.replace(/[「「""''“”].*?[」」""''""]/g, '');
 
   let freshness = 100;
@@ -280,7 +278,7 @@ function scoreColor(val: number, good: number, bad: number): string {
 
 export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?: ChapterMeta[] }) {
   const [selectedCh, setSelectedCh] = useState<number | null>(null);
-  const [content, setContent] = useState('');
+  const [_content, setContent] = useState('');
   const [metrics, setMetrics] = useState<DeepMetrics | null>(null);
   const [loading, setLoading] = useState(false);
 

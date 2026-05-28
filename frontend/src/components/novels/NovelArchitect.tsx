@@ -70,7 +70,7 @@ function buildHierarchicalContext(
   return { level1, level2, level3 };
 }
 
-export function NovelArchitect({ novelId, chapters, totalChapters, onContextReady }: {
+export function NovelArchitect({ novelId, chapters, totalChapters }: {
   novelId: string; chapters?: ChapterMeta[]; totalChapters: number;
   onContextReady?: (context: string) => void;
 }) {
@@ -214,7 +214,7 @@ export function NovelArchitect({ novelId, chapters, totalChapters, onContextRead
       {/* Act timeline visualization */}
       {plan?.acts && plan.acts.length > 0 && (
         <div className="mb-3 space-y-1.5">
-          {plan.acts.map((act, i) => {
+          {plan.acts.map((act, _i) => {
             const pct = ((act.range[1] - act.range[0] + 1) / (plan.totalChapters || 100)) * 100;
             const progress = Math.min(100, Math.max(0, ((currentChapter - act.range[0]) / (act.range[1] - act.range[0] + 1)) * 100));
             return (

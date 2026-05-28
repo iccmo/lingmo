@@ -43,7 +43,7 @@ export const api = {
     draft:     (id: string, input: string) => post<{ directions: DraftOption[] }>(`/novels/${id}/draft`, { input }),
     expand:    (id: string, chosenId: string, draft?: { direction: string; preview: string; hook: string }, edits?: string) =>
       post<{ title: string; body: string }>(`/novels/${id}/expand`, { chosen_id: chosenId, direction: draft?.direction, preview: draft?.preview, hook: draft?.hook, edits }),
-    chapter:   (id: string, n: number) => get<{ number: number; content: string }>(`/novels/${id}/chapters/${n}`),
+    chapter:   (id: string, n: number) => get<{ number: number; content: string; title?: string }>(`/novels/${id}/chapters/${n}`),
     saveChapter: (id: string, n: number, content: string) => put(`/novels/${id}/chapters/${n}`, { content }),
     autoStart: (id: string) => post(`/novels/${id}/auto/start`),
     autoStop:  (id: string) => post(`/novels/${id}/auto/stop`),

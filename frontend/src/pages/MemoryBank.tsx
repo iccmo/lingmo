@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import type { NovelDetail } from 'src/types';
 
 interface ForeshadowData { total_open: number; total_resolved: number; stale: { content: string; buried_chapter: number; age: number }[]; warning: string; }
-interface LogEntry { id: number; event: string; detail: string; created_at: string; }
+interface LogEntry { id: number; event: string; detail: string; created_at: string; novel_id?: string; }
 
 export function MemoryBank() {
   const { id } = useParams<{ id: string }>();

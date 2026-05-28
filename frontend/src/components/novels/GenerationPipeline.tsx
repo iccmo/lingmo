@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 /** Simulated progress during long blocking phases */
 function useSmoothProgress(status: string, realProgress: number): number {
   const [smooth, setSmooth] = useState(realProgress);
-  const timer = useRef<ReturnType<typeof setInterval>>();
+  const timer = useRef<ReturnType<typeof setInterval>>(undefined);
 
   useEffect(() => {
     if (status === 'generating' && realProgress <= 22) {
@@ -144,7 +144,7 @@ export function GenerationPipeline({ genStatus, onRetry }: {
         <div className="space-y-3">
           {/* Progress bar with gate markers */}
           <div className="relative h-2 bg-border/60 rounded-full overflow-hidden">
-            {GATES.map((g, i) => (
+            {GATES.map((g, _i) => (
               <div key={g.key} className="absolute top-0 w-0.5 h-full bg-white/20"
                 style={{ left: `${g.range[1]}%` }} />
             ))}

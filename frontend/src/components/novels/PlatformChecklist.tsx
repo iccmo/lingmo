@@ -21,7 +21,7 @@ export function PlatformChecklist({ chapters, genre }: {
     const results: ChecklistItem[] = [];
 
     // 1. Hook in last 3 sentences (critical)
-    const hasHook = latest.ending_hook && latest.ending_hook.length > 5;
+    const hasHook = !!(latest.ending_hook && latest.ending_hook.length > 5);
     results.push({
       label: '结尾钩子',
       icon: '🎣',

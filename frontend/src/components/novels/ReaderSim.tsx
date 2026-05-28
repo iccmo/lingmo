@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react';
-import { toast } from 'sonner';
 import type { ChapterMeta } from 'src/types';
 
 interface RetentionPoint {
@@ -88,9 +87,6 @@ export function ReaderSim({ novelId, chapters }: {
   const withContent = chapters.filter(c => c.word_count > 0);
   const finalRetention = retention.length > 0 ? retention[retention.length - 1].retention : 100;
   const dangerChapters = retention.filter(r => r.dropRisk >= 50);
-  const bestRetention = retention.length > 0
-    ? retention.reduce((best, r) => r.retention > best.retention ? r : best, retention[0])
-    : null;
 
   async function exploreWhatIf(chapterNum: number, scenario: string) {
     setWhatIfChapter(chapterNum);
@@ -105,10 +101,10 @@ export function ReaderSim({ novelId, chapters }: {
         const d = await r.json();
         setWhatIfResult(d.summary || d.branch || '分支剧情已生成');
       } else {
-        setWhatIfResult(getFallbackBranch(chapterNum, scenario, chapters));
+        setWhatIfResult(getFallbackBranch(chapterNum, scenario, chapters || []));
       }
     } catch {
-      setWhatIfResult(getFallbackBranch(chapterNum, scenario, chapters));
+      setWhatIfResult(getFallbackBranch(chapterNum, scenario, chapters || []));
     } finally {
       setExploring(false);
     }
@@ -149,7 +145,7 @@ export function ReaderSim({ novelId, chapters }: {
 
         {/* Retention bars */}
         <div className="space-y-1">
-          {retention.map((r, i) => {
+          {retention.map((r, _i) => {
             const barColor = r.dropRisk >= 50 ? 'bg-red-400 dark:bg-red-500'
               : r.dropRisk >= 25 ? 'bg-amber-400 dark:bg-amber-500'
               : 'bg-emerald-400 dark:bg-emerald-500';

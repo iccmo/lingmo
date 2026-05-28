@@ -160,8 +160,7 @@ export function PlotNetwork({ novelId }: { novelId: string }) {
   }
 
   const posMap = new Map(positions.map(p => [p.id, p]));
-  const charMap = new Map(characters.map(c => [c.id, c]));
-
+  
   return (
     <div className="p-4 bg-card border border-border rounded-xl">
       <div className="flex items-center justify-between mb-3">
@@ -206,7 +205,6 @@ export function PlotNetwork({ novelId }: { novelId: string }) {
           const isSelected = n.id === selected;
           const isRelated = selected ? relatedNodeIds.has(n.id) : true;
           const isHovered = n.id === hovered;
-          const char = charMap.get(n.id);
           return (
             <g key={n.id}
               onMouseEnter={() => setHovered(n.id)}

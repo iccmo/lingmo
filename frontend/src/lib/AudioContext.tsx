@@ -184,7 +184,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     const saved = localStorage.getItem('tts-voice');
     // Fallback if saved voice no longer exists (e.g., XiaochenNeural was removed)
     const valid = VOICES.map(v => v.id);
-    return saved && valid.includes(saved) ? saved : 'zh-CN-XiaoxiaoNeural';
+    return saved && valid.includes(saved as typeof valid[number]) ? saved : 'zh-CN-XiaoxiaoNeural';
   });
   const [playlist, setPlaylist] = useState<PlaylistItem[]>(loadPlaylist);
   const [sleepTimer, setSleepTimer] = useState(0);
@@ -221,7 +221,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const volumeRef = useRef(volumeState);
   volumeRef.current = volumeState;
   const eqCtxRef = useRef<AudioContext | null>(null);
-  const eqNodesRef = useRef<BiquadFilterNode[]>([]);
 
   // ── Server data sync (every 30s) ──
   useEffect(() => {
@@ -292,7 +291,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const currentRef = useRef<PlaylistItem | null>(null);
   const lastPauseTime = useRef(0);
   const lastSkipPos = useRef<{ item: PlaylistItem; position: number } | null>(null);
-  const fadeTimerRef = useRef<ReturnType<typeof setInterval>>();
 
   currentRef.current = current;
 
@@ -756,60 +754,17 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }
 
   // ── Ambient sound generator ──
-  function createNoiseBuffer(type: string): AudioBuffer {
-    const ctx = ambientCtxRef.current;
-    if (!ctx) throw new Error('No audio context');
-    const sr = ctx.sampleRate;
-    const len = sr * 4; // 4-second loop
-    const buf = ctx.createBuffer(1, len, sr);
-    const data = buf.getChannelData(0);
-
-    for (let i = 0; i < len; i++) {
-      let sample = (Math.random() * 2 - 1) * 0.3;
-      if (type === 'white') {
-        // Pure white noise
-        sample = (Math.random() * 2 - 1) * 0.2;
-      } else if (type === 'rain') {
-        // Pink-ish noise
-        if (i > 0) sample = (data[i - 1] + (Math.random() * 2 - 1) * 0.1) * 0.5;
-      } else if (type === 'ocean') {
-        // Brown noise + slow modulation
-        if (i > 0) sample = (data[i - 1] + (Math.random() * 2 - 1) * 0.02) * 0.99;
-        sample *= 1 + 0.3 * Math.sin(2 * Math.PI * 0.1 * i / sr);
-      } else if (type === 'campfire') {
-        // Crackling: sparse random impulses
-        sample = Math.random() > 0.98 ? (Math.random() - 0.5) * 2 : (data[i - 1] || 0) * 0.3;
-        sample *= 0.4;
-      }
-      data[i] = sample;
-    }
-    return buf;
-  }
-
-
-
-
   function setAmbient(a: string | null) {
     setAmbientState(a);
     if (a) startAmbient(a as any, ambientVolume);
     else stopAmbient();
   }
 
-  function setAmbientVolume(v: number) {
-    const vol = Math.max(0, Math.min(1, v));
-    setAmbientVolumeState(vol);
-    seSetAmbVol(vol);
-  }
 
   function setMusic(m: string | null) {
     setMusicState(m);
     if (m) startMusic(m as any, musicVolume);
     else stopMusic();
-  }
-  function setMusicVolume(v: number) {
-    const vol = Math.max(0, Math.min(1, v));
-    setMusicVolumeState(vol);
-    seSetMusVol(vol);
   }
   function setAmbientVolumeFn(v: number) {
     const vol = Math.max(0, Math.min(1, v));
@@ -822,27 +777,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     seSetMusVol(vol);
   }
 
-  // ── Personal stats ──
-  function getStats(): { totalHours: number; totalChapters: number; streak: number; topSpeed: number } {
-    try {
-      const stats = JSON.parse(localStorage.getItem('audio-stats') || '{}');
-      const totalHours = (stats.seconds || 0) / 3600;
-      const totalChapters = stats.chapters || 0;
-      const days = stats.days || [];
-      // Calculate current streak
-      let streak = 0;
-      const today = new Date();
-      for (let i = 0; i < 365; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const ds = d.toISOString().slice(0, 10);
-        if (days.includes(ds)) streak++;
-        else break;
-      }
-      const topSpeed = stats.topSpeed || 1.0;
-      return { totalHours, totalChapters, streak, topSpeed };
-    } catch { return { totalHours: 0, totalChapters: 0, streak: 0, topSpeed: 1.0 }; }
-  }
 
   // ── Achievement system ──
   function getAchievements(): Achievement[] {
@@ -967,7 +901,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   // Also done in the onTime handler
 
   // Apply volume on audio creation
-  const originalPlayChapter = playChapter;
   // This needs to happen inside playChapter, so let me add it there directly.
 
   function getResume(): ResumeData | null {
@@ -1133,7 +1066,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       music, setMusic, musicVolume, setMusicVolume: setMusicVolumeFn,
       sleepStory, toggleSleepStory, speedTrain, toggleSpeedTrain, speedTrainLevel,
       achievements: getAchievements(),
-      stats: getStats(),
       radioMode, toggleRadioMode,
       dramaticMode, toggleDramaticMode,
       eqPreset, cycleEQ,

@@ -210,7 +210,7 @@ function CentralImagePanel({ novelId, chapters }: { novelId: string; chapters?: 
 /* ─── Law 7: Echo Detector ─── */
 function EchoDetector({ novelId, chapters }: { novelId: string; chapters?: ChapterMeta[] }) {
   const [ch1Content, setCh1Content] = useState('');
-  const [lastContent, setLastContent] = useState('');
+  const [_lastContent, setLastContent] = useState('');
   const [echoes, setEchoes] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -367,7 +367,7 @@ function ScenePurposePanel({ content, chapterNum, checking }: { content: string;
   const analysis = useMemo(() => {
     if (!content) return null;
     const scenes = content.split('\n').filter(l => l.trim().length > 20);
-    const results = scenes.slice(0, 8).map((scene, i) => {
+    const results = scenes.slice(0, 8).map((scene, _i) => {
       const hasConflict = /[打斗对决争辩吵冲突矛盾反抗].*/.test(scene);
       const hasChange = /突然|猛然|发现|意识到|决定|不再|终于|原来|竟然/.test(scene);
       const hasEmotion = /[喜怒哀乐悲恐惊忧恨羞].*/.test(scene);
@@ -584,7 +584,6 @@ function ThemeDeepenPanel({ content, chapterNum, checking, engineQuestion }: { c
   const analysis = useMemo(() => {
     if (!content || !engineQuestion) return null;
     // Extract key concepts from the core question
-    const qKeywords = engineQuestion.replace(/[？?，。、；：！!\s]/g, '');
 
     // Look for complication patterns: words that suggest the theme is being complicated
     const complicates = content.match(/但是|然而|不过|可是|却|反而|竟然|原来|并不是|也许|或许/g) || [];
@@ -751,11 +750,11 @@ function FormSoulUnityPanel({ content, chapterNum, checking, novelId }: { conten
   if (!chapterNum) return <p className="text-xs text-ink-muted py-4 text-center">选择章节</p>;
   if (!analysis) return <p className="text-xs text-ink-muted py-4 text-center">无法分析</p>;
   if (!analysis.hasSoul) return <div className="p-4 text-center"><p className="text-xs text-ink-muted">尚未配置灵魂</p><p className="text-[10px] text-ink-subtle mt-1">在「灵魂构建」中选择核心矛盾后，这里将检测写作是否忠于灵魂</p></div>;
-  return (<div className="space-y-3"><p className="text-xs text-ink-muted leading-relaxed">神作的<strong>形式就是内容</strong>。换了形式，内容就消失了。</p><div className="text-center p-4 rounded-xl bg-gradient-to-br from-accent-soft/30 to-transparent border border-accent/10"><div className={`text-3xl font-bold ${analysis.score>=70?'text-emerald-500':analysis.score>=40?'text-amber-500':'text-red-500'}`}>{analysis.score}</div><div className="text-[10px] text-ink-muted mt-1">形式-灵魂统一度</div></div>{analysis.matches.map((m,i)=><p key={i} className="text-[10px] text-emerald-600 dark:text-emerald-400">✅ {m}</p>)}{analysis.mismatches.map((m,i)=><p key={i} className="text-[10px] text-red-500">⚠️ {m}</p>)}</div>);
+  return (<div className="space-y-3"><p className="text-xs text-ink-muted leading-relaxed">神作的<strong>形式就是内容</strong>。换了形式，内容就消失了。</p><div className="text-center p-4 rounded-xl bg-gradient-to-br from-accent-soft/30 to-transparent border border-accent/10"><div className={`text-3xl font-bold ${(analysis.score??0)>=70?'text-emerald-500':(analysis.score??0)>=40?'text-amber-500':'text-red-500'}`}>{analysis.score??0}</div><div className="text-[10px] text-ink-muted mt-1">形式-灵魂统一度</div></div>{(analysis.matches??[]).map((m,i)=><p key={i} className="text-[10px] text-emerald-600 dark:text-emerald-400">✅ {m}</p>)}{(analysis.mismatches??[]).map((m,i)=><p key={i} className="text-[10px] text-red-500">⚠️ {m}</p>)}</div>);
 }
 
 /* ─── Main Component ─── */
-export function MasterworkLab({ novelId, chapters, genre }: {
+export function MasterworkLab({ novelId, chapters, genre: _genre }: {
   novelId: string; chapters?: ChapterMeta[]; genre: string;
 }) {
   // Build core question from soul answers

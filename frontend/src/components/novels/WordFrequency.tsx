@@ -69,7 +69,7 @@ function extractPhrases(text: string): Map<string, number> {
   return freq;
 }
 
-function analyzeFrequency(content: string, label?: string): {
+function analyzeFrequency(content: string, _label?: string): {
   phrases: PhraseEntry[];
   totalChars: number;
 } {

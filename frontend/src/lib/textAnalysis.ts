@@ -62,7 +62,6 @@ export function analyzeForces(text: string, historyWeight = 0): ForceReport {
   const sentences = text.split(/[。！？.!?\n]+/).filter(s => s.trim());
 
   // Compression: historical weight per meaningful unit
-  const meaningfulChars = text.replace(/\s/g, '').length;
   const compression = Math.min(1, (historyWeight || sentences.length * 0.02) / Math.max(1, sentences.length * 0.1));
 
   // Tension: unsatisfied expectations

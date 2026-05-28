@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from 'src/lib/api';
-import { toast } from 'sonner';
 import type { ChapterMeta } from 'src/types';
 
 interface Device {
@@ -147,10 +146,10 @@ export function MobileReadingMode({ novelId, chapters, initialChapter, onClose }
   }, [content]);
 
   // Touch swipe
-  function handleTouchStart(e: { touches: { clientX: number }[] }) {
+  function handleTouchStart(e: React.TouchEvent<HTMLDivElement>) {
     touchStartX.current = e.touches[0].clientX;
   }
-  function handleTouchEnd(e: { changedTouches: { clientX: number }[] }) {
+  function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
     const diff = touchStartX.current - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 80) {
       if (diff > 0 && hasNext) setCurrentIdx(i => i + 1);

@@ -37,6 +37,7 @@ import { GenerateDialog } from 'src/components/novels/GenerateDialog';
 import { TimelineView } from 'src/components/novels/TimelineView';
 import { logDailyWords } from 'src/components/novels/WritingCalendar';
 import { ScrollToTop } from 'src/components/ui/scroll-to-top';
+import { FilmStudioTab } from 'src/components/film/FilmStudioTab';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import type { NovelDetail as NovelDetailType, AppMode } from 'src/types';
@@ -78,7 +79,7 @@ export function NovelDetail({ mode }: Props) {
   // Session tracking
   const [sessionChapters, setSessionChapters] = useState(0);
   const [sessionStartTime] = useState(Date.now());
-  const [sessionWords, setSessionWords] = useState(0);
+  const [_sessionWords] = useState(0);
   const [sessionScores, setSessionScores] = useState<number[]>([]);
   const [showAutoConfig, setShowAutoConfig] = useState(false);
   const [autoConfig, setAutoConfig] = useState(() => ({
@@ -94,7 +95,7 @@ export function NovelDetail({ mode }: Props) {
   const [showBatchDialog, setShowBatchDialog] = useState(false);
   const [batchCount, setBatchCount] = useState(5);
   const [batchThreshold, setBatchThreshold] = useState(0.8);
-  const [batchStatus, setBatchStatus] = useState<{ job_id: string; status: string; progress: { current: number; total: number }; last_error: string | null } | null>(null);
+  const [batchStatus, setBatchStatus] = useState<{ job_id: string | null; status: string; progress: { current: number; total: number }; last_error: string | null } | null>(null);
   const [batchPolling, setBatchPolling] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
 
@@ -224,7 +225,7 @@ export function NovelDetail({ mode }: Props) {
 
         if (e.key === 'j' || e.key === 'J') {
           e.preventDefault();
-          const currentIdx = chs.findIndex(c => c.number === (document.querySelector('[data-active-chapter]')?.getAttribute('data-active-chapter')));
+          const currentIdx = chs.findIndex(c => String(c.number) === (document.querySelector('[data-active-chapter]')?.getAttribute('data-active-chapter') ?? ''));
           const nextIdx = Math.min(currentIdx + 1, chs.length - 1);
           const nextCh = chs[nextIdx >= 0 ? nextIdx : 0];
           if (nextCh) {
@@ -234,7 +235,7 @@ export function NovelDetail({ mode }: Props) {
         }
         if (e.key === 'k' || e.key === 'K') {
           e.preventDefault();
-          const currentIdx = chs.findIndex(c => c.number === (document.querySelector('[data-active-chapter]')?.getAttribute('data-active-chapter')));
+          const currentIdx = chs.findIndex(c => String(c.number) === (document.querySelector('[data-active-chapter]')?.getAttribute('data-active-chapter') ?? ''));
           const prevIdx = Math.max(currentIdx - 1, 0);
           const prevCh = chs[prevIdx >= 0 ? prevIdx : 0];
           if (prevCh) {
@@ -266,7 +267,7 @@ export function NovelDetail({ mode }: Props) {
       toast.success(s.message);
       setJustCompleted(true);
       setSessionChapters(prev => prev + 1);
-      if (s.overall) setSessionScores(prev => [...prev, s.overall].slice(-20));
+      if (s.overall != null) setSessionScores(prev => [...prev, s.overall as number].slice(-20));
       if (s.quality_detail) {
         try {
           const details = JSON.parse(localStorage.getItem(`quality-details-${id}`) || '{}');
@@ -1082,6 +1083,7 @@ export function NovelDetail({ mode }: Props) {
             { key: 'bible', label: '📖 圣经' },
             { key: 'analysis', label: '分析' },
             { key: 'tools', label: '工具' },
+            { key: 'film', label: '🎬 影视' },
             { key: 'agent', label: '🤖 Agent' },
           ].map(tab => (
             <button
@@ -1184,6 +1186,14 @@ export function NovelDetail({ mode }: Props) {
               <OpeningABTest novelId={novel.id} genre={novel.genre} synopsis={novel.synopsis} />
               <PlatformChecklist chapters={novel.chapters} genre={novel.genre} />
             </div>
+          )}
+
+          {/* 🎬 影视 Tab: Film Studio */}
+          {analysisTab === 'film' && (
+            <FilmStudioTab
+              novelId={novel.id}
+              chapters={novel.chapters}
+            />
           )}
 
           {/* 🤖 Agent Tab: 5种代理分析 */}
@@ -1528,7 +1538,7 @@ export function NovelDetail({ mode }: Props) {
           onClick={() => toast.success('PDF 下载中...')}>📕 PDF</a>
         <a href={`/api/novels/${id}/export-mobi`}
           className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
-          onClick={(e) => {
+          onClick={(_e) => {
             toast.info('MOBI 导出需要 Calibre...');
           }}>📱 MOBI</a>
         <a href={`/api/novels/${id}/export-full`}

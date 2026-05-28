@@ -1,4 +1,3 @@
-import { useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 
 const FEATURES = [
@@ -98,7 +97,6 @@ function CountUp({ target, suffix, duration = 1500 }: { target: number; suffix: 
 }
 
 export function Showcase({ onEnter }: { onEnter?: () => void }) {
-  const navigate = useNavigate();
   const [scrolled, setScrolled] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState('');
@@ -135,10 +133,6 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
       setLoginError('密码错误');
       setPassword('');
     }
-  }
-
-  function handleLogout() {
-    sessionStorage.removeItem('session');
   }
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 
 /* ─── The 16 Fundamental Polarities ─── */
@@ -75,7 +75,7 @@ function saveFingerprint(novelId: string, fp: SoulFingerprint) {
 }
 
 /* ─── Component ─── */
-export function SoulEngine({ novelId, genre }: { novelId: string; genre: string }) {
+export function SoulEngine({ novelId }: { novelId: string; genre: string }) {
   const [fp, setFp] = useState<SoulFingerprint | null>(() => loadFingerprint(novelId));
   const [selected, setSelected] = useState<string | null>(fp?.primaryPolarity || null);
   const [answer, setAnswer] = useState(fp?.answer || '');

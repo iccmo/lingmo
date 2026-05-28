@@ -85,7 +85,6 @@ export function WritingDigest({ chapters, novelId }: { chapters?: ChapterMeta[];
   const qualityTrends = useMemo(() => {
     if (!chapters || !novelId) return null;
     try {
-      const history: Record<string, number[]> = JSON.parse(localStorage.getItem(`quality-history-${novelId}`) || '{}');
       const gen = chapters.filter(c => c.word_count > 0 && c.quality_score);
       const last5 = gen.slice(-5);
       if (last5.length < 3) return null;
@@ -97,7 +96,7 @@ export function WritingDigest({ chapters, novelId }: { chapters?: ChapterMeta[];
       const detailHistory: Record<string, number[]> = {};
       try {
         const details = JSON.parse(localStorage.getItem(`quality-details-${novelId}`) || '{}');
-        for (const [ch, dims] of Object.entries(details) as [string, Record<string, number>][]) {
+        for (const [_ch, dims] of Object.entries(details) as [string, Record<string, number>][]) {
           for (const [dim, score] of Object.entries(dims)) {
             if (!detailHistory[dim]) detailHistory[dim] = [];
             detailHistory[dim].push(score);
