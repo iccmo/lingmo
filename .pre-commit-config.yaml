@@ -1,0 +1,18 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff
+        args: [--fix, --select, F821,F401,F811]
+        files: ^novel_writer/
+      - id: ruff-format
+        files: ^novel_writer/
+
+  - repo: local
+    hooks:
+      - id: no-api-keys
+        name: Check for hardcoded API keys
+        entry: bash -c 'grep -rn "sk-[a-zA-Z0-9]\{20,\}" --include="*.py" --include="*.ts" --include="*.tsx" "$@" || true' --
+        language: system
+        pass_filenames: false
+        files: \.(py|ts|tsx)$

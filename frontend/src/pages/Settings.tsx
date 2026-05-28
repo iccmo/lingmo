@@ -30,6 +30,20 @@ export function Settings() {
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; error?: string; model?: string }>>({});
   const [loading, setLoading] = useState(true);
+  // Film settings
+  const [filmSettings, setFilmSettings] = useState({ image_provider: 'placeholder', image_api_key: '', dalle3_api_key: '', music_provider: 'ambient', suno_api_key: '', comfyui_url: 'http://127.0.0.1:8188', comfyui_checkpoint: 'sd_xl_base_1.0.safetensors', comfyui_ipadapter_model: 'ip-adapter-faceid-plusv2_sd15.bin', comfyui_lora_strength: '0.8', comfyui_steps: '25', comfyui_cfg: '7.0' });
+  const [filmSaving, setFilmSaving] = useState(false);
+  const [filmKeyInput, setFilmKeyInput] = useState('');
+  const [dalle3KeyInput, setDalle3KeyInput] = useState('');
+  const [sunoKeyInput, setSunoKeyInput] = useState('');
+  // Subtitle style settings
+  const [subtitleStyle, setSubtitleStyle] = useState({
+    subtitle_font_size: '36',
+    subtitle_font_color: '#FFFFFF',
+    subtitle_bg_color: '#000000',
+    subtitle_bg_opacity: '160',
+    subtitle_position: 'bottom',
+  });
 
   useEffect(() => {
     fetch('/api/providers')
@@ -43,6 +57,20 @@ export function Settings() {
       })
       .catch(() => toast.error('加载供应商失败'))
       .finally(() => setLoading(false));
+    // Fetch film settings
+    fetch('/api/novels/film-settings')
+      .then(r => r.json())
+      .then(data => {
+        setFilmSettings({ image_provider: data.image_provider || 'placeholder', image_api_key: data.image_api_key || '', dalle3_api_key: data.dalle3_api_key || '', music_provider: data.music_provider || 'ambient', suno_api_key: data.suno_api_key || '', comfyui_url: data.comfyui_url || 'http://127.0.0.1:8188', comfyui_checkpoint: data.comfyui_checkpoint || 'sd_xl_base_1.0.safetensors', comfyui_ipadapter_model: data.comfyui_ipadapter_model || 'ip-adapter-faceid-plusv2_sd15.bin', comfyui_lora_strength: data.comfyui_lora_strength || '0.8', comfyui_steps: data.comfyui_steps || '25', comfyui_cfg: data.comfyui_cfg || '7.0' });
+        setSubtitleStyle({
+          subtitle_font_size: data.subtitle_font_size || '36',
+          subtitle_font_color: data.subtitle_font_color || '#FFFFFF',
+          subtitle_bg_color: data.subtitle_bg_color || '#000000',
+          subtitle_bg_opacity: data.subtitle_bg_opacity || '160',
+          subtitle_position: data.subtitle_position || 'bottom',
+        });
+      })
+      .catch(() => {});
   }, []);
 
   async function handleTestSilent(p: Provider) {
@@ -93,6 +121,44 @@ export function Settings() {
   function startEdit(p: Provider) {
     setEditing(p.id);
     setForm({ api_key: '', base_url: p.base_url });
+  }
+
+  async function handleFilmSave() {
+    setFilmSaving(true);
+    try {
+      const body: Record<string, string> = { image_provider: filmSettings.image_provider, music_provider: filmSettings.music_provider };
+      if (filmKeyInput) body.image_api_key = filmKeyInput;
+      if (dalle3KeyInput) body.dalle3_api_key = dalle3KeyInput;
+      if (sunoKeyInput) body.suno_api_key = sunoKeyInput;
+      // Include subtitle style
+      Object.assign(body, subtitleStyle);
+      // Include ComfyUI settings
+      if (filmSettings.image_provider === 'comfyui') {
+        body.comfyui_url = filmSettings.comfyui_url;
+        body.comfyui_checkpoint = filmSettings.comfyui_checkpoint;
+        body.comfyui_ipadapter_model = filmSettings.comfyui_ipadapter_model;
+        body.comfyui_lora_strength = filmSettings.comfyui_lora_strength;
+        body.comfyui_steps = filmSettings.comfyui_steps;
+        body.comfyui_cfg = filmSettings.comfyui_cfg;
+      }
+      await fetch('/api/novels/film-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      toast.success('影视配置已保存');
+      setFilmKeyInput('');
+      setDalle3KeyInput('');
+      setSunoKeyInput('');
+      // Refresh
+      const r = await fetch('/api/novels/film-settings');
+      const data = await r.json();
+      setFilmSettings({ image_provider: data.image_provider || 'placeholder', image_api_key: data.image_api_key || '', dalle3_api_key: data.dalle3_api_key || '', music_provider: data.music_provider || 'ambient', suno_api_key: data.suno_api_key || '', comfyui_url: data.comfyui_url || 'http://127.0.0.1:8188', comfyui_checkpoint: data.comfyui_checkpoint || 'sd_xl_base_1.0.safetensors', comfyui_ipadapter_model: data.comfyui_ipadapter_model || 'ip-adapter-faceid-plusv2_sd15.bin', comfyui_lora_strength: data.comfyui_lora_strength || '0.8', comfyui_steps: data.comfyui_steps || '25', comfyui_cfg: data.comfyui_cfg || '7.0' });
+    } catch {
+      toast.error('保存失败');
+    } finally {
+      setFilmSaving(false);
+    }
   }
 
   const configuredCount = providers.filter(p => p.api_key).length;
@@ -256,6 +322,297 @@ export function Settings() {
             </CardContent>
           </Card>
         ))}
+      </div>
+
+      {/* Film Studio settings */}
+      <div className="mt-8 max-w-[640px]">
+        <h2 className="font-heading text-xl font-semibold text-ink mb-3">影视制作</h2>
+        <Card className="border-border">
+          <CardContent className="p-5">
+            <p className="text-xs text-ink-muted mb-4">
+              配置 AI 画图和配乐服务。画图支持 Placeholder/SD3/DALL·E 3，配乐支持 FFmpeg ambient/Suno AI。
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">画图引擎</label>
+                <select
+                  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
+                  value={filmSettings.image_provider}
+                  onChange={e => setFilmSettings({ ...filmSettings, image_provider: e.target.value })}
+                >
+                  <option value="placeholder">Placeholder（渐变占位图）</option>
+                  <option value="stability">Stability AI（SD3 真实画面）</option>
+                  <option value="dalle3">DALL·E 3（OpenAI 真实画面）</option>
+                  <option value="comfyui">ComfyUI（本地 IP-Adapter 角色一致性）</option>
+                </select>
+              </div>
+              {filmSettings.image_provider === 'stability' && (
+                <div>
+                  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+                    Stability API Key
+                    <span className="text-ink-subtle font-normal ml-1">
+                      {filmSettings.image_api_key ? `当前: ${filmSettings.image_api_key}` : '未配置'}
+                    </span>
+                  </label>
+                  <Input
+                    className="mt-1.5"
+                    type="password"
+                    placeholder="sk-..."
+                    value={filmKeyInput}
+                    onChange={e => setFilmKeyInput(e.target.value)}
+                  />
+                  <a
+                    href="https://platform.stability.ai/account/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1 text-[11px] text-accent hover:underline"
+                  >
+                    获取 Stability AI API Key →
+                  </a>
+                </div>
+              )}
+              {filmSettings.image_provider === 'dalle3' && (
+                <div>
+                  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+                    OpenAI API Key
+                    <span className="text-ink-subtle font-normal ml-1">
+                      {filmSettings.dalle3_api_key ? `当前: ${filmSettings.dalle3_api_key}` : '未配置'}
+                    </span>
+                  </label>
+                  <Input
+                    className="mt-1.5"
+                    type="password"
+                    placeholder="sk-..."
+                    value={dalle3KeyInput}
+                    onChange={e => setDalle3KeyInput(e.target.value)}
+                  />
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-1 text-[11px] text-accent hover:underline"
+                  >
+                    获取 OpenAI API Key →
+                  </a>
+                </div>
+              )}
+              {filmSettings.image_provider === 'comfyui' && (
+                <div className="space-y-3 p-3 rounded-lg bg-paper border border-border">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide">ComfyUI 配置</h4>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const r = await fetch('/api/novels/comfyui/test');
+                          const d = await r.json();
+                          if (d.connected) {
+                            toast.success(`ComfyUI 已连接 — ${d.system?.python_version || 'OK'}`);
+                          } else {
+                            toast.error(d.reason || 'ComfyUI 不可用');
+                          }
+                        } catch {
+                          toast.error('ComfyUI 连接失败');
+                        }
+                      }}
+                      className="text-[10px] px-2 py-1 rounded border border-border text-ink-muted hover:text-accent hover:border-accent/30 transition-colors"
+                    >
+                      测试连接
+                    </button>
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-ink-muted">服务地址</label>
+                    <Input
+                      className="mt-1"
+                      placeholder="http://127.0.0.1:8188"
+                      value={filmSettings.comfyui_url}
+                      onChange={e => setFilmSettings({ ...filmSettings, comfyui_url: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-ink-muted">SD Checkpoint</label>
+                    <Input
+                      className="mt-1"
+                      placeholder="sd_xl_base_1.0.safetensors"
+                      value={filmSettings.comfyui_checkpoint}
+                      onChange={e => setFilmSettings({ ...filmSettings, comfyui_checkpoint: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-ink-muted">IP-Adapter 模型</label>
+                    <Input
+                      className="mt-1"
+                      placeholder="ip-adapter-faceid-plusv2_sd15.bin"
+                      value={filmSettings.comfyui_ipadapter_model}
+                      onChange={e => setFilmSettings({ ...filmSettings, comfyui_ipadapter_model: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[11px] text-ink-muted">IP-Adapter 权重</label>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        min="0" max="1" step="0.1"
+                        value={filmSettings.comfyui_lora_strength}
+                        onChange={e => setFilmSettings({ ...filmSettings, comfyui_lora_strength: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-ink-muted">采样步数</label>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        min="1" max="100" step="1"
+                        value={filmSettings.comfyui_steps}
+                        onChange={e => setFilmSettings({ ...filmSettings, comfyui_steps: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-ink-muted">CFG Scale</label>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        min="1" max="30" step="0.5"
+                        value={filmSettings.comfyui_cfg}
+                        onChange={e => setFilmSettings({ ...filmSettings, comfyui_cfg: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-ink-subtle">
+                    需要本地运行 ComfyUI 并安装 IP-Adapter 自定义节点。角色参考图可在视觉圣经页面生成。
+                  </p>
+                </div>
+              )}
+              <div className="pt-3 mt-1 border-t border-border">
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">配乐引擎</label>
+                <select
+                  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
+                  value={filmSettings.music_provider}
+                  onChange={e => setFilmSettings({ ...filmSettings, music_provider: e.target.value })}
+                >
+                  <option value="ambient">FFmpeg Ambient（本地合成氛围音）</option>
+                  <option value="suno">Suno AI（高质量 AI 配乐）</option>
+                </select>
+              </div>
+              {filmSettings.music_provider === 'suno' && (
+                <div>
+                  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+                    Suno API Key
+                    <span className="text-ink-subtle font-normal ml-1">
+                      {filmSettings.suno_api_key ? `当前: ${filmSettings.suno_api_key}` : '未配置'}
+                    </span>
+                  </label>
+                  <Input
+                    className="mt-1.5"
+                    type="password"
+                    placeholder="Suno API Key..."
+                    value={sunoKeyInput}
+                    onChange={e => setSunoKeyInput(e.target.value)}
+                  />
+                  <p className="text-[10px] text-ink-subtle mt-1">
+                    Suno API 为异步生成，配乐步骤可能需要等待 1-5 分钟
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="mt-4 flex gap-2">
+              <Button
+                size="sm"
+                className="bg-accent hover:bg-accent-hover"
+                onClick={handleFilmSave}
+                disabled={filmSaving}
+              >
+                {filmSaving ? '保存中...' : '保存影视配置'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Subtitle style settings */}
+        <Card className="border-border mt-4">
+          <CardContent className="p-5">
+            <h3 className="font-heading text-sm font-semibold text-ink mb-3">字幕样式</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">字号</label>
+                <input
+                  type="range"
+                  min="20" max="60" step="2"
+                  className="w-full mt-1.5"
+                  value={subtitleStyle.subtitle_font_size}
+                  onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_font_size: e.target.value })}
+                />
+                <span className="text-[10px] text-ink-subtle">{subtitleStyle.subtitle_font_size}px</span>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">位置</label>
+                <select
+                  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
+                  value={subtitleStyle.subtitle_position}
+                  onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_position: e.target.value })}
+                >
+                  <option value="bottom">底部</option>
+                  <option value="center">居中</option>
+                  <option value="top">顶部</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">文字颜色</label>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <input
+                    type="color"
+                    className="w-8 h-8 rounded border border-border cursor-pointer"
+                    value={subtitleStyle.subtitle_font_color}
+                    onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_font_color: e.target.value })}
+                  />
+                  <span className="text-xs text-ink-muted font-mono">{subtitleStyle.subtitle_font_color}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">背景颜色</label>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <input
+                    type="color"
+                    className="w-8 h-8 rounded border border-border cursor-pointer"
+                    value={subtitleStyle.subtitle_bg_color}
+                    onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_bg_color: e.target.value })}
+                  />
+                  <span className="text-xs text-ink-muted font-mono">{subtitleStyle.subtitle_bg_color}</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">背景透明度</label>
+                <input
+                  type="range"
+                  min="0" max="255" step="5"
+                  className="w-full mt-1.5"
+                  value={subtitleStyle.subtitle_bg_opacity}
+                  onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_bg_opacity: e.target.value })}
+                />
+                <span className="text-[10px] text-ink-subtle">{Math.round(Number(subtitleStyle.subtitle_bg_opacity) / 255 * 100)}%</span>
+              </div>
+            </div>
+            {/* Preview */}
+            <div className="mt-4 p-3 rounded-lg bg-zinc-900 text-center relative overflow-hidden" style={{ height: 80 }}>
+              <div
+                className="inline-block px-3 py-1 rounded text-sm font-medium"
+                style={{
+                  backgroundColor: subtitleStyle.subtitle_bg_color + Math.round(Number(subtitleStyle.subtitle_bg_opacity)).toString(16).padStart(2, '0'),
+                  color: subtitleStyle.subtitle_font_color,
+                  fontSize: Math.min(Number(subtitleStyle.subtitle_font_size), 20),
+                  position: 'absolute',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  ...(subtitleStyle.subtitle_position === 'top' ? { top: 8 } :
+                     subtitleStyle.subtitle_position === 'center' ? { top: '50%', transform: 'translate(-50%, -50%)' } :
+                     { bottom: 8 }),
+                }}
+              >
+                字幕预览效果
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Backup & Restore */}
