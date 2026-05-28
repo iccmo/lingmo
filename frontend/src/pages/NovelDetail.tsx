@@ -1084,8 +1084,8 @@ export function NovelDetail({ mode }: Props) {
             { key: 'bible', label: '📖 圣经' },
             { key: 'analysis', label: '分析' },
             { key: 'tools', label: '工具' },
-            { key: 'film', label: '🎬 影视' },
             { key: 'agent', label: '🤖 Agent' },
+            /* { key: 'film', label: '🎬 影视' } — 实验性功能，暂不开放 */
           ].map(tab => (
             <button
               key={tab.key}

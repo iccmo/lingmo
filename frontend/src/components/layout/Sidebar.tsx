@@ -6,7 +6,7 @@ import { api } from 'src/lib/api';
 import {
   LayoutDashboard, Settings, ScrollText, BarChart3,
   PenLine, BookOpen, Brain, Sparkles,
-  Headphones, Clapperboard, Palette, Video,
+  Headphones,
   X, AlertTriangle, type LucideIcon,
 } from 'lucide-react';
 
@@ -54,7 +54,6 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const [novels, setNovels] = useState<NovelSummary[]>([]);
-  const [selectedNovelId, setSelectedNovelId] = useState<string | null>(null);
 
   useEffect(() => {
     api.novels.list().then(novels => {
@@ -68,12 +67,6 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
       } catch {}
       setNovels(novels);
     }).catch(() => {});
-  }, [location.pathname]);
-
-  // Detect selected novel from URL
-  useEffect(() => {
-    const match = location.pathname.match(/^\/novels\/([^/]+)/);
-    setSelectedNovelId(match ? match[1] : null);
   }, [location.pathname]);
 
   const isActive = (path: string) => location.pathname === path;
@@ -173,25 +166,7 @@ export function Sidebar({ onNovelSelect, onClose }: Props) {
       <ModuleHeader icon={Headphones} label="听书" />
       <NavItem label="听书大厅" icon={Headphones} active={isActive('/listen')} onClick={() => goTo('/listen')} />
 
-      <Separator className="my-2 mx-4 w-auto" />
-
-      {/* ── Module: 短剧 ── */}
-      <ModuleHeader icon={Clapperboard} label="短剧" />
-      {selectedNovelId ? (
-        <>
-          <NavItem label="视觉圣经" icon={Palette} indent
-            active={location.search.includes('sub=visual')}
-            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=visual`)} />
-          <NavItem label="分镜脚本" icon={Clapperboard} indent
-            active={location.search.includes('sub=storyboard')}
-            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=storyboard`)} />
-          <NavItem label="制片中心" icon={Video} indent
-            active={location.search.includes('sub=produce')}
-            onClick={() => goTo(`/novels/${selectedNovelId}?tab=film&sub=produce`)} />
-        </>
-      ) : (
-        <p className="px-5 py-1 text-[10px] text-ink-subtle">选择小说后可用</p>
-      )}
+      {/* 短剧模块 — 实验性功能，暂不开放前端入口 */}
     </aside>
   );
 }
