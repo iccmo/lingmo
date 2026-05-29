@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ChapterMeta } from 'src/types';
+import { Search } from 'lucide-react';
 
 interface SearchResult {
   chapter: ChapterMeta;
@@ -71,7 +72,7 @@ export function ChapterSearch({ novelId, chapters, onNavigate }: Props) {
         onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <span className="text-ink-subtle text-sm">🔍</span>
+          <Search size={14} className="text-ink-subtle" />
           <input
             ref={inputRef}
             value={query}

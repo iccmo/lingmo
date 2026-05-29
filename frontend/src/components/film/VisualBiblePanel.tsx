@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
+import { Palette } from 'lucide-react';
 
 interface VisualCharacter {
   char_key: string;
@@ -120,7 +121,7 @@ export function VisualBiblePanel({ novelId }: Props) {
 
       {!loading && characters.length === 0 && (
         <div className="text-center py-10">
-          <div className="text-3xl mb-3">🎨</div>
+          <div className="text-3xl mb-3"><Palette size={12} className="inline" /></div>
           <p className="text-sm text-ink-muted">暂无视觉描述</p>
           <p className="text-xs text-ink-subtle mt-1">点击上方按钮为角色生成视觉形象</p>
         </div>

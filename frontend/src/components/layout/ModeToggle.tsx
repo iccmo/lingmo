@@ -1,4 +1,5 @@
 import type { AppMode } from 'src/types';
+import { Cpu, PenTool } from 'lucide-react';
 
 interface Props {
   mode: AppMode;
@@ -7,26 +8,28 @@ interface Props {
 
 export function ModeToggle({ mode, onChange }: Props) {
   return (
-    <div className="flex items-center bg-paper rounded-full p-0.5 gap-0.5 border border-border">
+    <div className="flex items-center bg-surface rounded-full p-0.5 gap-0.5 border border-border">
       <button
         onClick={() => onChange('auto')}
-        className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 min-h-[32px] ${
           mode === 'auto'
-            ? 'bg-accent text-white shadow-[0_2px_8px_rgba(61,79,122,0.25)]'
-            : 'text-ink-muted hover:text-ink hover:bg-ink/5 dark:hover:bg-white/5'
+            ? 'bg-accent text-white shadow-sm shadow-accent/25'
+            : 'text-ink-muted hover:text-ink hover:bg-surface-hover'
         }`}
       >
-        全自动
+        <Cpu size={13} />
+        <span className="hidden sm:inline">全自动</span>
       </button>
       <button
         onClick={() => onChange('creator')}
-        className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1.5 min-h-[32px] ${
           mode === 'creator'
-            ? 'bg-accent text-white shadow-[0_2px_8px_rgba(61,79,122,0.25)]'
-            : 'text-ink-muted hover:text-ink hover:bg-ink/5 dark:hover:bg-white/5'
+            ? 'bg-accent text-white shadow-sm shadow-accent/25'
+            : 'text-ink-muted hover:text-ink hover:bg-surface-hover'
         }`}
       >
-        创作者
+        <PenTool size={13} />
+        <span className="hidden sm:inline">创作者</span>
       </button>
     </div>
   );

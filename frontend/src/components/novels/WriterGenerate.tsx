@@ -1,3 +1,4 @@
+import { Sparkles } from 'lucide-react';
 interface GenStatus {
   status: string;
   message: string;
@@ -70,7 +71,7 @@ export function WriterGenerate({
                 onClick={onGenerate}
                 className="bg-accent text-white rounded-xl shadow-lg px-6 py-2 active:scale-95 transition-transform"
               >
-                ✨ 生成下一章
+                <Sparkles size={12} className="inline" /> 生成下一章
               </button>
               <button
                 onClick={() => setShowDirection(!showDirection)}

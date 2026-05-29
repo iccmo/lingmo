@@ -231,9 +231,9 @@ export function CharacterGraph({ characters, relations }: Props) {
                   y2={p2.y}
                   stroke={
                     isHovered
-                      ? '#4F46E5'
+                      ? '#92400E'
                       : isRelatedToHovered
-                        ? '#818CF8'
+                        ? '#B45309'
                         : 'var(--color-ink-subtle)'
                   }
                   strokeWidth={isHovered ? 2 : 1}

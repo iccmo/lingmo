@@ -4,6 +4,7 @@ import type { AppMode } from 'src/types';
 import { Sparkles, Headphones, PanelLeftClose, PanelLeft, Moon, Monitor, Sun } from 'lucide-react';
 import { FocusTimer } from 'src/components/writing/FocusTimer';
 import { ThemeSwitcher } from 'src/components/writing/ThemeSwitcher';
+import { LayoutSwitcher } from 'src/components/writing/LayoutSwitcher';
 
 interface Props {
   mode: AppMode;
@@ -58,6 +59,7 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
       <div className="flex items-center gap-2">
         <FocusTimer />
         <span className="text-border mx-0.5">|</span>
+        <LayoutSwitcher />
         <ThemeSwitcher compact />
         <span className="text-border mx-0.5">|</span>
         <button onClick={() => navigate('/listen')} className="text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"

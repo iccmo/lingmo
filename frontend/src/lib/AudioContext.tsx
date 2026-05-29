@@ -269,7 +269,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   // ── Browser tab title ──
   useEffect(() => {
     if (playing && !paused && currentRef.current) {
-      document.title = `🔊 ${currentRef.current.novelTitle} · 第${currentRef.current.chapterNum}章`;
+      document.title = `${currentRef.current.novelTitle} · 第${currentRef.current.chapterNum}章`;
     }
     return () => { document.title = '灵墨'; };
   }, [playing, paused, current]);
@@ -437,7 +437,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       // Show chapter summary as "previously on" for chapter 2+
       if (item.chapterNum > 1 && item.chapterTitle) {
         setTimeout(() => {
-          toast(`📖 ${item.chapterTitle}`, { duration: 2500, description: `第${item.chapterNum}章` });
+          toast(`${item.chapterTitle}`, { duration: 2500, description: `第${item.chapterNum}章` });
         }, 500);
       }
     };
@@ -499,7 +499,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
         if (newSpd < 2.0) {
           toast.info(`🏃 语速训练 Lv${newLevel}: ${newSpd}x`, { duration: 2000 });
         } else {
-          toast.success('🏆 语速训练完成! 已达 2.0x 上限');
+          toast.success('语速训练完成! 已达 2.0x 上限');
           setSpeedTrainState(false);
           setSpeedTrainLevel(0);
         }
@@ -643,7 +643,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     if (!prev) { toast.info('没有可返回的位置'); return; }
     lastSkipPos.current = null;
     playChapter(prev.item, prev.position);
-    toast.info('↩️ 已回到之前位置');
+    toast.info('已回到之前位置');
   }
 
   const playRandom = useCallback(() => {
@@ -789,16 +789,16 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       const novelCount = new Set(stats.novels || []).size;
 
       return [
-        { id: 'first', title: '初次聆听', desc: '听完第一章', icon: '🎧', unlocked: chapters >= 1, progress: Math.min(chapters, 1), target: 1 },
+        { id: 'first', title: '初次聆听', desc: '听完第一章', icon: '', unlocked: chapters >= 1, progress: Math.min(chapters, 1), target: 1 },
         { id: 'ch10', title: '渐入佳境', desc: '累计收听 10 章', icon: '📚', unlocked: chapters >= 10, progress: Math.min(chapters, 10), target: 10 },
         { id: 'ch50', title: '书虫', desc: '累计收听 50 章', icon: '🐛', unlocked: chapters >= 50, progress: Math.min(chapters, 50), target: 50 },
-        { id: 'ch100', title: '听书达人', desc: '累计收听 100 章', icon: '🏆', unlocked: chapters >= 100, progress: Math.min(chapters, 100), target: 100 },
-        { id: 'hours5', title: '五小时', desc: '累计收听 5 小时', icon: '⏱️', unlocked: hours >= 5, progress: Math.min(hours, 5), target: 5 },
+        { id: 'ch100', title: '听书达人', desc: '累计收听 100 章', icon: '', unlocked: chapters >= 100, progress: Math.min(chapters, 100), target: 100 },
+        { id: 'hours5', title: '五小时', desc: '累计收听 5 小时', icon: '', unlocked: hours >= 5, progress: Math.min(hours, 5), target: 5 },
         { id: 'hours20', title: '马拉松', desc: '累计收听 20 小时', icon: '🏃', unlocked: hours >= 20, progress: Math.min(hours, 20), target: 20 },
-        { id: 'streak3', title: '三日连播', desc: '连续 3 天收听', icon: '🔥', unlocked: days >= 3, progress: Math.min(days, 3), target: 3 },
-        { id: 'streak7', title: '周更听众', desc: '连续 7 天收听', icon: '📅', unlocked: days >= 7, progress: Math.min(days, 7), target: 7 },
-        { id: 'voices3', title: '声优探索者', desc: '使用过 3 种不同语音', icon: '🎭', unlocked: voiceCount >= 3, progress: Math.min(voiceCount, 3), target: 3 },
-        { id: 'novels3', title: '博览群书', desc: '听过 3 部不同小说', icon: '📖', unlocked: novelCount >= 3, progress: Math.min(novelCount, 3), target: 3 },
+        { id: 'streak3', title: '三日连播', desc: '连续 3 天收听', icon: '', unlocked: days >= 3, progress: Math.min(days, 3), target: 3 },
+        { id: 'streak7', title: '周更听众', desc: '连续 7 天收听', icon: '', unlocked: days >= 7, progress: Math.min(days, 7), target: 7 },
+        { id: 'voices3', title: '声优探索者', desc: '使用过 3 种不同语音', icon: '', unlocked: voiceCount >= 3, progress: Math.min(voiceCount, 3), target: 3 },
+        { id: 'novels3', title: '博览群书', desc: '听过 3 部不同小说', icon: '', unlocked: novelCount >= 3, progress: Math.min(novelCount, 3), target: 3 },
       ];
     } catch { return []; }
   }
@@ -865,7 +865,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   function toggleDramaticMode() {
     const next = !dramaticMode;
     setDramaticMode(next);
-    toast.info(next ? '🎭 角色扮演：单人多声线' : '普通朗读模式');
+    toast.info(next ? '角色扮演：单人多声线' : '普通朗读模式');
     // Restart current chapter with new mode
     if (currentRef.current && audioRef.current) {
       const pos = audioRef.current.currentTime;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Zap, Plus, LayoutDashboard, BookOpen, PenLine, ClipboardList, Globe, Headphones, Settings } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 export function QuickActions() {
@@ -13,15 +14,15 @@ export function QuickActions() {
   const novelId = novelMatch ? novelMatch[1] : null;
 
   const actions = [
-    { icon: '🏠', label: '工作台', onClick: () => navigate('/') },
+    { icon: 'LayoutDashboard', label: '工作台', onClick: () => navigate('/') },
     ...(novelId ? [
-      { icon: '📖', label: '小说详情', onClick: () => navigate(`/novels/${novelId}`) },
-      { icon: '✍️', label: '创作者模式', onClick: () => navigate(`/novels/${novelId}/edit`) },
-      { icon: '📋', label: '章节大纲', onClick: () => navigate(`/novels/${novelId}/outline`) },
-      { icon: '🌍', label: '世界观', onClick: () => navigate(`/novels/${novelId}/world`) },
+      { icon: 'BookOpen', label: '小说详情', onClick: () => navigate(`/novels/${novelId}`) },
+      { icon: 'PenLine', label: '创作者模式', onClick: () => navigate(`/novels/${novelId}/edit`) },
+      { icon: 'ClipboardList', label: '章节大纲', onClick: () => navigate(`/novels/${novelId}/outline`) },
+      { icon: 'Globe', label: '世界观', onClick: () => navigate(`/novels/${novelId}/world`) },
     ] : []),
-    { icon: '🎧', label: '听书', onClick: () => navigate('/listen') },
-    { icon: '⚙️', label: '设置', onClick: () => navigate('/settings') },
+    { icon: 'Headphones', label: '听书', onClick: () => navigate('/listen') },
+    { icon: 'Settings', label: '设置', onClick: () => navigate('/settings') },
   ];
 
   return (
@@ -33,7 +34,7 @@ export function QuickActions() {
               className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card border border-border shadow-lg
                 text-xs text-ink hover:text-accent hover:border-accent/30 transition-all whitespace-nowrap"
               style={{ animationDelay: `${i * 0.03}s` }}>
-              {a.icon} {a.label}
+              {(() => { const icons: Record<string, React.ElementType> = { LayoutDashboard, BookOpen, PenLine, ClipboardList, Globe, Headphones, Settings, Zap }; const I = icons[a.icon]; return I ? <I size={14} /> : a.icon; })()} {a.label}
             </button>
           ))}
         </div>
@@ -42,7 +43,7 @@ export function QuickActions() {
         className={`w-11 h-11 rounded-full shadow-lg flex items-center justify-center text-lg transition-all duration-200 ${
           open ? 'bg-ink text-white dark:text-black rotate-45' : 'bg-accent text-white hover:bg-accent-hover hover:scale-105'
         }`}>
-        {open ? '+' : '⚡'}
+        {open ? <Plus size={16} /> : <Zap size={16} />}
       </button>
     </div>
   );

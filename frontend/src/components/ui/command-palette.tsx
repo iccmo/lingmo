@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { Search, BookOpen, PenLine, LayoutDashboard, Settings, ScrollText, Headphones, Moon } from 'lucide-react';
 
 interface Command {
   id: string;
@@ -28,27 +29,27 @@ export function CommandPalette() {
   // Build commands
   const commands: Command[] = [
     // Navigation
-    { id: 'nav-dashboard', label: '工作台', icon: '◇', section: '导航', shortcut: 'G H',
+    { id: 'nav-dashboard', label: '工作台', icon: 'LayoutDashboard', section: '导航', shortcut: 'G H',
       action: () => navigate('/'), keywords: 'dashboard home' },
-    { id: 'nav-settings', label: '设置', icon: '⚙', section: '导航', shortcut: 'G S',
+    { id: 'nav-settings', label: '设置', icon: 'Settings', section: '导航', shortcut: 'G S',
       action: () => navigate('/settings') },
-    { id: 'nav-logs', label: '运行日志', icon: '☰', section: '导航',
+    { id: 'nav-logs', label: '运行日志', icon: 'ScrollText', section: '导航',
       action: () => navigate('/logs') },
-    { id: 'nav-listen', label: '听书', icon: '🎧', section: '导航', shortcut: 'G L',
+    { id: 'nav-listen', label: '听书', icon: 'Headphones', section: '导航', shortcut: 'G L',
       action: () => navigate('/listen'), keywords: 'audio tts listen' },
     // Quick open novels
     ...novels.slice(0, 8).map((n): Command => ({
       id: `novel-${n.id}`,
       label: n.title,
-      icon: '📖',
+      icon: 'BookOpen',
       section: '小说',
       action: () => navigate(`/novels/${n.id}`),
       keywords: n.genre,
     })),
     // Actions
-    { id: 'act-new-novel', label: '创建新小说', icon: '✍️', section: '操作',
+    { id: 'act-new-novel', label: '创建新小说', icon: 'PenLine', section: '操作',
       action: () => navigate('/'), keywords: 'create new' },
-    { id: 'act-toggle-dark', label: '切换暗色模式', icon: '🌙', section: '操作',
+    { id: 'act-toggle-dark', label: '切换暗色模式', icon: 'Moon', section: '操作',
       action: () => {
         const next = !document.documentElement.classList.contains('dark');
         document.documentElement.classList.toggle('dark', next);
@@ -127,7 +128,7 @@ export function CommandPalette() {
         onClick={e => e.stopPropagation()}>
         {/* Search input */}
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <span className="text-ink-subtle text-sm">🔍</span>
+          <Search size={14} className="text-ink-subtle" />
           <input
             ref={inputRef}
             value={query}
@@ -164,7 +165,7 @@ export function CommandPalette() {
                       className={`w-full flex items-center gap-3 px-4 py-2 text-left text-sm transition-colors ${
                         active ? 'bg-accent-soft text-accent' : 'text-ink hover:bg-paper'
                       }`}>
-                      <span className="text-base w-5 text-center shrink-0">{cmd.icon}</span>
+                      <span className="w-5 text-center shrink-0">{(() => { const icons: Record<string, React.ElementType> = { LayoutDashboard, Settings, ScrollText, Headphones, BookOpen, PenLine, Moon, Search }; const I = icons[cmd.icon]; return I ? <I size={14} /> : cmd.icon; })()}</span>
                       <span className="flex-1 truncate">{cmd.label}</span>
                       {cmd.shortcut && (
                         <kbd className="text-[10px] text-ink-subtle font-mono shrink-0">{cmd.shortcut}</kbd>
