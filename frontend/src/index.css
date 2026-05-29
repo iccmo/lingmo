@@ -2,60 +2,64 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ── 灵墨 Design System v2 — Indigo Dark ── */
+/* ── 灵墨 Design System v4 — Warm Brown ── */
 @theme {
   --font-heading: "Noto Serif SC", Georgia, serif;
   --font-editor: "Noto Serif SC", "KaiTi", "STKaiti", serif;
   --font-ui: Inter, "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 
-  /* Brand */
-  --color-accent: #6366F1;
-  --color-accent-hover: #818CF8;
-  --color-accent-soft: rgba(99, 102, 241, 0.12);
-  --color-secondary: #8B5CF6;
-  --color-secondary-soft: rgba(139, 92, 246, 0.12);
+  /* Brand — warm brown / bronze */
+  --color-accent: #D4A574;
+  --color-accent-hover: #E0B88A;
+  --color-accent-soft: rgba(212, 165, 116, 0.12);
+  --color-secondary: #8B7355;
+  --color-secondary-soft: rgba(139, 115, 85, 0.12);
 
-  /* Surface (dark default — overridden per theme below) */
-  --color-paper: #0F172A;
-  --color-surface: #1E293B;
-  --color-surface-hover: #334155;
-  --color-surface-raised: #1B2336;
+  /* Surface (dark default) */
+  --color-paper: #1E1B18;
+  --color-surface: #2A2520;
+  --color-surface-hover: #332E28;
+  --color-surface-raised: #3D3730;
+
+  /* Card */
+  --color-card: #2A2520;
 
   /* Text */
-  --color-ink: #F8FAFC;
-  --color-ink-muted: #94A3B8;
-  --color-ink-subtle: #64748B;
+  --color-ink: #F5F0E8;
+  --color-ink-muted: #C4B8A8;
+  --color-ink-subtle: #8A7E70;
 
   /* Semantic */
-  --color-success: #22C55E;
-  --color-success-soft: rgba(34, 197, 94, 0.12);
-  --color-warn: #F59E0B;
-  --color-warn-soft: rgba(245, 158, 11, 0.12);
-  --color-destructive: #EF4444;
-  --color-destructive-soft: rgba(239, 68, 68, 0.12);
-  --color-info: #3B82F6;
-  --color-info-soft: rgba(59, 130, 246, 0.12);
+  --color-success: #7C9A6B;
+  --color-success-soft: rgba(124, 154, 107, 0.12);
+  --color-warn: #D4A574;
+  --color-warn-soft: rgba(212, 165, 116, 0.12);
+  --color-destructive: #C47A6B;
+  --color-destructive-soft: rgba(196, 122, 107, 0.12);
+  --color-info: #7A8B9A;
+  --color-info-soft: rgba(122, 139, 154, 0.12);
 }
 
 /* ── Light Theme ── */
 :root {
-  --background: #FAFAFA; --foreground: #0F172A;
-  --card: #FFFFFF; --card-foreground: #0F172A;
-  --primary: #4F46E5; --primary-foreground: #FFFFFF;
-  --secondary: #EEF2FF; --secondary-foreground: #312E81;
-  --muted: #F1F5F9; --muted-foreground: #64748B;
-  --accent: #6366F1; --accent-foreground: #FFFFFF;
-  --border: #E2E8F0; --input: #E2E8F0; --ring: #4F46E5;
-  --color-paper: #FAFAFA;
-  --color-ink: #0F172A;
-  --color-ink-muted: #64748B;
-  --color-ink-subtle: #94A3B8;
-  --color-accent: #6366F1;
-  --color-accent-hover: #4F46E5;
-  --color-accent-soft: rgba(99, 102, 241, 0.1);
-  --color-success: #059669;
+  --background: #FFFBF5; --foreground: #1E1B18;
+  --card: #FFFFFF; --card-foreground: #1E1B18;
+  --primary: #8B7355; --primary-foreground: #FFFFFF;
+  --secondary: #F5F0E8; --secondary-foreground: #1E1B18;
+  --muted: #F5F0E8; --muted-foreground: #8A7E70;
+  --accent: #D4A574; --accent-foreground: #FFFFFF;
+  --border: #E7D9C8; --input: #E7D9C8; --ring: #D4A574;
+  --color-paper: #FFFBF5;
+  --color-card: #FFFFFF;
+  --color-ink: #1E1B18;
+  --color-ink-muted: #8A7E70;
+  --color-ink-subtle: #C4B8A8;
+  --color-accent: #D4A574;
+  --color-accent-hover: #8B7355;
+  --color-accent-soft: rgba(212, 165, 116, 0.1);
+  --color-success: #5A7A4B;
   --color-success-soft: #ECFDF5;
-  --color-warn: #D97706;
+  --color-warn: #B45309;
   --color-warn-soft: #FFFBEB;
   color-scheme: light;
 }
@@ -71,7 +75,7 @@
 @layer base {
   * { border-color: var(--border); }
   body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
-  ::selection { background: rgba(99, 102, 241, 0.25); color: var(--color-ink); }
+  ::selection { background: rgba(180, 83, 9, 0.25); color: var(--color-ink); }
   html { scroll-behavior: smooth; }
 
   /* Better focus rings */
@@ -79,6 +83,7 @@
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
     border-radius: 4px;
+    transition: outline-color 0.15s ease;
   }
   button:focus:not(:focus-visible),
   a:focus:not(:focus-visible),
@@ -127,36 +132,38 @@ main::-webkit-scrollbar-thumb:hover { background: var(--color-ink-muted); }
   contain-intrinsic-size: auto 200px;
 }
 
-.skeleton { background: linear-gradient(90deg, var(--border) 25%, var(--muted) 50%, var(--border) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+.skeleton { background: linear-gradient(90deg, var(--color-border) 25%, var(--color-surface-hover) 50%, var(--color-border) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 6px; }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes pulse-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.25); } 50% { box-shadow: 0 0 0 8px rgba(99,102,241,0.08); } }
+@keyframes pulse-glow { 0%,100% { box-shadow: 0 0 0 0 rgba(180,83,9,0.25); } 50% { box-shadow: 0 0 0 8px rgba(180,83,9,0.08); } }
 @keyframes heroBlob1 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(30px,-20px) scale(1.05); } 66% { transform: translate(-15px,15px) scale(0.95); } }
 @keyframes heroBlob2 { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(-25px,10px) scale(1.08); } 66% { transform: translate(20px,-10px) scale(0.92); } }
 @keyframes heroBlob3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(10px,-25px) scale(1.06); } }
 
 /* ── Dark Theme ── */
 html.dark {
-  --background: #0F172A; --foreground: #F8FAFC;
-  --card: #1E293B; --card-foreground: #F8FAFC;
-  --primary: #818CF8; --primary-foreground: #FFFFFF;
-  --secondary: #2D2A3E; --secondary-foreground: #C4B5FD;
-  --muted: #1E293B; --muted-foreground: #94A3B8;
-  --accent: #818CF8; --accent-foreground: #FFFFFF;
-  --border: rgba(255, 255, 255, 0.08); --input: rgba(255, 255, 255, 0.08); --ring: #818CF8;
-  --color-paper: #0F172A;
-  --color-surface: #1E293B;
-  --color-surface-hover: #334155;
-  --color-ink: #F8FAFC;
-  --color-ink-muted: #94A3B8;
-  --color-ink-subtle: #64748B;
-  --color-accent: #818CF8;
-  --color-accent-soft: rgba(129, 140, 248, 0.12);
-  --color-accent-hover: #6366F1;
-  --color-success: #34D399;
-  --color-success-soft: rgba(52, 211, 153, 0.12);
-  --color-warn: #FBBF24;
-  --color-warn-soft: rgba(251, 191, 36, 0.12);
+  --background: #1E1B18; --foreground: #F5F0E8;
+  --card: #2A2520; --card-foreground: #F5F0E8;
+  --radius: 12px;
+  --primary: #D4A574; --primary-foreground: #1E1B18;
+  --secondary: #3D3730; --secondary-foreground: #E8C49A;
+  --muted: #2A2520; --muted-foreground: #C4B8A8;
+  --accent: #D4A574; --accent-foreground: #1E1B18;
+  --border: rgba(245, 240, 232, 0.1); --input: rgba(245, 240, 232, 0.1); --ring: #D4A574;
+  --color-paper: #1E1B18;
+  --color-card: #2A2520;
+  --color-surface: #2A2520;
+  --color-surface-hover: #332E28;
+  --color-ink: #F5F0E8;
+  --color-ink-muted: #C4B8A8;
+  --color-ink-subtle: #8A7E70;
+  --color-accent: #D4A574;
+  --color-accent-soft: rgba(212, 165, 116, 0.12);
+  --color-accent-hover: #E0B88A;
+  --color-success: #7C9A6B;
+  --color-success-soft: rgba(124, 154, 107, 0.12);
+  --color-warn: #D4A574;
+  --color-warn-soft: rgba(212, 165, 116, 0.12);
 }
 
 /* Reading mode */
@@ -291,3 +298,91 @@ html.dark {
   font-weight: 500;
 }
 .skip-link:focus { top: 12px; }
+
+/* Card base */
+.card-base {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+.card-base:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.dark .card-base:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Improved interactive states */
+button:not(:disabled):hover {
+  filter: brightness(1.05);
+}
+.dark button:not(:disabled):hover {
+  filter: brightness(1.1);
+}
+
+/* Smooth scroll for navigation */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* Better text selection */
+::selection {
+  background: rgba(180, 83, 9, 0.2);
+  color: var(--color-ink);
+}
+.dark ::selection {
+  background: rgba(217, 119, 6, 0.3);
+}
+
+/* Improved link styles */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Better input focus states */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+
+/* Improved disabled states */
+[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Better scrollbar for dark mode */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+/* Focus mode */
+body.focus-mode .sidebar,
+body.focus-mode .header-nav {
+  display: none;
+}
+
+body.focus-mode main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+body.focus-mode {
+  overflow: hidden;
+}

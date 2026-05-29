@@ -3,9 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from 'src/lib/api';
 import type { NovelDetail } from 'src/types';
+import { PenLine, BookOpen } from 'lucide-react';
 import { WriterChapterList } from 'src/components/novels/WriterChapterList';
 import { WriterContext } from 'src/components/novels/WriterContext';
 import { WriterGenerate } from 'src/components/novels/WriterGenerate';
+import { WritingStatsBar } from 'src/components/writing/WritingStatsBar';
+import { useWritingStats } from 'src/hooks/useWritingStats';
 
 interface GenStatus {
   status: string;
@@ -18,6 +21,7 @@ interface GenStatus {
 export function WriterView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { stats, updateWords } = useWritingStats();
 
   const [novel, setNovel] = useState<NovelDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,10 +57,16 @@ export function WriterView() {
     setLoadingContent(true);
     setEditing(false);
     api.novels.chapter(id, activeChapter)
-      .then(data => setChapterContent(data.content || ''))
+      .then(data => {
+        const content = data.content || '';
+        setChapterContent(content);
+        // Update word count for stats
+        const wordCount = content.replace(/\s/g, '').length;
+        updateWords(wordCount);
+      })
       .catch(() => setChapterContent(''))
       .finally(() => setLoadingContent(false));
-  }, [id, activeChapter]);
+  }, [id, activeChapter, updateWords]);
 
   // SSE polling during generation
   useEffect(() => {
@@ -270,7 +280,7 @@ export function WriterView() {
                 className="absolute top-3 right-3 z-10 px-2 py-1 text-[10px] rounded border border-border
                   bg-card/80 backdrop-blur-sm text-ink-subtle hover:text-ink hover:border-accent transition-all"
               >
-                ✏️ 编辑
+                <PenLine size={13} className="mr-1" /> 编辑
               </button>
               {chapterContent ? (
                 <div className="reading-mode px-6 py-8 max-w-[680px] mx-auto">
@@ -290,7 +300,7 @@ export function WriterView() {
                 </div>
               ) : (
                 <div className="text-center py-20 text-ink-muted">
-                  <p className="text-2xl mb-2">📖</p>
+                  <BookOpen size={32} className="text-accent mb-2" />
                   <p className="text-sm">章节内容为空</p>
                   {activeChapter && (
                     <p className="text-xs text-ink-subtle mt-1">
@@ -341,6 +351,9 @@ export function WriterView() {
         showDirection={showDirection}
         setShowDirection={setShowDirection}
       />
+
+      {/* Writing stats floating bar */}
+      <WritingStatsBar stats={stats} />
     </div>
   );
 }

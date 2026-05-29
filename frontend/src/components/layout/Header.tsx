@@ -2,6 +2,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ModeToggle } from './ModeToggle';
 import type { AppMode } from 'src/types';
 import { Sparkles, Headphones, PanelLeftClose, PanelLeft, Moon, Monitor, Sun } from 'lucide-react';
+import { FocusTimer } from 'src/components/writing/FocusTimer';
+import { ThemeSwitcher } from 'src/components/writing/ThemeSwitcher';
 
 interface Props {
   mode: AppMode;
@@ -54,12 +56,16 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
         )}
       </div>
       <div className="flex items-center gap-2">
+        <FocusTimer />
+        <span className="text-border mx-0.5">|</span>
+        <ThemeSwitcher compact />
+        <span className="text-border mx-0.5">|</span>
         <button onClick={() => navigate('/listen')} className="text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
-          title="听书">
+          title="听书" aria-label="听书">
           <Headphones size={16} />
         </button>
         <button onClick={onSidebarToggle} className="text-ink-muted hover:text-ink transition-colors p-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
-          title={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
+          title={sidebarOpen ? '收起侧栏' : '展开侧栏'} aria-label={sidebarOpen ? '收起侧栏' : '展开侧栏'}>
           {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
         </button>
         <ModeToggle mode={mode} onChange={handleChange} />
