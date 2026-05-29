@@ -5,6 +5,10 @@ import { Sparkles, Headphones, PanelLeftClose, PanelLeft, Moon, Monitor, Sun } f
 import { FocusTimer } from 'src/components/writing/FocusTimer';
 import { ThemeSwitcher } from 'src/components/writing/ThemeSwitcher';
 import { LayoutSwitcher } from 'src/components/writing/LayoutSwitcher';
+import { PresetSwitcher } from 'src/components/writing/PresetSwitcher';
+import { TypewriterToggle } from 'src/components/writing/TypewriterToggle';
+import { PaperTextureToggle } from 'src/components/writing/PaperTextureToggle';
+import { CustomThemeEditor } from 'src/components/writing/CustomThemeEditor';
 
 interface Props {
   mode: AppMode;
@@ -59,8 +63,12 @@ export function Header({ mode, onModeChange, dark, onDarkToggle, sidebarOpen, on
       <div className="flex items-center gap-2">
         <FocusTimer />
         <span className="text-border mx-0.5">|</span>
+        <PresetSwitcher />
         <LayoutSwitcher />
         <ThemeSwitcher compact />
+        <TypewriterToggle />
+        <PaperTextureToggle />
+        <CustomThemeEditor />
         <span className="text-border mx-0.5">|</span>
         <button onClick={() => navigate('/listen')} className="text-accent hover:text-accent/80 transition-colors px-2 sm:px-1.5 min-w-[44px] min-h-[44px] flex items-center justify-center"
           title="听书" aria-label="听书">

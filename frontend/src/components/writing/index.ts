@@ -2,3 +2,8 @@ export { WritingStatsBar } from './WritingStatsBar';
 export { FocusTimer } from './FocusTimer';
 export { ThemeSwitcher } from './ThemeSwitcher';
 export { LayoutSwitcher } from './LayoutSwitcher';
+export { PresetSwitcher } from './PresetSwitcher';
+export { TypewriterToggle } from './TypewriterToggle';
+export { PaperTextureToggle } from './PaperTextureToggle';
+export { CustomThemeEditor } from './CustomThemeEditor';
+export { SplitEditor } from './SplitEditor';
