@@ -9,6 +9,8 @@ interface Props {
  novelId: string;
  chapterNum: number;
  currentContent: string;
+ prevChapterContent?: string;  // For auto-compare with previous chapter
+ outlineSummary?: string;       // For plan-vs-actual comparison
 }
 
 interface DiffLine {
@@ -92,17 +94,37 @@ export function ChapterDiff({ novelId, chapterNum, currentContent }: Props) {
  }
  }, [novelId, chapterNum]);
 
- const diffLines = useMemo<DiffLine[]>(() => {
- if (!showDiff || versionHistory.length === 0) return [];
- const oldContent = versionHistory[compareIdx]?.content || '';
- const oldLines = oldContent.split('\n');
- const newLines = currentContent.split('\n');
- return computeDiff(oldLines, newLines);
- }, [showDiff, compareIdx, versionHistory, currentContent]);
-
  const hasHistory = versionHistory.length > 0;
+ const hasPrevChapter = !!prevChapterContent;
+ const hasOutline = !!outlineSummary;
 
- if (!hasHistory) return null;
+ // Comparison mode: 'version' | 'prev' | 'outline'
+ type CompareMode = 'version' | 'prev' | 'outline';
+ const [compareMode, setCompareMode] = useState<CompareMode>('version');
+ const compareModes: { key: CompareMode; label: string; available: boolean }[] = [
+   { key: 'version', label: '版本历史', available: hasHistory },
+   { key: 'prev', label: '对比上一章', available: hasPrevChapter },
+   { key: 'outline', label: '大纲 vs 实际', available: hasOutline },
+ ];
+
+ // Compute diff based on mode
+ const diffLines = useMemo<DiffLine[]>(() => {
+   if (!showDiff) return [];
+   let oldContent = '';
+   if (compareMode === 'version') {
+     oldContent = versionHistory[compareIdx]?.content || '';
+   } else if (compareMode === 'prev') {
+     oldContent = prevChapterContent || '';
+   } else if (compareMode === 'outline') {
+     oldContent = outlineSummary || '';
+   }
+   if (!oldContent) return [];
+   const oldLines = oldContent.split('\n');
+   const newLines = currentContent.split('\n');
+   return computeDiff(oldLines, newLines);
+ }, [showDiff, compareMode, compareIdx, versionHistory, currentContent, prevChapterContent, outlineSummary]);
+
+ if (!hasHistory && !hasPrevChapter && !hasOutline) return null;
 
  const selectedVersion = versionHistory[compareIdx];
  const selectedDate = selectedVersion
@@ -124,7 +146,23 @@ export function ChapterDiff({ novelId, chapterNum, currentContent }: Props) {
  {showDiff ? '✕ 关闭对比' : '📜 版本对比'}
  </button>
 
- {showDiff && versionHistory.length > 1 && (
+ {/* Comparison mode selector */}
+ {showDiff && (
+   <div className="flex gap-1 ml-1">
+     {compareModes.filter(m => m.available).map(m => (
+       <button key={m.key}
+         onClick={() => setCompareMode(m.key)}
+         className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+           compareMode === m.key
+             ? 'bg-accent/10 text-accent border-accent/30'
+             : 'border-transparent text-ink-muted hover:text-ink hover:border-border'
+         }`}
+       >{m.label}</button>
+     ))}
+   </div>
+ )}
+
+ {showDiff && compareMode === 'version' && versionHistory.length > 1 && (
  <select
  value={compareIdx}
  onChange={(e) => setCompareIdx(Number(e.target.value))}

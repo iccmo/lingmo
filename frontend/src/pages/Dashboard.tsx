@@ -12,7 +12,7 @@ import { Card, CardContent } from 'src/components/ui/card';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import type { NovelSummary, SystemStatus } from 'src/types';
-import { BookOpen, Star, Download, BarChart3, Zap, Check, Cloud, PenLine } from 'lucide-react';
+import { BookOpen, Star, Download, BarChart3, Zap, Check, PenLine, Sparkles, Loader2 } from 'lucide-react';
 
 interface LastRead {
  novelId: string;
@@ -48,8 +48,8 @@ function WritingTrend() {
  <div className="mb-6">
  <div className="flex items-center justify-between mb-3">
  <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
- TrendingUp
- </h3>
+ 写作趋势（近7日）
+</h3>
  <span className="text-[10px] text-ink-subtle">{total.toLocaleString()} 字 / 近7日</span>
  </div>
  <div className="flex items-end gap-1.5 h-36 p-4 pt-7 pb-5 bg-card border border-border rounded-xl">
@@ -101,6 +101,7 @@ export function Dashboard() {
  const [showForm, setShowForm] = useState(false);
  const [loading, setLoading] = useState(true);
  const [genreFilter, setGenreFilter] = useState('');
+ const [starredFilter, setStarredFilter] = useState(false);
  const [sortBy, setSortBy] = useState<'words' | 'chapters' | 'latest'>('latest');
  const [generatingIds, setGeneratingIds] = useState<Set<string>>(new Set());
  const [showCompare, setShowCompare] = useState(false);
@@ -112,6 +113,10 @@ export function Dashboard() {
  const [importGenre, setImportGenre] = useState('玄幻');
  const [importFile, setImportFile] = useState<File | null>(null);
  const [backupStatus, setBackupStatus] = useState<{ configured: boolean; last_backup: string | null; last_backup_key: string | null; last_backup_size: number | null } | null>(null);
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiSuggestions, setAiSuggestions] = useState<{title:string;synopsis:string}[]>([]);
+  const [aiRetry, setAiRetry] = useState(0);
+  const [aiStyle, _setAiStyle] = useState<'orthodox'|'subversive'|'humorous'|'dark'|'hotblooded'>('orthodox');
 
  useEffect(() => {
  Promise.all([api.novels.list(), api.status(), fetch('/api/providers').then(r => r.json()), api.costs.summary().catch(() => null), fetch('/api/backup/status').then(r => r.json()).catch(() => null)])
@@ -175,9 +180,10 @@ export function Dashboard() {
  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
  e.preventDefault();
  const fd = new FormData(e.currentTarget);
- const id = (fd.get('id') as string).trim();
+ let id = (fd.get('id') as string).trim();
  const title = (fd.get('title') as string).trim();
- if (!id || !title) { toast.error('请填写 ID 和书名'); return; }
+ if (!title) { toast.error('请填写书名'); return; }
+          if (!id) { id = title.replace(/[^a-z0-9]/gi, '').toLowerCase().slice(0, 30) || Date.now().toString(36); }
  try {
  await api.novels.create({
  id, title,
@@ -342,12 +348,12 @@ export function Dashboard() {
  )}
 
  <div className="flex items-center gap-2 mb-3 flex-wrap">
- <select value={genreFilter} onChange={e => setGenreFilter(e.target.value)}
+ <select aria-label="筛选题材" value={genreFilter} onChange={e => setGenreFilter(e.target.value)}
  className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
  <option value="">全部题材</option>
  {['玄幻','仙侠','武侠','都市','官场','悬疑','灵异','科幻','末世','游戏','历史','系统流','无限流','奇幻','二次元','轻小说','种田','体育','军事','现代言情','古代言情','纯爱','同人'].map(g => <option key={g} value={g}>{g}</option>)}
  </select>
- <select value={sortBy} onChange={e => setSortBy(e.target.value as 'words'|'chapters'|'latest')}
+ <select aria-label="排序方式" value={sortBy} onChange={e => setSortBy(e.target.value as 'words'|'chapters'|'latest')}
  className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
  <option value="latest">最近更新</option>
  <option value="words">按字数</option>
@@ -367,53 +373,115 @@ export function Dashboard() {
  </div>
 
  {showForm && (
- <Card className="mb-6 border-border">
- <CardContent className="p-5">
- {/* Quick Templates */}
- <div className="flex gap-2 mb-4">
- {['玄幻','悬疑','都市','科幻','历史','官场'].map(g => (
- <button key={g} type="button" className="text-[11px] text-ink-muted hover:text-accent px-2 py-1 rounded border border-border hover:border-accent/30 transition-colors"
- onClick={() => {
- const f = document.querySelector('form') as HTMLFormElement;
- if(f) {
- (f.querySelector('input[name=id]') as HTMLInputElement).value = g.toLowerCase()+'-'+Date.now().toString(36);
- (f.querySelector('input[name=title]') as HTMLInputElement).value = '未命名·'+g;
- (f.querySelector('select') as HTMLSelectElement).value = g;
- }
- }}>{g}</button>
- ))}
- </div>
- <form onSubmit={handleCreate} className="space-y-4">
- <div className="flex gap-2">
- <div className="flex-1">
- <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">小说 ID</label>
- <Input name="id" placeholder="例如: immortal-path" className="mt-1.5" required />
- </div>
- <div className="w-32">
- <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">题材</label>
- <select name="genre" defaultValue="玄幻" className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2">
- {['玄幻','悬疑','都市','科幻','历史','官场','系统流','女频'].map(g=><option key={g}>{g}</option>)}
- </select>
- </div>
- </div>
- <div>
- <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">书名</label>
- <Input name="title" placeholder="例如: 修仙从炼丹开始" className="mt-1.5" required />
- </div>
- <div>
- <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">一句话简介</label>
- <Textarea name="synopsis" placeholder="故事一句话概要..." rows={2} className="mt-1.5" />
- </div>
- <div className="flex gap-2">
- <Button type="submit" size="sm" className="bg-accent hover:bg-accent-hover">✓ 创建</Button>
- <Button type="button" size="sm" variant="ghost" onClick={() => setShowForm(false)}>取消</Button>
- </div>
- </form>
- </CardContent>
- </Card>
- )}
+    <Card className="mb-6 border-border shadow-lg animate-[fadeSlideIn_0.2s_ease-out]">
+    <CardContent className="p-6">
+    <div className="flex items-center gap-2 mb-5">
+      <PenLine size={16} className="text-accent" />
+      <h3 className="text-sm font-semibold text-ink">创建新小说</h3>
+    </div>
 
- {/* Recently viewed */}
+    <div className="mb-4">
+      <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2 block">选择题材</label>
+      <div className="flex flex-wrap gap-2">
+      {['玄幻','都市','悬疑','科幻','仙侠','武侠','奇幻','历史','官场','末世','无限流','系统流','游戏','二次元','军事','女频','轻小说','灵异','种田','运动'].map(g => (
+        <button key={g} type="button"
+          className="text-xs px-3 py-1.5 rounded-lg border border-border hover:border-accent/50 hover:bg-accent-soft/30 transition-all"
+          onClick={() => { const sel = document.querySelector('select[name=genre]') as HTMLSelectElement; if (sel) sel.value = g; }}
+        >{['玄幻','都市','悬疑','科幻','仙侠'].includes(g) ? g+' 🔥' : g}</button>
+      ))}
+      </div>
+    </div>
+
+    <form onSubmit={handleCreate} className="space-y-4" onKeyDown={(e) => { if (e.key === 'Escape') setShowForm(false); }}>
+    <input type="hidden" name="id" />
+    <div className="flex gap-2">
+    <div className="flex-1">
+      <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">书名 <span className="text-destructive">*</span></label>
+      <Input name="title" placeholder="给你的小说起个名字…" className="mt-1.5" required
+        onChange={(e) => {
+          const idField = document.querySelector('input[name=id]') as HTMLInputElement;
+          if (idField) {
+            idField.value = String(e.target.value || '')
+              .replace(/[^\w一-鿿]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 30) || Date.now().toString(36);
+          }
+        }} />
+    </div>
+    <div className="w-28">
+      <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">题材</label>
+      <select name="genre" defaultValue="玄幻" className="w-full mt-1.5 rounded-lg border border-input bg-card text-ink text-sm px-2 py-2">
+        {['玄幻','都市','悬疑','科幻','仙侠','武侠','奇幻','历史','官场','末世','无限流','系统流','游戏','二次元','军事','女频','轻小说','灵异','种田','运动'].map(g=><option key={g}>{g}</option>)}
+      </select>
+    </div>
+    </div>
+
+    <div>
+      <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">一句话简介 <span className="text-ink-subtle font-normal">(选填)</span></label>
+      <Textarea name="synopsis"
+        placeholder="用一句话描述你的故事核心矛盾。例如：一个被家族抛弃的少年，偶然发现丹田里住着上古大能……"
+        rows={2} className="mt-1.5" />
+      <p className="text-[10px] text-ink-muted mt-1">💡 试试输入关键词引导 AI，比如「炼丹 逆袭」「赘婿 医术」「AI 觉醒」</p>
+    </div>
+
+    {/* AI Suggestions */}
+    {aiSuggestions.length > 0 && (
+      <div className="p-3 rounded-lg bg-accent-soft/10 border border-accent/20 animate-[fadeSlideIn_0.2s_ease-out]">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold text-accent">AI 推荐 ({aiSuggestions.length} 个)：</p>
+          {aiSuggestions.length > 3 && (
+            <button type="button" onClick={() => setAiSuggestions([])} className="text-[10px] text-ink-muted hover:text-destructive">清空</button>
+          )}
+        </div>
+        <div className="space-y-2">
+          {aiSuggestions.map((s, i) => (
+            <button key={i} type="button"
+              onClick={() => {
+                const tf = document.querySelector('input[name=title]') as HTMLInputElement;
+                const sf = document.querySelector('textarea[name=synopsis]') as HTMLTextAreaElement;
+                const idf = document.querySelector('input[name=id]') as HTMLInputElement;
+                if (tf) tf.value = s.title;
+                if (sf) sf.value = s.synopsis;
+                if (idf) idf.value = s.title.replace(/[^\w一-鿿]/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').toLowerCase().slice(0,30);
+                toast.success('已应用');
+              }}
+              className="w-full text-left p-2.5 rounded-lg border border-border bg-card hover:border-accent/50 hover:bg-accent-soft/10 transition-all group">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[10px] font-bold text-accent bg-accent-soft/30 px-1.5 py-0.5 rounded">#{i+1}</span>
+                <span className="text-sm font-bold text-ink group-hover:text-accent">{s.title}</span>
+              </div>
+              <p className="text-xs text-ink-muted leading-relaxed">{s.synopsis}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    )}
+
+    <div className="flex gap-2 pt-1">
+      <Button type="submit" size="sm" className="bg-accent hover:bg-accent-hover gap-1">
+        <Zap size={12} /> 创建并开始写作
+      </Button>
+      <Button type="button" size="sm" variant="outline"
+        onClick={() => {
+          const genre = (document.querySelector('select[name=genre]') as HTMLSelectElement)?.value || '玄幻';
+          const seed = (document.querySelector('textarea[name=synopsis]') as HTMLTextAreaElement)?.value?.trim() || '';
+          setAiGenerating(true);
+          fetch('/api/suggest-novel', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({genre,seed,style:aiStyle}) })
+            .then(r=>r.json()).then(d=>{ if(d.suggestions?.length){ setAiSuggestions(prev=>[...d.suggestions,...prev].slice(0,9)); toast.success('AI 已生成'); } else toast.error(d.error||'生成失败'); })
+            .catch(()=>toast.error('网络错误')).finally(()=>setAiGenerating(false));
+        }}
+        disabled={aiGenerating} className="gap-1">
+        {aiGenerating ? <><Loader2 size={12} className="animate-spin" /> 生成中</> : <><Sparkles size={12} /> AI 生成{aiRetry>0?` #${aiRetry+1}`:''}</>}
+      </Button>
+      <Button type="button" size="sm" variant="ghost"
+        onClick={() => { setShowForm(false); setAiSuggestions([]); setAiRetry(0); }}>
+        取消
+      </Button>
+    </div>
+    </form>
+    </CardContent>
+    </Card>
+    )}
+
+    {/* Recently viewed */}
  {(() => {
  try {
  const recent: string[] = JSON.parse(localStorage.getItem('recent-novels') || '[]');
@@ -444,9 +512,12 @@ export function Dashboard() {
  if (!hasStarred) return null;
  return (
  <button
- onClick={() => {
- }}
- className="text-[11px] px-2 py-1 rounded border border-warn/20 text-warn hover:bg-warn-soft transition-colors">
+ onClick={() => setStarredFilter(f => !f)}
+ className={`text-[11px] px-2 py-1 rounded border transition-colors ${
+   starredFilter
+     ? 'border-warn/40 bg-warn-soft text-warn'
+     : 'border-warn/20 text-warn hover:bg-warn-soft'
+ }`}>
  <Star size={13} className="text-warn" fill="currentColor" /> 已收藏 ({starred.filter(id => novels.some(n => n.id === id)).length})
  </button>
  );
@@ -475,7 +546,7 @@ export function Dashboard() {
 
  return (
  <button
- onClick={() => navigate(`/novels/${latest!.novelId}`)}
+ onClick={() => navigate(`/novels/${latest!.novelId}/write`)}
  className="w-full text-left mb-4 p-4 rounded-xl bg-gradient-to-r from-accent-soft/20 to-card border border-accent/10 hover:border-accent/30 transition-all group"
  >
  <div className="flex items-center justify-between">
@@ -502,14 +573,32 @@ export function Dashboard() {
  const restNovels = novels.filter(n => !starred.includes(n.id));
 
  if (favNovels.length === 0 && restNovels.length === 0) return (
- <div className="text-center py-24">
- <PenLine size={64} className="text-ink-subtle mb-6 opacity-40" />
+ <div className="text-center py-16 max-w-lg mx-auto">
+ <PenLine size={48} className="text-ink-subtle mb-6 mx-auto opacity-30" />
  <h3 className="font-heading text-2xl font-semibold text-ink mb-2">开始你的第一部 AI 小说</h3>
- <p className="text-sm text-ink-muted mb-8 max-w-md mx-auto">从一句话简介到完整小说，AI 负责写作、润色、质检，你只需要做决策</p>
- <div className="flex gap-3 justify-center">
- <button className="px-6 py-3 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors font-medium text-base" onClick={() => setShowForm(true)}>🚀 创建小说</button>
- <button className="px-6 py-3 rounded-lg border border-border text-ink-muted hover:text-ink transition-colors text-base" onClick={() => navigate('/settings')}>⚙ API Key</button>
+ <p className="text-sm text-ink-muted mb-10">从一句话简介到完整小说，AI 负责写作、润色、质检</p>
+
+ {/* Step-by-step guide */}
+ <div className="space-y-3 mb-10 text-left">
+   {[
+     { num: 1, title: '创建小说', desc: '写一句话简介 + 选一个题材，10 秒搞定', action: () => setShowForm(true), btn: '开始创建' },
+     { num: 2, title: '配置模型', desc: '在设置页填入 DeepSeek API Key 或启动 FreeLLM', action: () => navigate('/settings'), btn: '去设置' },
+     { num: 3, title: 'AI 自动写作', desc: '进入写作页面，点击「生成下一章」，AI 自动写完整本书', action: null, btn: '' },
+   ].map(step => (
+     <div key={step.num} className="flex items-start gap-3 p-3 rounded-lg bg-surface/50 border border-border/50">
+       <span className="shrink-0 w-6 h-6 rounded-full bg-accent/10 text-accent flex items-center justify-center text-xs font-bold">{step.num}</span>
+       <div className="flex-1 min-w-0">
+         <p className="text-sm font-medium text-ink">{step.title}</p>
+         <p className="text-xs text-ink-muted mt-0.5">{step.desc}</p>
+       </div>
+       {step.action && (
+         <button onClick={step.action} className="shrink-0 text-xs px-3 py-1 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors">{step.btn}</button>
+       )}
+     </div>
+   ))}
  </div>
+
+ <p className="text-[10px] text-ink-subtle">快捷键：Ctrl+Enter 生成 · Ctrl+S 保存</p>
  </div>
  );
 
@@ -539,7 +628,7 @@ export function Dashboard() {
  )}
 
  {/* All novels */}
- {restNovels.length > 0 && (
+ {restNovels.length > 0 && !starredFilter && (
  <div>
  {favNovels.length > 0 && <h3 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2 mt-4">全部小说</h3>}
  <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">

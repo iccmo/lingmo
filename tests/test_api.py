@@ -66,7 +66,7 @@ def test_save_chapter(client):
     assert client.put("/api/novels/api-ch/chapters/1", json={"content": "测试"}).status_code == 200
 
 def test_publish_no_chapters(client):
-    client.post("/api/novels", json={"id": "api-pub", "title": "发布"})
+    client.post("/api/novels", json={"id": "api-pub", "title": "发布", "total_chapters": 0})
     assert client.post("/api/novels/api-pub/publish").status_code == 400
 
 def test_generate_endpoint(client):

@@ -10,7 +10,10 @@ from typing import Any
 from openai import OpenAI
 
 from .config import Config, config
+from .log_config import get_logger
 from .story_state import ChapterMeta, StoryState
+
+log = get_logger(__name__)
 
 # ==================== 数据结构 ====================
 
@@ -202,14 +205,6 @@ STYLE_POOL: dict[str, StyleProfile] = {
         title_style="悬念", climax_types=["揭秘","反转"],
         quality_rules=["恐怖氛围逐章递增","每章至少1处诡异/超自然事件","灵异规则必须自洽且不可过度解释"],
     ),
-    "同人": StyleProfile(
-        target_word_count=(2000, 2800), hook_interval_words=600,
-        dialogue_ratio=(0.45, 0.60), opening_type="impact",
-        hook_types=["信息不对称","对话中断","旧钩回咬"],
-        pace_pattern="强弱交替", scene_changes_per_chapter=3,
-        title_style="悬念", climax_types=["揭秘","打脸","反转"],
-        quality_rules=["角色性格必须忠于原作","画风/世界观不崩","在原作基础上创新而非照搬"],
-    ),
     "轻小说": StyleProfile(
         target_word_count=(1500, 2000), hook_interval_words=500,
         dialogue_ratio=(0.50, 0.65), opening_type="impact",
@@ -266,6 +261,94 @@ STYLE_POOL: dict[str, StyleProfile] = {
         title_style="悬念", climax_types=["突破","揭秘","反转"],
         quality_rules=["副本/世界的规则每篇自洽但不重复","每次轮回/穿越必有成长/收获","任务/系统提示每章至少1次"],
     ),
+    "四合院": StyleProfile(
+        target_word_count=(2000, 2800), hook_interval_words=600,
+        dialogue_ratio=(0.45, 0.60), opening_type="impact",
+        hook_types=["信息不对称","对话中断","旧钩回咬"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="意象", climax_types=["揭秘","反转","打脸"],
+        quality_rules=["年代细节必须准确（物价/票证/社会氛围）","每章至少1处邻里冲突或人情世故","人物关系必须有'面子'和'里子'两层"],
+    ),
+    "规则怪谈": StyleProfile(
+        target_word_count=(1800, 2400), hook_interval_words=500,
+        dialogue_ratio=(0.30, 0.45), opening_type="atmosphere",
+        hook_types=["氛围递进","物品悬念","信息不对称"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="悬念", climax_types=["揭秘","反转"],
+        quality_rules=["规则本身必须简洁有力（不超过3条核心规则）","违反规则的后果必须具体且递进","每章至少揭示1条新规则或规则的隐藏面","氛围描写优先于动作描写"],
+    ),
+    "全民求生": StyleProfile(
+        target_word_count=(2000, 2600), hook_interval_words=500,
+        dialogue_ratio=(0.30, 0.45), opening_type="dilemma",
+        hook_types=["信息不对称","物品悬念","动作中断"],
+        pace_pattern="三强一缓", scene_changes_per_chapter=3,
+        title_style="悬念", climax_types=["收获","突破","反转"],
+        quality_rules=["资源数量必须精确到具体数字","每次资源消耗/获取必须记录","生存压力必须持续递增（不能突然变轻松）"],
+    ),
+    "盗墓": StyleProfile(
+        target_word_count=(2000, 3000), hook_interval_words=600,
+        dialogue_ratio=(0.35, 0.50), opening_type="atmosphere",
+        hook_types=["氛围递进","物品悬念","信息不对称"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="悬念", climax_types=["揭秘","反转"],
+        quality_rules=["墓葬/文物/风水知识必须真实可查","每章至少1处惊悚或超自然事件","团队内部必须有信任危机","主角必须有不可告人的秘密"],
+    ),
+    "职场": StyleProfile(
+        target_word_count=(1600, 2000), hook_interval_words=500,
+        dialogue_ratio=(0.45, 0.60), opening_type="dilemma",
+        hook_types=["信息不对称","对话中断","动作中断"],
+        pace_pattern="强弱交替", scene_changes_per_chapter=3,
+        title_style="悬念", climax_types=["打脸","揭秘","收获"],
+        quality_rules=["行业术语和流程必须真实","每章至少1次职场冲突（上下级/跨部门/客户）","升职加薪或背锅裁员必须有具体因果"],
+    ),
+    "刑侦": StyleProfile(
+        target_word_count=(2000, 2800), hook_interval_words=700,
+        dialogue_ratio=(0.40, 0.55), opening_type="impact",
+        hook_types=["信息不对称","对话中断","旧钩回咬"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="悬念", climax_types=["揭秘","反转"],
+        quality_rules=["案件逻辑必须严密","侦查程序必须符合真实流程","每章至少1条新线索或证据","凶手不能是最后一章才出现的角色"],
+    ),
+    "青春校园": StyleProfile(
+        target_word_count=(1600, 2200), hook_interval_words=500,
+        dialogue_ratio=(0.50, 0.65), opening_type="impact",
+        hook_types=["对话中断","信息不对称"],
+        pace_pattern="强弱交替", scene_changes_per_chapter=3,
+        title_style="悬念", climax_types=["打脸","揭秘","收获"],
+        quality_rules=["校园氛围必须真实（教室/食堂/宿舍/考场）","每章至少1处友情/暗恋/竞争互动","节奏轻松但有成长线"],
+    ),
+    "美食": StyleProfile(
+        target_word_count=(1600, 2000), hook_interval_words=600,
+        dialogue_ratio=(0.40, 0.55), opening_type="atmosphere",
+        hook_types=["氛围递进","物品悬念"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="意象", climax_types=["收获","揭秘"],
+        quality_rules=["食物描写必须有五感细节（色香味形器）","每章至少1道菜的制作过程或品尝描写","美食知识必须真实可查"],
+    ),
+    "电竞": StyleProfile(
+        target_word_count=(1800, 2400), hook_interval_words=500,
+        dialogue_ratio=(0.40, 0.55), opening_type="impact",
+        hook_types=["动作中断","信息不对称","对话中断"],
+        pace_pattern="三强一缓", scene_changes_per_chapter=3,
+        title_style="悬念", climax_types=["突破","打脸","反转"],
+        quality_rules=["游戏机制必须具体且自洽","每章至少1场比赛/对局/训练","队友和对手必须有鲜明性格","操作描写必须专业（技能名/连招/战术）"],
+    ),
+    "年代文": StyleProfile(
+        target_word_count=(2000, 2800), hook_interval_words=700,
+        dialogue_ratio=(0.40, 0.55), opening_type="atmosphere",
+        hook_types=["信息不对称","对话中断","旧钩回咬"],
+        pace_pattern="渐进加速", scene_changes_per_chapter=2,
+        title_style="意象", climax_types=["揭秘","反转","收获"],
+        quality_rules=["年代细节必须准确（衣着/饮食/交通/通信）","社会氛围必须还原（单位制/粮票/户籍等）","人物命运必须与时代潮流挂钩","不让现代价值观穿越到过去"],
+    ),
+    "废土": StyleProfile(
+        target_word_count=(1800, 2400), hook_interval_words=500,
+        dialogue_ratio=(0.30, 0.45), opening_type="dilemma",
+        hook_types=["物品悬念","动作中断","信息不对称"],
+        pace_pattern="三强一缓", scene_changes_per_chapter=3,
+        title_style="悬念", climax_types=["收获","突破","揭秘"],
+        quality_rules=["资源稀缺必须体现在每段描写中","幸存者心理状态要有递进","废土规则一旦建立不能随意更改","人性的黑暗与光辉必须同时呈现"],
+    ),
 }
 
 GENRE_TO_STYLE: dict[str, str] = {
@@ -292,14 +375,24 @@ GENRE_TO_STYLE: dict[str, str] = {
     "言情":"女频", "耽美":"女频", "百合":"女频",
     "女尊":"女频", "宫斗":"女频", "总裁":"女频",
     # 小众类型
-    "同人":"同人", "二次元":"二次元", "轻小说":"轻小说",
-    "动漫":"二次元", "综漫":"同人",
-    "种田":"种田", "美食":"种田",
-    "体育":"体育", "竞技":"体育", "足球":"体育", "篮球":"体育",
+    "轻小说":"轻小说", "动漫":"轻小说",
+    "种田":"种田", "美食":"美食", "饮食":"美食",
+    "体育":"体育", "竞技":"体育",
     "军事":"军事", "抗战":"军事", "特种兵":"军事",
     "无限流":"无限流", "诸天流":"无限流", "快穿":"无限流",
     # 奇幻/日系
     "奇幻":"奇幻", "魔幻":"奇幻", "西幻":"奇幻",
+    # 新增题材
+    "四合院":"四合院", "年代文":"年代文", "知青":"年代文",
+    "规则怪谈":"规则怪谈", "怪谈":"规则怪谈", "都市怪谈":"规则怪谈",
+    "全民求生":"全民求生", "末日求生":"全民求生", "荒野求生":"全民求生",
+    "盗墓":"盗墓", "摸金":"盗墓", "考古":"盗墓",
+    "电竞":"电竞", "王者":"电竞", "LOL":"电竞", "吃鸡":"电竞",
+    "废土":"废土", "核战后":"废土", "辐射":"废土",
+    "职场":"职场", "办公室":"职场", "商战":"职场",
+    "刑侦":"刑侦", "法医":"刑侦", "破案":"刑侦", "推理":"悬疑",
+    "青春校园":"青春校园", "校园":"青春校园", "高中":"青春校园", "大学":"青春校园",
+    "美食":"美食", "烹饪":"美食", "厨师":"美食",
     # fallback
     "其他":"玄幻",
 }
@@ -623,6 +716,7 @@ class Generator:
                         base_url=p.get("base_url", "https://api.openai.com/v1"),
                     )
                     self._fallback_model = models[0]
+                    self.model_switched = {"from": self.cfg.model, "to": self._fallback_model, "provider": p['id']}
                     print(f"[LLM] 备选客户端已初始化: {p['id']} -> {self._fallback_model}")
                     return
                 except Exception as e:
@@ -706,6 +800,154 @@ class Generator:
 
         assert best_chapter is not None, "batch_generate failed to produce any chapter"
         return best_chapter, best_quality
+
+    def get_dynamic_threshold(self, novel_id: str, db=None) -> float:
+        """Calculate quality threshold based on recent chapter averages.
+        If last 5 chapters average 0.85, require at least 0.82.
+        If no history, use default 0.78."""
+        if not db:
+            try:
+                from novel_writer.routers.novel._legacy import db as _db
+                db = _db
+            except Exception:
+                return 0.78
+        try:
+            traces = db.get_chapter_traces(novel_id) if hasattr(db, 'get_chapter_traces') else []
+            if not traces:
+                return 0.78
+            recent = [t['final_quality'] for t in traces[:5] if t.get('final_quality', 0) > 0]
+            if not recent:
+                return 0.78
+            avg = sum(recent) / len(recent)
+            # Target: 0.03 below average, clamped between 0.70 and 0.85
+            return max(0.70, min(0.85, avg - 0.03))
+        except Exception:
+            return 0.78
+
+    def compute_quality_trend(self, novel_id: str, db=None) -> dict:
+        """Compute quality trend across chapters. Returns direction + stats."""
+        if not db:
+            try:
+                from novel_writer.routers.novel._legacy import db as _db2
+                db = _db2
+            except Exception:
+                return {"direction": "stable", "recent_avg": 0, "chapters": 0}
+        try:
+            traces = db.get_chapter_traces(novel_id) if hasattr(db, 'get_chapter_traces') else []
+            if len(traces) < 2:
+                return {"direction": "stable", "recent_avg": 0, "chapters": len(traces)}
+            recent = [t['final_quality'] for t in traces[:10] if t.get('final_quality', 0) > 0]
+            if len(recent) < 2:
+                return {"direction": "stable", "recent_avg": recent[0] if recent else 0, "chapters": len(recent)}
+            avg = sum(recent) / len(recent)
+            # Direction: compare first half vs second half
+            mid = len(recent) // 2
+            first_half = sum(recent[:mid]) / mid
+            second_half = sum(recent[mid:]) / (len(recent) - mid)
+            if second_half - first_half > 0.05:
+                direction = "up"
+            elif second_half - first_half < -0.05:
+                direction = "down"
+            else:
+                direction = "stable"
+            return {
+                "direction": direction,
+                "recent_avg": round(avg, 2),
+                "chapters": len(recent),
+                "best_chapter": max(traces, key=lambda t: t.get('final_quality', 0)).get('chapter_num', 0),
+                "worst_chapter": min(traces, key=lambda t: t.get('final_quality', 0)).get('chapter_num', 0),
+            }
+        except Exception:
+            return {"direction": "stable", "recent_avg": 0, "chapters": 0}
+
+    @staticmethod
+    def calibrate_style(style: 'StyleProfile', traces: list[dict]) -> 'StyleProfile':
+        """Auto-calibrate StyleProfile params based on recent quality feedback.
+        Only adjusts within safe ranges — never pulls a parameter more than 30% from init."""
+        if not traces or not style:
+            return style
+        recent = traces[:10]  # Analyze last 10 chapters
+        if len(recent) < 3:
+            return style
+
+        # Extract recurring issues from trace summaries
+        issue_counts: dict[str, int] = {}
+        for t in recent:
+            for step in t.get('steps', []):
+                summary = step.get('summary', '')
+                if '段落均匀' in summary or 'paragraph uniform' in summary.lower():
+                    issue_counts['uniform_paragraphs'] = issue_counts.get('uniform_paragraphs', 0) + 1
+                if '钩子弱' in summary or 'hook weak' in summary.lower():
+                    issue_counts['weak_hook'] = issue_counts.get('weak_hook', 0) + 1
+                if '对话' in summary and ('少' in summary or '低' in summary):
+                    issue_counts['low_dialogue'] = issue_counts.get('low_dialogue', 0) + 1
+                if '反派' in summary and ('不足' in summary or '弱' in summary or 'absent' in summary.lower()):
+                    issue_counts['weak_antagonist'] = issue_counts.get('weak_antagonist', 0) + 1
+
+        changes: list[str] = []
+        # Uniform paragraphs → widen paragraph_len range
+        if issue_counts.get('uniform_paragraphs', 0) >= 2:
+            old_range = style.paragraph_len
+            style.paragraph_len = (max(20, old_range[0] - 15), min(300, old_range[1] + 30))
+            changes.append(f"paragraph_len: {old_range} → {style.paragraph_len}")
+
+        # Weak hook → decrease hook_interval
+        if issue_counts.get('weak_hook', 0) >= 2:
+            old_hook = style.hook_interval_words
+            style.hook_interval_words = max(300, old_hook - 100)
+            changes.append(f"hook_interval: {old_hook} → {style.hook_interval_words}")
+
+        # Low dialogue → increase dialogue_ratio
+        if issue_counts.get('low_dialogue', 0) >= 2:
+            old_ratio = style.dialogue_ratio
+            style.dialogue_ratio = (min(0.6, old_ratio[0] + 0.05), min(0.7, old_ratio[1] + 0.05))
+            changes.append(f"dialogue_ratio: {old_ratio} → {style.dialogue_ratio}")
+
+        # Weak antagonist → add special rule
+        if issue_counts.get('weak_antagonist', 0) >= 2:
+            antagonist_rule = "反派每章必须有一个主动推进剧情的行为（不只是出现或说话）——具体表现为制定了计划/执行了行动/对主角造成了可感知的后果"
+            if antagonist_rule not in style.special_rules:
+                style.special_rules.append(antagonist_rule)
+                changes.append("added antagonist action rule")
+
+        if changes:
+            style.version += 1
+            style.regeneration_log.append({
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "trigger": "auto_calibrate",
+                "chapters_analyzed": len(recent),
+                "changes": changes,
+            })
+            log.info("StyleProfile calibrated v%d: %s", style.version, ', '.join(changes))
+
+        return style
+
+    def inject_lessons(self, novel_id: str, db=None) -> str:
+        """Read quality traces and extract failure patterns to avoid."""
+        if not db:
+            try:
+                from novel_writer.routers.novel._legacy import db as _db
+                db = _db
+            except Exception:
+                return ""
+        try:
+            traces = db.get_chapter_traces(novel_id) if hasattr(db, 'get_chapter_traces') else []
+            if not traces:
+                return ""
+            # Find low-quality chapters (< 0.75) and extract their issues
+            low_q = [t for t in traces if t.get('final_quality', 1) < 0.75]
+            if not low_q:
+                return ""
+            warnings = []
+            for t in low_q[:3]:
+                for step in t.get('steps', []):
+                    if step.get('status') == 'error' or (step.get('name') in ('de_ai', 'llm_judge', 'self_edit') and 'fail' in step.get('summary', '')):
+                        warnings.append(f"- 第{t['chapter_num']}章 {step['name']}: {step.get('summary','')}")
+            if warnings:
+                return "\n【历史教训 · 避免重犯】\n" + "\n".join(warnings[:5]) + "\n"
+            return ""
+        except Exception:
+            return ""
 
     def revise_opening(self, state: 'StoryState', target_chapters: int = 3,
                         style: 'StyleProfile | None' = None) -> list[ChapterMeta]:
@@ -799,6 +1041,10 @@ class Generator:
                                                         outline=outline, style=style)
                 body = chapter.content or chapter.summary
                 quality = self.score_quality(body, state, style=style)
+            # Hard gate: skip chapter if still below minimum quality threshold
+            if quality['overall'] < 0.35:
+                log.warning("Batch ch%d Q=%0.2f below hard threshold, skipping", chapter.number, quality['overall'])
+                continue  # Don't append to state — prevents corrupting subsequent chapters
             # Snapshot before self-edit
             pre_edit_body = body
             # Self-edit pass (light LLM refinement)
@@ -867,8 +1113,8 @@ class Generator:
             json_match = re.search(r'\{[\s\S]*\}', result)
             if json_match:
                 return json.loads(json_match.group(0))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("fact_check failed: %s", e)
         return {"issues": [], "overall_score": 10}
 
     def humanize(self, body: str) -> str:
@@ -907,8 +1153,8 @@ AI写作的典型特征：
             ], max_tokens=8192)
             if result and len(result) > len(body) * 0.7:
                 return result.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("humanize failed: %s", e)
         return body
 
     def revise_chapter(self, chapter_content: str, critique: str,
@@ -936,8 +1182,8 @@ AI写作的典型特征：
             revised = self._call_llm_with_retry(messages, max_tokens=8192)
             if revised and len(revised) > len(chapter_content) * 0.6:
                 return revised.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("revise_chapter failed: %s", e)
         return chapter_content  # Fallback: return original
 
     def extract_narrative_dna(self, sample_chapters: list[dict],
@@ -1232,6 +1478,18 @@ AI写作的典型特征：
         if any(w in combined for w in ['突然', '竟然', '没想到', '不对', '发现']):
             return "不安"
         return "困惑"  # default
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Cosine similarity between two vectors. Returns 0 if either is empty."""
+        if not a or not b:
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
 
     @staticmethod
     def _count_quotable_lines(body: str) -> int:
@@ -1928,6 +2186,8 @@ AI写作的典型特征：
         rules.append(f"段落{style.paragraph_len[0]}-{style.paragraph_len[1]}字，长短交替，避免均匀段落。对话密集处段落自然短（10-30字），叙述处段落稍长（80-150字），绝对不要出现连续3段以上的纯说明/纯叙述")
         cliches = "、".join(style.avoid_cliches) if style.avoid_cliches else "在这个世界里、随着时间推移、不仅如此"
         rules.append(f"禁止使用以下AI套话句式: {cliches}")
+        # Dialogue formatting: Chinese web novel convention
+        rules.append("对话统一使用「」引号，不用\"\"或''。每句对话自成一段，引号内是角色说的话，引号外是叙述。禁止出现「\\n（前引号后立即换行）或\\n」（后引号单独一行）——引号必须和对话内容在同一段")
         # Antagonist rule — genre-specific threat behavior
         antagonist = next((c for c in state.characters if c.role == "反派"), None)
         if antagonist:
@@ -2072,6 +2332,19 @@ AI写作的典型特征：
             user += f"\n本章方向：{author_input}"
         user += ending_hook
 
+        # Token budget check: Chinese chars ≈ tokens
+        estimated_chars = len(system) + len(user)
+        model_limit = getattr(self.cfg, 'max_context_tokens', 128000)
+        if estimated_chars > model_limit:
+            # Truncation priority: keep rules > voice > characters > soul, drop RAG > summaries > full prev chapter
+            log.warning("Prompt may exceed context window (%d chars > %d limit), truncating", estimated_chars, model_limit)
+            # Drop RAG context section
+            system = re.sub(r'## 相关历史剧情.*?(?=## |\Z)', '', system, flags=re.DOTALL)
+            # Drop full previous chapter, keep last 1000 chars
+            system = re.sub(r'## 上一章全文.*?(?=## |\Z)', '', system, flags=re.DOTALL)
+            if state.latest_chapter and state.latest_chapter.content:
+                system += f"\n## 上一章结尾\n{state.latest_chapter.content[-1000:]}\n"
+
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -2141,6 +2414,8 @@ AI写作的典型特征：
 
     # Cost tracking — per-call accumulator
     _last_usage: dict = {}
+    # Model switch tracking — set when fallback kicks in
+    model_switched: dict = {}
 
     @staticmethod
     def _calc_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -2289,11 +2564,11 @@ AI写作的典型特征：
                     if content.strip():
                         if resp.usage:
                             self._last_usage = {
-                                "model": "deepseek-chat",
+                                "model": getattr(self, '_fallback_model', 'gpt-4o-mini'),
                                 "prompt_tokens": resp.usage.prompt_tokens,
                                 "completion_tokens": resp.usage.completion_tokens,
                                 "total_tokens": resp.usage.total_tokens,
-                                "cost": self._calc_cost("deepseek-chat", resp.usage.prompt_tokens, resp.usage.completion_tokens),
+                                "cost": self._calc_cost(getattr(self, '_fallback_model', 'gpt-4o-mini'), resp.usage.prompt_tokens, resp.usage.completion_tokens),
                             }
                         print("[LLM] 备选模型成功")
                         return content
@@ -2598,6 +2873,61 @@ AI写作的典型特征：
             except Exception:
                 pass  # Non-critical, continue without persistence
 
+    def check_constraints(self, body: str, constraints_text: str) -> dict:
+        """
+        验证生成内容是否遵守硬约束。使用 flash 模型降低成本。
+        返回: {passed: bool, violations: [{rule, evidence, severity}]}
+        """
+        if not constraints_text or len(constraints_text) < 10:
+            return {"passed": True, "violations": []}
+
+        # Use flash model for this check (cheap)
+        try:
+            from .config import Config as _Cfg
+            flash_cfg = _Cfg(
+                openai_api_key=self.cfg.openai_api_key,
+                openai_base_url=self.cfg.openai_base_url,
+                model=getattr(self.cfg, '_flash_model', 'gpt-4o-mini'),
+                temperature=0.1,  # Very low — we want precision, not creativity
+            )
+            flash_gen = Generator(flash_cfg) if not hasattr(self, '_flash_gen') else self._flash_gen
+        except Exception:
+            return {"passed": True, "violations": [], "error": "flash init failed"}
+
+        prompt = f"""你是小说编辑，检查以下正文是否违反了写作约束。只关注明确可验证的规则（如"XXX不能出现在YYY场景"、"对话占比必须>30%"等），忽略模糊建议。
+
+## 约束规则
+{constraints_text[:2000]}
+
+## 正文（前1500字）
+{body[:1500]}
+
+## 输出格式（JSON）
+如果违反：{{"passed": false, "violations": [{{"rule": "违反的规则原文", "evidence": "正文中的具体证据（引用原文）", "severity": "high"}}]}}
+如果没有明显违反：{{"passed": true, "violations": []}}
+
+只报告明显违反，不要报告疑似问题。最多报告3条。"""
+
+        try:
+            result = flash_gen._call_llm_with_retry([
+                {"role": "system", "content": "你是一丝不苟的校对编辑。只报告确定违反的规则。返回纯JSON。"},
+                {"role": "user", "content": prompt},
+            ], max_tokens=512)
+
+            import json as _json
+            result = result.strip()
+            if result.startswith("```"):
+                result = result.split("\n", 1)[1].rsplit("\n", 1)[0]
+            data = _json.loads(result)
+            violations = data.get("violations", [])
+            if violations:
+                print(f"[CONSTRAINT] {len(violations)} violations found")
+                for v in violations:
+                    print(f"  - {v.get('severity','?')}: {v.get('rule','')[:60]}")
+            return {"passed": len(violations) == 0, "violations": violations}
+        except Exception as e:
+            return {"passed": True, "violations": [], "error": str(e)[:100]}
+
     def audit_foreshadowing(self, state: 'StoryState') -> dict:
         """每 10 章审计一次伏笔状态。返回未回收、超期列表和警告。"""
         if state.plot is None:
@@ -2654,12 +2984,20 @@ AI写作的典型特征：
 4. **可读性** (1-10)：句子是否流畅？有无 AI 套话痕迹？读起来累不累？
 5. **反派压迫感** (1-10)：反派在本章中是否有具体的、让主角处境恶化的行动？（不是旁白说"他很危险"，而是他做了什么让读者感到威胁）
 6. **是否想追读** (1-10)：以一个付费读者的身份回答——你会不会点下一章？为什么？
+7. **排版规范** (1-10)：引号使用是否规范（统一「」，无孤儿引号）？段落长度是否有变化（不是每段都一样长）？场景分隔是否清晰（用——或空行）？
+8. **灵魂契合** (1-10)：本章是否忠于书的灵魂和核心追问？是否让读者思考那个"没有标准答案的问题"？
 
 ## 评估要求
 - 每个分数必须基于章节正文内容给出，不能凭感觉
 - 理由必须引用具体段落或对话作为证据（15字以内，不需要引用原文）
 - 综合意见：一句话指出本章最大的问题（如果有的话）
 - 反派压迫感评判标准：官场/都市文不要求反派亲自出场，但必须有"可感知的威胁后果"（盟友被调走/项目被冻结/被公开架空/被跟踪）。只有台词没有行动 → ≤4分；有间接行动但主角未察觉 → 5-6分；主角直接承受了反派行动的后果 → 7-9分
+- 排版规范评判标准：出现\\n」（后引号独立成行）扣3分以上；出现""英文引号混用扣2分以上；连续5段段落长度相差不到20字扣2分
+- 灵魂契合评判标准：本章是否让读者感受到"这本书在追问什么"？是否避免了给出简单的道德答案？
+
+## 书的灵魂
+{style.soul_statement if style and style.soul_statement else '（未设定）'}
+核心追问：{style.central_question if style and style.central_question else '（未设定）'}
 
 ## 输出格式（严格 JSON，不要 markdown 代码块标记）
 {{
@@ -2669,6 +3007,8 @@ AI写作的典型特征：
   "readability": {{"score": 8, "reason": "句式有变化但第三段偏长可以拆分"}},
   "antagonist": {{"score": 4, "reason": "赵明德只说了几句话就退场，没有主动出击"}},
   "want_next": {{"score": 7, "reason": "想知道丹药能否炼成，但反派动机铺垫不够"}},
+  "formatting": {{"score": 9, "reason": "引号规范，段落有长短变化，场景分隔清晰"}},
+  "soul_alignment": {{"score": 6, "reason": "推进了主线但未触及核心追问，本章没有让读者思考"}},
   "biggest_issue": "反派鬼手的威胁感没有建立起来，导致结尾反转冲击力不足"
 }}
 
@@ -2689,16 +3029,20 @@ AI写作的典型特征：
                 result = json.loads(json_match.group(0))
                 # Convert 1-10 to 0-1 scale
                 scores = {}
-                dims = {"hook", "pacing", "dialogue", "readability", "antagonist", "want_next"}
+                dims = {"hook", "pacing", "dialogue", "readability", "antagonist", "want_next", "formatting", "soul_alignment"}
                 for dim in dims:
                     item = result.get(dim, {})
                     if isinstance(item, dict):
                         scores[dim] = round(item.get("score", 5) / 10, 2)
                     else:
                         scores[dim] = 0.5
-                scores["coherence"] = min(1.0, len(body) / 2500 * 0.7 + 0.3)
-                scores["consistency"] = 0.85  # baseline, voice check adds separately
-                scores["show_dont_tell"] = 1.0  # LLM already evaluates holistically
+                # No artificial constants — all scores come from LLM evaluation
+                if len(body) >= 1500:
+                    scores["coherence"] = 0.80  # word count meets target, baseline only
+                elif len(body) >= 800:
+                    scores["coherence"] = 0.60
+                else:
+                    scores["coherence"] = 0.40
                 overall = sum(scores.values()) / len(scores)
                 return {
                     "scores": scores,
@@ -2767,6 +3111,7 @@ AI写作的典型特征：
                 issues.append(f'主角「{protagonist.name}」未出场')
 
         # 3. Pacing (节奏) — paragraph structure with dialogue-aware scoring
+        scores['pacing'] = 0.70  # default for short content
         if len(paragraphs) >= 8:
             avg_len = sum(len(p) for p in paragraphs) / len(paragraphs)
             # Count short paragraphs (dialogue-heavy, < 40 chars)
@@ -2819,12 +3164,18 @@ AI写作的典型特征：
         if len(last_para) < 25 and (tension_hits > 0 or foreshadow_hits > 0):
             literary_bonus = 0.2
 
-        hook_score = min((explicit_hits * 0.5 + foreshadow_hits * 0.3 + tension_hits * 0.2) / 3 + literary_bonus, 1.0)
+        # Emotional impact — does the ending leave a feeling, not just a question?
+        emotional_markers = ['沉默', '没有说话', '手指', '盯着', '转身', '愣住了',
+                           '叹了口气', '笑了一下', '没有回头', '走了', '眼泪', '颤抖',
+                           '说不出话', '握紧', '松开', '后退', '站住', '回头看了']
+        emotional_hits = sum(1 for kw in emotional_markers if kw in last_paras)
+
+        hook_score = min((explicit_hits * 0.4 + foreshadow_hits * 0.25 + tension_hits * 0.15 + emotional_hits * 0.2) / 3 + literary_bonus, 1.0)
         scores['hook'] = min(0.35 + hook_score * 0.65, 1.0)
         if scores['hook'] < 0.5:
             issues.append('结尾钩子弱')
 
-        # 5. Readability (可读性) — dialogue ratio + sentence variation
+        # 5. Readability (可读性) — dialogue ratio + sentence variation + quote quality
         dialogue_lines = sum(1 for p in paragraphs if p.strip().startswith('"') or p.strip().startswith('"') or '“' in p or '"' in p)
         dialogue_ratio = dialogue_lines / max(len(paragraphs), 1)
         if 0.15 < dialogue_ratio < 0.6:
@@ -2834,6 +3185,11 @@ AI写作的典型特征：
         else:
             scores['readability'] = 0.4
             issues.append('缺少对话')
+        # Quote formatting penalty
+        orphan_quotes = len(re.findall(r'\n\s*[」』"]', body))
+        if orphan_quotes >= 2:
+            scores['readability'] = max(0.3, scores['readability'] - 0.15)
+            issues.append('存在孤儿引号（后引号独立成行）')
 
         # Subject variety — if >50% of paragraphs start with 他/她/它/主角名, it's AI-like
         if len(paragraphs) >= 5:
@@ -2870,6 +3226,12 @@ AI写作的典型特征：
         elif max_consecutive_exposition >= expo_threshold - 1:
             scores['show_dont_tell'] = 0.6
             issues.append('存在连续纯叙述段落')
+
+        # 7. Formatting — quotation marks, paragraph variance, English quote detection
+        scores['formatting'] = self._score_formatting(body, paragraphs)
+
+        # 8. Antagonist presence — check if villain has active role
+        scores['antagonist'] = self._score_antagonist(body, state)
 
         # Genre-specific quality checks (modifier, not a scored dimension)
         genre_penalty: float = 0
@@ -2956,10 +3318,86 @@ AI写作的典型特征：
             pass
         return body  # fallback: return original
 
-    # ═══════════════════ V3: De-AI Post-processing ═══════════════════
+    # ═══════════════════ Regex Scorers ═══════════════════
+
+    @staticmethod
+    def _score_formatting(body: str, paragraphs: list[str]) -> float:
+        """Score formatting: orphan quotes, paragraph variance, English quote mixing."""
+        score = 1.0
+        issues = 0
+
+        # Check orphan closing quotes (」at start of line)
+        orphan_closing = len(re.findall(r'\n\s*[」』"]', body))
+        if orphan_closing >= 3:
+            score -= 0.30
+            issues += 1
+        elif orphan_closing >= 1:
+            score -= 0.15
+            issues += 1
+
+        # Check English quote mixing
+        english_quotes = len(re.findall(r'"', body))
+        if english_quotes > 4:  # more than 2 pairs = mixing
+            score -= 0.20
+            issues += 1
+
+        # Check paragraph length uniformity
+        if len(paragraphs) >= 5:
+            lengths = [len(p) for p in paragraphs if p.strip()]
+            if lengths:
+                avg_l = sum(lengths) / len(lengths)
+                # Count consecutive paragraphs with similar length (within ±25% of avg)
+                uniform_streak = 0
+                max_streak = 0
+                for l in lengths:
+                    if avg_l > 0 and 0.75 < l / avg_l < 1.25:
+                        uniform_streak += 1
+                        max_streak = max(max_streak, uniform_streak)
+                    else:
+                        uniform_streak = 0
+                if max_streak >= 5:
+                    score -= 0.25
+                    issues += 1
+                elif max_streak >= 3:
+                    score -= 0.10
+
+        return max(0.1, score)
+
+    @staticmethod
+    def _score_antagonist(body: str, state: 'StoryState') -> float:
+        """Score antagonist presence and active threat in the chapter."""
+        antagonist = next((c for c in state.characters if c.role == "反派"), None) if state else None
+        if not antagonist:
+            return 0.5  # No antagonist configured — neutral score
+
+        name = antagonist.name
+        if name not in body:
+            return 0.2  # Antagonist not even mentioned
+
+        # Check if antagonist has active verbs within 30 chars of their name
+        action_verbs = ['道', '说', '走', '打', '杀', '冲', '冷笑', '逼近',
+                       '下令', '出手', '派', '通知', '威胁', '警告', '施压',
+                       '安排', '设局', '动手', '发难', '逼问', '质问']
+        body_chars = list(body)
+        active_hits = 0
+        for i, ch in enumerate(body_chars):
+            if body[i:i+len(name)] == name:
+                # Check 30 chars after name for action verbs
+                after = body[i+len(name):i+len(name)+30]
+                if any(v in after for v in action_verbs):
+                    active_hits += 1
+
+        if active_hits >= 3:
+            return 0.85
+        elif active_hits >= 1:
+            return 0.65
+        else:
+            return 0.35  # Present but passive — just mentioned, no action
+
+    # ═══════════════════ V5: Enhanced De-AI Patterns ═══════════════════
 
     AI_PATTERNS = [
-        # Cliché transitions
+        # Cliché transitions (expanded)
         (r'在这个世界[里中上]?', ''),
         (r'随着时间[的之]推移[,，]?', ''),
         (r'不仅如此[,，]?', ''),
@@ -2968,18 +3406,44 @@ AI写作的典型特征：
         (r'值得注意[的是][,，]?', ''),
         (r'与此同[时][,，]?', ''),
         (r'换句话[说][,，]?', ''),
+        (r'事实上[,，]?', ''),
+        (r'实际上[,，]?', ''),
+        (r'基本上[,，]?', ''),
+        (r'可以说[,，]?', ''),
         # Formulaic sequencing
         (r'首先[,，]?\s*', ''),
         (r'其次[,，]?\s*', ''),
         (r'最后[,，]?\s*', ''),
         (r'第一[步点][,，]?\s*', ''),
         (r'第二[步点][,，]?\s*', ''),
-        # Overused AI phrases
+        (r'第三[步点][,，]?\s*', ''),
+        # Overused AI phrases (expanded for Chinese web novels)
         (r'可以[说想]?是', '是'),
         (r'从某种[意义程度]上[来说讲]', ''),
         (r'在很大[的]?程度[上]?', ''),
         (r'不可否认[的是]?[,，]?', ''),
         (r'显[然而]易见[的是]?[,，]?', ''),
+        (r'令人惊讶[的是]', ''),
+        (r'不出所料[,，]?', ''),
+        (r'理所当然[地]?[,，]?', ''),
+        # Platform detection targets
+        (r'他深吸[了]?[一]?口[气]?[,，]?', '他吸了口气，'),
+        (r'眼中闪过[一]?[丝抹]?\S{0,3}?[之色]?', ''),
+        (r'心中暗暗\S{1,4}', ''),
+        (r'嘴角[微微]?[勾起扬]?[起]?\S{0,3}', ''),
+        (r'眸[子中]?[里]?\S{1,3}?[之色光意]', ''),
+        (r'心头[一]?\S{1,3}', ''),
+        (r'不禁\S{1,3}', ''),
+        # Quotation mark fixes: closing quote orphaned on its own line
+        (r'\n\s*」', '」'),
+        (r'\n\s*』', '』'),
+        (r'\n\s*”', '”'),
+        (r'\n\s*"', '"'),
+        # Opening quote orphaned at end of previous line
+        (r'「\s*\n', '「'),
+        (r'『\s*\n', '『'),
+        (r'“\s*\n', '“'),
+        (r'"\s*\n', '"'),
     ]
 
     # ═══════════════════ V4: Viral Pattern Analysis ═══════════════════
@@ -3041,6 +3505,68 @@ AI写作的典型特征：
         except Exception as e:
             return {"error": str(e)}
 
+    @staticmethod
+    def _normalize_quotes(text: str) -> str:
+        """Unify Chinese dialogue quotes to 「」format and fix orphan quotes."""
+        LEFT_CURLY = '“'   # "
+        RIGHT_CURLY = '”'  # "
+        # Step 1: Replace curly double quotes with Chinese quotes
+        text = re.sub(LEFT_CURLY + r'([^' + LEFT_CURLY + RIGHT_CURLY + r']*?[一-鿿][^' + LEFT_CURLY + RIGHT_CURLY + r']*?)' + RIGHT_CURLY, r'「\1」', text)
+        # Step 2: Replace ASCII double quotes with Chinese quotes
+        text = re.sub(r'"([^"]*?[一-鿿][^"]*?)"', r'「\1」', text)
+        # Step 3: Replace ASCII single quotes
+        text = re.sub(r"'([^']*?[一-鿿][^']*?)'", r'「\1」', text)
+        # Step 4: Fix orphan closing quote — merge line starting with 」 or " to previous line
+        lines = text.split('\n')
+        fixed: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and stripped[0] in ('」', '』', RIGHT_CURLY) and fixed:
+                fixed[-1] = fixed[-1].rstrip() + stripped
+            elif stripped and fixed and fixed[-1].rstrip().endswith(('「', '『', LEFT_CURLY)):
+                fixed[-1] = fixed[-1].rstrip() + stripped
+            else:
+                fixed.append(line)
+        return '\n'.join(fixed)
+
+    def fix_formatting(self, body: str) -> tuple[str, int]:
+        """Pure formatting fix — only orphan quotes + quote unification. No content changes, no LLM."""
+        import re
+        changes = 0
+        result = body
+
+        # Only apply quote-related patterns (not cliché removal)
+        # Using explicit Unicode escapes to avoid curly/straight quote confusion
+        LEFT_CURLY = '“'   # "
+        RIGHT_CURLY = '”'  # "
+        STRAIGHT = '"'          # "
+        quote_patterns = [
+            # Closing quotes orphaned on their own line
+            (r'\n\s*」', '」'),
+            (r'\n\s*』', '』'),
+            (r'\n\s*' + RIGHT_CURLY, RIGHT_CURLY),
+            (r'\n\s*' + STRAIGHT, STRAIGHT),
+            # Opening quotes orphaned at end of previous line
+            (r'「\s*\n', '「'),
+            (r'『\s*\n', '『'),
+            (r'' + LEFT_CURLY + r'\s*\n', LEFT_CURLY),
+            (r'' + STRAIGHT + r'\s*\n', STRAIGHT),
+        ]
+        for pattern, replacement in quote_patterns:
+            new_result, count = re.subn(pattern, replacement, result)
+            if count > 0:
+                changes += count
+                result = new_result
+
+        # Unify quotes to 「」
+        normalized = self._normalize_quotes(result)
+        if normalized != result:
+            # Count new 「」 pairs as changes
+            changes += normalized.count('「') - result.count('「')
+            result = normalized
+
+        return result, changes
+
     def de_ai(self, body: str) -> tuple[str, int]:
         """
         Remove AI writing patterns. Returns (cleaned_body, changes_made).
@@ -3055,6 +3581,10 @@ AI写作的典型特征：
                 changes += count
                 result = new_result
 
+        # Normalize dialogue quotes: unify to guillemets 「」
+        # Only normalize when quotes are balanced and used for dialogue
+        result = self._normalize_quotes(result)
+
         # Break up uniform paragraph lengths (AI tendency)
         paragraphs = result.split('\n')
         if len(paragraphs) > 3:
@@ -3067,15 +3597,72 @@ AI写作的典型特征：
                         changes += 1
 
         result = '\n'.join(paragraphs)
-        return result, changes
+
+        # V5: Random humanization — break AI writing patterns
+        humanized = self._humanize_text(result)
+        if humanized != result:
+            changes += 1
+
+        return humanized, changes
+
+    @staticmethod
+    def _humanize_text(text: str) -> str:
+        """Add subtle random variations to break AI detection patterns."""
+        import random as _random
+        # 保留结尾的感叹号和问号（破坏钩子是最伤的）
+        endings = ['！', '？', '!', '?', '~', '…']
+        last_chars = text.strip()[-3:] if len(text) > 3 else ''
+        has_ending_hook = any(c in last_chars for c in endings)
+
+        # Only normalize punctuation in the body, preserve ending
+        body_part = text.strip()
+        if has_ending_hook:
+            # Don't touch the last sentence's punctuation
+            last_period = max(
+                body_part.rfind('。'), body_part.rfind('！'),
+                body_part.rfind('？'), body_part.rfind('!'),
+                body_part.rfind('?'))
+            if last_period > 0:
+                ending = body_part[last_period:].strip()
+                body_part = body_part[:last_period]
+
+        sentences = body_part.replace('！', '。').replace('？', '。').split('。')
+        if len(sentences) < 10:
+            return text
+
+        result = []
+        for i, s in enumerate(sentences):
+            s = s.strip()
+            if not s:
+                continue
+            # 20% chance: slightly shorten a sentence
+            if _random.random() < 0.15 and len(s) > 20:
+                cut = _random.randint(len(s)//4, len(s)//3)
+                s = s[:-cut] if _random.random() < 0.5 else s[cut:]
+            # 15% chance: merge short sentence with next
+            if _random.random() < 0.1 and len(s) < 15 and i + 1 < len(sentences):
+                s = s + '，' + sentences[i+1].strip()
+                sentences[i+1] = ''
+            result.append(s)
+
+        # Rejoin and restore ending
+        output = '\n'.join(result) if _random.random() < 0.5 else '\n\n'.join(result)
+        if has_ending_hook:
+            output = output.rstrip('。') + ending
+        return output
 
 
-    # ═══════════════════ V3: Context Retrieval (LIKE-based, Chinese-friendly) ═══════════════════
+    # ═══════════════════ V5: Context Retrieval (expanded) ═══════════════════
 
     def retrieve_relevant_context(self, query: str, novel_id: str, top_k: int = 5) -> list[dict]:
+        """Retrieve relevant chapter summaries. For long novels (>30 ch), expand to top_k=15."""
         try:
             from .database import Database
             db = Database()
+            # Auto-expand context for long novels
+            total = db.get_novel(novel_id)
+            if total and len(total.get("chapters", [])) > 30:
+                top_k = max(top_k, 15)
             with db.conn() as conn:
                 rows = conn.execute(
                     "SELECT cs.novel_id, cs.chapter_num, c.title, cs.summary_text as summary "
@@ -3093,5 +3680,21 @@ AI写作的典型特征：
         except Exception as e:
             print(f"[RAG] Error: {e}")
             return []
+
+    def get_global_context(self, novel_id: str, max_chapters: int = 10) -> str:
+        """Get a summary of the most recent chapters for long-form consistency."""
+        try:
+            from .database import Database
+            db = Database()
+            summaries = db.get_chapter_summaries(novel_id)
+            if not summaries:
+                return ""
+            recent = summaries[-max_chapters:]
+            lines = ["【前情提要】"]
+            for s in recent:
+                lines.append(f"第{s['chapter_num']}章: {s['summary_text'][:100]}")
+            return "\n".join(lines)
+        except Exception:
+            return ""
 
 

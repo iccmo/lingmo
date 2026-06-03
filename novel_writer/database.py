@@ -46,6 +46,16 @@ class Database:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_chapter_summaries_novel ON chapter_summaries(novel_id)")
             except Exception:
                 pass
+            # V28: soul_fingerprints
+            try:
+                conn.execute('''CREATE TABLE IF NOT EXISTS soul_fingerprints (novel_id TEXT PRIMARY KEY, polarity TEXT DEFAULT '', position INTEGER DEFAULT 5, answer TEXT DEFAULT '', created_at TEXT DEFAULT (datetime(''now'')), updated_at TEXT DEFAULT (datetime(''now'')))''')
+            except Exception:
+                pass
+            # V29: character_blueprints
+            try:
+                conn.execute('''CREATE TABLE IF NOT EXISTS character_blueprints (novel_id TEXT PRIMARY KEY, characters_json TEXT DEFAULT '[]', created_at TEXT DEFAULT (datetime(''now'')), updated_at TEXT DEFAULT (datetime(''now'')))''')
+            except Exception:
+                pass
             # V12: chapter_versions table
             try:
                 conn.execute("""CREATE TABLE IF NOT EXISTS chapter_versions (
@@ -172,7 +182,7 @@ class Database:
     ALLOWED_NOVEL_COLS = {
         'title','author','synopsis','genre','status','mode',
         'world_name','world_era','world_geo','power_system','world_rules',
-        'main_arc','current_arc','arc_chapter_start','deleted_at'
+        'main_arc','current_arc','arc_chapter_start','deleted_at','provider_id'
     }
 
     def update_novel(self, novel_id: str, **kw):
@@ -385,6 +395,87 @@ class Database:
         with self.conn() as c:
             row = c.execute("SELECT content FROM chapter_versions WHERE id=?", (version_id,)).fetchone()
         return row["content"] if row else None
+
+    def save_chapter_trace(self, data: dict):
+        """Save generation pipeline trace for a chapter."""
+        import json as _json
+        steps_json = _json.dumps(data.get("steps", []))
+        with self.conn() as c:
+            c.execute("""INSERT OR REPLACE INTO chapter_traces
+                (novel_id, chapter_num, steps_json, final_quality, total_duration_ms, total_cost)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (data["novel_id"], data["chapter_num"], steps_json,
+                 data.get("final_quality", 0), data.get("total_duration_ms", 0),
+                 data.get("total_cost", 0)))
+
+    def get_chapter_traces(self, novel_id: str) -> list[dict]:
+        """Get all generation traces for a novel, newest first."""
+        import json as _json
+        with self.conn() as c:
+            rows = c.execute("""SELECT * FROM chapter_traces WHERE novel_id=?
+                ORDER BY chapter_num DESC""", (novel_id,)).fetchall()
+        return [{
+            "chapter_num": r["chapter_num"],
+            "steps": _json.loads(r["steps_json"]),
+            "final_quality": r["final_quality"],
+            "total_duration_ms": r["total_duration_ms"],
+            "total_cost": r["total_cost"],
+            "created_at": r["created_at"],
+        } for r in rows]
+
+    def save_soul_fingerprint(self, novel_id: str, polarity: str, position: int, answer: str):
+        with self.conn() as c:
+            c.execute("INSERT OR REPLACE INTO soul_fingerprints (novel_id, polarity, position, answer, updated_at) VALUES (?, ?, ?, ?, datetime('now'))", (novel_id, polarity, position, answer))
+
+    def get_soul_fingerprint(self, novel_id: str):
+        with self.conn() as c:
+            row = c.execute("SELECT * FROM soul_fingerprints WHERE novel_id=?", (novel_id,)).fetchone()
+            return dict(row) if row else None
+
+    def delete_soul_fingerprint(self, novel_id: str):
+        with self.conn() as c:
+            c.execute("DELETE FROM soul_fingerprints WHERE novel_id=?", (novel_id,))
+
+    def save_character_blueprints(self, novel_id: str, characters: list[dict]):
+        """Save all character blueprints for a novel as a JSON array."""
+        import json as _json
+        with self.conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO character_blueprints (novel_id, characters_json, updated_at) VALUES (?, ?, datetime('now'))",
+                (novel_id, _json.dumps(characters, ensure_ascii=False)),
+            )
+
+    def get_character_blueprints(self, novel_id: str) -> list[dict]:
+        """Get all character blueprints for a novel."""
+        import json as _json
+        with self.conn() as c:
+            row = c.execute("SELECT characters_json FROM character_blueprints WHERE novel_id=?", (novel_id,)).fetchone()
+            if not row:
+                return []
+            try:
+                return _json.loads(row[0])
+            except Exception:
+                return []
+
+    def delete_character_blueprint(self, novel_id: str, char_id: str) -> bool:
+        """Delete a single character blueprint by id. Returns True if deleted."""
+        import json as _json
+        with self.conn() as c:
+            row = c.execute("SELECT characters_json FROM character_blueprints WHERE novel_id=?", (novel_id,)).fetchone()
+            if not row:
+                return False
+            try:
+                chars = _json.loads(row[0])
+            except Exception:
+                return False
+            new_chars = [c for c in chars if c.get("id") != char_id]
+            if len(new_chars) == len(chars):
+                return False  # nothing deleted
+            c.execute(
+                "UPDATE character_blueprints SET characters_json=?, updated_at=datetime('now') WHERE novel_id=?",
+                (_json.dumps(new_chars, ensure_ascii=False), novel_id),
+            )
+            return True
 
     def get_cost_summary(self, novel_id: str = "") -> dict:
         """Get cost summary for a novel or all novels."""

@@ -6,6 +6,10 @@ from unittest.mock import patch
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# ═══ Module-level OpenAI mock — must be active BEFORE any test module imports Generator ═══
+_openai_patcher = patch('openai.OpenAI')
+_openai_patcher.start()
+
 import pytest
 
 from novel_writer.config import Config

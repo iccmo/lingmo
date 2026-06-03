@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from 'src/components/ui/button';
 import { Input } from 'src/components/ui/input';
@@ -6,6 +6,7 @@ import { Textarea } from 'src/components/ui/textarea';
 import { Card, CardContent } from 'src/components/ui/card';
 import { Badge } from 'src/components/ui/badge';
 import { toast } from 'sonner';
+import { GripVertical } from 'lucide-react';
 
 interface OutlineItem {
  number: number;
@@ -83,6 +84,18 @@ export function Outline() {
  setItems(items.filter((_, i) => i !== idx));
  }
 
+ // Drag & drop
+ const dragIdx = useRef<number | null>(null);
+ function onDragStart(idx: number) { dragIdx.current = idx; }
+ function onDragOver(e: React.DragEvent) { e.preventDefault(); }
+ function onDrop(idx: number) {
+   if (dragIdx.current === null || dragIdx.current === idx) return;
+   const next = [...items];
+   const [moved] = next.splice(dragIdx.current, 1);
+   next.splice(idx, 0, moved);
+   setItems(next);
+   dragIdx.current = null;
+ }
 
  if (loading) {
  return <div className="space-y-4 p-8"><div className="skeleton h-6 w-24" /><div className="skeleton h-8 w-48" /></div>;
@@ -94,7 +107,7 @@ export function Outline() {
  ← 返回小说详情
  </button>
  <h1 className="font-heading text-[28px] font-semibold text-ink leading-tight mb-1">章节大纲</h1>
- <p className="text-sm text-ink-muted mb-4">规划后续章节，AI 生成时将参考大纲方向</p>
+ <p className="text-sm text-ink-muted mb-4">规划后续章节，AI 生成时将参考大纲方向。拖拽排序 ↑↓ 或拖动手柄</p>
 
  {/* Recent Chapters Context */}
  {data?.recent_chapters && data.recent_chapters.length > 0 && (
@@ -164,7 +177,12 @@ export function Outline() {
  {items.map((item, i) => {
  const generated = data?.recent_chapters?.some(c => c.number === item.number);
  return (
- <div key={i} className="relative mb-3 last:mb-0 group">
+ <div key={i} className="relative mb-3 last:mb-0 group"
+   draggable={!generated}
+   onDragStart={() => onDragStart(i)}
+   onDragOver={onDragOver}
+   onDrop={() => onDrop(i)}
+ >
  {/* Timeline dot */}
  <div className={`absolute -left-8 top-3 w-4 h-4 rounded-full border-2 transition-all ${
  generated
@@ -174,11 +192,17 @@ export function Outline() {
  {generated && <span className="absolute inset-0 flex items-center justify-center text-[8px] text-white">✓</span>}
  </div>
 
- <Card className={`border-border transition-all hover:shadow-sm ${
+ <Card className={`border-border transition-all hover:shadow-sm cursor-grab active:cursor-grabbing ${
  generated ? 'opacity-70' : ''
  }`}>
  <CardContent className="p-3">
  <div className="flex gap-3 items-start">
+ {/* Drag handle */}
+ {!generated && (
+   <div className="shrink-0 pt-1 text-ink-subtle opacity-0 group-hover:opacity-100 transition-opacity cursor-grab">
+     <GripVertical size={14} />
+   </div>
+ )}
  <div className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${
  generated
  ? 'bg-success-soft text-success dark:bg-emerald-900/30 '
@@ -232,7 +256,7 @@ export function Outline() {
  )}
  </span>
  <span className="text-xs text-ink-subtle ml-auto">
- AI 生成时将参考大纲方向，写完自动跳过已有章节
+ 拖拽手柄可排序 · AI 生成时将参考大纲方向
  </span>
  </div>
  </>

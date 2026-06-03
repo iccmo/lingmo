@@ -139,7 +139,7 @@ def test_score_quality_high(gen):
     assert 'scores' in result
     assert 'grade' in result
     assert 'issues' in result
-    assert len(result['scores']) == 6  # coherence, consistency, pacing, hook, readability, show_dont_tell
+    assert len(result['scores']) == 8  # coherence, consistency, pacing, hook, readability, show_dont_tell, formatting, antagonist
     assert result['overall'] >= 0.5, f"Expected >= 0.5, got {result['overall']}"
     assert result['passed'] is True
 

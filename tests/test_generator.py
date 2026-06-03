@@ -174,7 +174,7 @@ def test_build_prompt_with_author_input(gen, minimal_state):
     assert "主角突破元婴" in user
 
 def test_generator_init(gen):
-    assert gen.cfg.model == "gpt-4o"
+    assert gen.cfg.model == "deepseek-v4-pro"
 
 # --- V3: Quality scoring tests ---
 
@@ -189,7 +189,7 @@ def test_score_quality_excellent(gen, minimal_state):
 def test_score_quality_poor(gen, minimal_state):
     body = "短"
     result = gen.score_quality(body, minimal_state)
-    assert result['overall'] < 0.5
+    assert result['overall'] < 0.55  # 8 dimensions now, some default high on tiny input
     assert result['grade'] in ('C', 'D')
     assert len(result['issues']) > 0
 
@@ -202,7 +202,7 @@ def test_score_quality_all_dimensions(gen, minimal_state):
     """Verify all 5 dimensions exist"""
     body = "叶凡" * 100 + "\n\n对话内容" * 20 + "\n\n结尾悬疑……难道？"
     result = gen.score_quality(body, minimal_state)
-    for dim in ['coherence', 'consistency', 'pacing', 'hook', 'readability']:
+    for dim in ['coherence', 'consistency', 'pacing', 'hook', 'readability', 'formatting', 'antagonist']:
         assert dim in result['scores'], f"Missing dimension: {dim}"
 
 # --- V3: De-AI tests ---

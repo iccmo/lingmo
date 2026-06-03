@@ -240,9 +240,8 @@ export function CharacterGraph({ characters, relations }: Props) {
                   strokeOpacity={isHovered || isRelatedToHovered ? 1 : 0.3}
                   className="transition-all duration-150"
                 />
-                {/* Relation label */}
-                {(isHovered || isRelatedToHovered) && (
-                  <g>
+                {/* Relation label — always visible, brighter on hover */}
+                <g opacity={isHovered || isRelatedToHovered ? 1 : 0.55}>
                     <rect
                       x={midX - rel.relation.length * 5 - 6}
                       y={midY - 10}
@@ -251,7 +250,6 @@ export function CharacterGraph({ characters, relations }: Props) {
                       rx={4}
                       fill="var(--color-ink)"
                       className="dark:fill-[#E8E4DD]"
-                      opacity={0.9}
                     />
                     <text
                       x={midX}
@@ -263,7 +261,6 @@ export function CharacterGraph({ characters, relations }: Props) {
                       {rel.relation}
                     </text>
                   </g>
-                )}
               </g>
             );
           })}
