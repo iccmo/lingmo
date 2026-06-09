@@ -1,56 +1,53 @@
 #!/bin/bash
-# 灵墨一键安装脚本
+# 灵墨一键安装脚本（无需 Docker）
 # macOS / Linux
 set -e
 
 echo "========================================="
 echo "  灵墨 · AI 创作伴侣 — 一键安装"
 echo "========================================="
-echo ""
 
-# Check Docker
-if ! command -v docker &> /dev/null; then
-    echo "❌ 未安装 Docker，请先安装："
-    echo "   macOS:  brew install --cask docker"
-    echo "   Linux:  curl -fsSL https://get.docker.com | sh"
-    exit 1
-fi
-echo "✅ Docker 已安装"
-
-# Download latest release
-REPO="iccmo/lingmo"
+# Download
 echo ""
 echo "📦 正在下载灵墨..."
-curl -L -o lingmo.zip "https://github.com/${REPO}/archive/refs/heads/main.zip"
+curl -L -o lingmo.zip "https://github.com/iccmo/lingmo/archive/refs/heads/main.zip"
 unzip -qo lingmo.zip
 cd lingmo-main
 
-# Configure
+# Python
+if ! command -v python3 &> /dev/null; then
+    echo "❌ 未安装 Python 3，请先安装：https://www.python.org/downloads/"
+    exit 1
+fi
+
+# Setup
+echo "🔧 正在安装依赖..."
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -q
+
+# API Key
 if [ ! -f .env ]; then
+    cp .env.example .env
     echo ""
-    echo "🔑 请输入 DeepSeek API Key（没有就回车跳过，之后在设置页配置）："
+    echo "🔑 请输入 DeepSeek API Key（没有就回车跳过）:"
     read -r API_KEY
     if [ -n "$API_KEY" ]; then
-        cp .env.example .env
         if [[ "$OSTYPE" == "darwin"* ]]; then
             sed -i '' "s/DEEPSEEK_API_KEY=/DEEPSEEK_API_KEY=${API_KEY}/" .env
         else
             sed -i "s/DEEPSEEK_API_KEY=/DEEPSEEK_API_KEY=${API_KEY}/" .env
         fi
-        echo "✅ API Key 已配置"
-    else
-        cp .env.example .env
-        echo "⚠️  跳过，之后在设置页配置"
     fi
 fi
 
 # Start
 echo ""
 echo "🚀 正在启动..."
-docker compose up --build -d
+python3 -m uvicorn novel_writer.server:app --host 0.0.0.0 --port 8000 &
+sleep 2
 
 echo ""
 echo "========================================="
-echo "  安装完成！"
-echo "  浏览器打开 http://localhost:8000"
+echo "  安装完成！浏览器打开 http://localhost:8000"
 echo "========================================="
