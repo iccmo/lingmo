@@ -47,3 +47,5 @@ Thumbs.db
 
 # Claude
 .claude/
+lingmo-app-*.tar
+lingmo-deploy-*.tar.gz
