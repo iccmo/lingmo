@@ -5,44 +5,41 @@ echo   灵墨 · AI 创作伴侣 — 一键安装
 echo =========================================
 echo.
 
-:: Check Docker
-where docker >nul 2>nul
+:: Check Python
+where python >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo ❌ 未安装 Docker，请先安装：
-    echo    https://www.docker.com/products/docker-desktop/
+    echo ❌ 未安装 Python 3
+    echo    请从 https://www.python.org/downloads/ 下载安装
+    echo    ⚠️ 安装时务必勾选 "Add Python to PATH"
     pause
     exit /b 1
 )
-echo ✅ Docker 已安装
+echo ✅ Python 已安装
 
 :: Download
 echo.
-echo 📦 正在下载灵墨...
-curl -L -o lingmo.zip "https://github.com/iccmo/lingmo/archive/refs/heads/main.zip"
-tar -xf lingmo.zip
+echo 📦 正在下载...
+powershell -Command "Invoke-WebRequest -Uri 'https://github.com/iccmo/lingmo/archive/refs/heads/main.zip' -OutFile 'lingmo.zip'"
+powershell -Command "Expand-Archive -Force lingmo.zip ."
 cd lingmo-main
 
-:: Configure
+:: Setup
+echo 🔧 正在安装依赖（首次约2分钟）...
+python -m venv .venv
+call .venv\Scripts\activate.bat
+pip install -r requirements.txt -q
+
+:: .env
 if not exist .env (
-    echo.
-    set /p API_KEY="🔑 请输入 DeepSeek API Key（没有就回车跳过）: "
     copy .env.example .env >nul
-    if not "!API_KEY!"=="" (
-        powershell -Command "(gc .env) -replace 'DEEPSEEK_API_KEY=', 'DEEPSEEK_API_KEY=!API_KEY!' | Out-File -encoding ASCII .env"
-        echo ✅ API Key 已配置
-    ) else (
-        echo ⚠️  跳过
-    )
+    echo.
+    echo 🔑 API Key 可以之后在网站设置页填入，现在跳过
 )
 
 :: Start
 echo.
 echo 🚀 正在启动...
-docker compose up --build -d
+start "" http://localhost:8000
+python -m uvicorn novel_writer.server:app --host 0.0.0.0 --port 8000
 
-echo.
-echo =========================================
-echo   安装完成！
-echo   浏览器打开 http://localhost:8000
-echo =========================================
 pause
