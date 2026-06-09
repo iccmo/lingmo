@@ -7,6 +7,14 @@ import asyncio
 import threading
 
 
+TERMINAL_GENERATION_STATUSES = {"", "idle", "complete", "done", "error", "failed", "finished"}
+
+
+def is_active_generation_status(status: str | None) -> bool:
+    """Treat any non-terminal generation-state label as an active operation."""
+    return (status or "").strip().lower() not in TERMINAL_GENERATION_STATUSES
+
+
 class GenerationState:
     """生成管线共享状态，线程安全。"""
 
@@ -22,14 +30,52 @@ class GenerationState:
 
     # ── Generation Status ──
 
-    def set_status(self, novel_id: str, status: str, message: str = "",
-                   progress: int = 0, overall: float = 0):
+    def set_status(
+        self,
+        novel_id: str,
+        status: str,
+        message: str = "",
+        progress: int = 0,
+        overall: float = 0,
+        extra: dict | None = None,
+    ):
         with self._lock:
-            self._status[novel_id] = {
-                "status": status, "message": message, "progress": progress}
+            previous = self._status.get(novel_id, {})
+            next_status = {"status": status, "message": message, "progress": progress}
+            if self._should_preserve_stream(previous, status, progress):
+                for key in ("stream_content", "stream_version"):
+                    if key in previous:
+                        next_status[key] = previous[key]
             if overall > 0:
-                self._status[novel_id]["overall"] = round(overall, 2)
+                next_status["overall"] = round(overall, 2)
+            if extra:
+                next_status.update(extra)
+            self._status[novel_id] = next_status
         # Notify SSE listeners
+        event = self._events.get(novel_id)
+        if event:
+            event.set()
+
+    @staticmethod
+    def _should_preserve_stream(previous: dict, status: str, progress: int) -> bool:
+        if "stream_content" not in previous:
+            return False
+        if status == "generating" and progress <= 10:
+            return False
+        previous_status = previous.get("status")
+        if status == "generating" and previous_status in {"complete", "error", "idle"}:
+            return False
+        return status in {"generating", "reviewing", "editing", "judging", "complete", "error"}
+
+    def update_stream_content(self, novel_id: str, content: str):
+        """Update live preview text without resetting the current generation status."""
+        with self._lock:
+            current = self._status.setdefault(
+                novel_id,
+                {"status": "generating", "message": "", "progress": 0},
+            )
+            current["stream_content"] = content
+            current["stream_version"] = int(current.get("stream_version", 0)) + 1
         event = self._events.get(novel_id)
         if event:
             event.set()

@@ -26,7 +26,9 @@ class BatchRunner:
         novel = self.db.get_novel(novel_id)
         if not novel:
             return {"error": "Novel not found"}
-        start_ch = len([c for c in novel.get("chapters", []) if c.get("word_count", 0) > 0]) + 1
+        start_ch = self.db.get_next_chapter_number(novel_id) if hasattr(self.db, "get_next_chapter_number") else (
+            max([c.get("number", 0) for c in novel.get("chapters", []) if c.get("word_count", 0) > 0], default=0) + 1
+        )
 
         results: list[dict] = []
         degradation_signals: list[dict] = []

@@ -4,7 +4,7 @@ import { Card, CardContent } from 'src/components/ui/card';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
 import type { NovelSummary } from 'src/types';
-import { BookOpen, FileText, Star, Trophy, Zap } from 'lucide-react';
+import { BookOpen, FileText, Star, Trophy, Zap, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface NovelStats {
  id: string; title: string; genre: string;
@@ -115,7 +115,7 @@ export function Stats() {
  <span className={`text-[10px] font-medium ${
  s.qualityTrend === 'rising' ? 'text-success' : s.qualityTrend === 'falling' ? 'text-warn' : 'text-ink-subtle'
  }`}>
- {s.qualityTrend === 'rising' ? '<TrendingUp size={12} /> 上升' : s.qualityTrend === 'falling' ? '<TrendingDown size={12} /> 下降' : '<Minus size={12} /> 平稳'}
+ {s.qualityTrend === 'rising' ? <><TrendingUp size={12} /> 上升</> : s.qualityTrend === 'falling' ? <><TrendingDown size={12} /> 下降</> : <><Minus size={12} /> 平稳</>}
  </span>
  </div>
 

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { WritingPreset } from 'src/themes/presets';
 import { presets, getPresetById } from 'src/themes/presets';
+import { themes } from 'src/themes';
 import { useTheme } from './useTheme';
 import { useLayout } from './useLayout';
 
@@ -18,8 +19,7 @@ export function usePreset() {
 
   const applyPreset = useCallback((preset: WritingPreset) => {
     // Apply theme
-    const themeModule = require('src/themes');
-    const theme = themeModule.themes.find((t: { id: string }) => t.id === preset.themeId);
+    const theme = themes.find((t) => t.id === preset.themeId);
     if (theme) setTheme(theme);
 
     // Apply layout

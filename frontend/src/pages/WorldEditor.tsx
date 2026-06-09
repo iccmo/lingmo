@@ -7,6 +7,8 @@ import { Card, CardContent } from 'src/components/ui/card';
 import { Badge } from 'src/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from 'src/components/ui/tabs';
 import { toast } from 'sonner';
+import { ConfirmDialog } from 'src/components/ui/ConfirmDialog';
+import { throwApiError } from 'src/lib/api-error';
 
 interface Character {
  id: number;
@@ -73,36 +75,40 @@ export function WorldEditor() {
  // ---- Faction form state ----
  const [editingFaction, setEditingFaction] = useState<Partial<Faction> | null>(null);
  const [showFactionForm, setShowFactionForm] = useState(false);
+ const [confirmDelete, setConfirmDelete] = useState<{ type: string; key: string; name: string } | null>(null);
 
- const loadData = useCallback(async () => {
- if (!id) return;
- try {
- const d = await fetch(`/api/novels/${id}`).then(r => r.json());
- setData(d);
- setWorld(d.world);
- } catch { toast.error('加载失败'); }
- finally { setLoading(false); }
- }, [id]);
+	 const loadData = useCallback(async () => {
+	 if (!id) return;
+	 try {
+	 const response = await fetch(`/api/novels/${id}`);
+	 await throwApiError(response);
+	 const d = await response.json();
+	 setData(d);
+	 setWorld(d.world);
+	 } catch (error) { toast.error(`加载失败: ${(error as Error).message}`); }
+	 finally { setLoading(false); }
+	 }, [id]);
 
  useEffect(() => { setLoading(true); loadData(); }, [loadData]);
 
  // ---- World save ----
  async function saveWorld() {
- if (!id) return;
- setSaving(true);
- try {
- await fetch(`/api/novels/${id}/world`, {
- method: 'PUT', headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({
- world_name: world.name, world_era: world.era, world_geo: world.geography,
- power_system: world.power_system, main_arc: world.main_arc,
- current_arc: world.current_arc, world_rules: JSON.stringify(world.rules),
- }),
- });
- toast.success('世界观已保存');
- } catch { toast.error('保存失败'); }
- finally { setSaving(false); }
- }
+	 if (!id) return;
+	 setSaving(true);
+	 try {
+	 const response = await fetch(`/api/novels/${id}/world`, {
+	 method: 'PUT', headers: { 'Content-Type': 'application/json' },
+	 body: JSON.stringify({
+	 world_name: world.name, world_era: world.era, world_geo: world.geography,
+	 power_system: world.power_system, main_arc: world.main_arc,
+	 current_arc: world.current_arc, world_rules: JSON.stringify(world.rules),
+	 }),
+	 });
+	 await throwApiError(response);
+	 toast.success('世界观已保存');
+	 } catch (error) { toast.error(`保存失败: ${(error as Error).message}`); }
+	 finally { setSaving(false); }
+	 }
 
  function addRule() {
  if (!newRule.trim()) return;
@@ -127,37 +133,43 @@ export function WorldEditor() {
 
  async function saveChar() {
  if (!id || !editingChar) return;
- const c = editingChar;
- if (!c.char_key?.trim()) { toast.error('角色标识不能为空'); return; }
- try {
- if (c.id) {
- // Update existing
- await fetch(`/api/novels/${id}/characters/${c.char_key}`, {
- method: 'PUT', headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ name: c.name, role: c.role, personality: c.personality, background: c.background, power_level: c.power_level, status: c.status }),
- });
- } else {
- // Create new
- await fetch(`/api/novels/${id}/characters`, {
- method: 'POST', headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ char_key: c.char_key, name: c.name, role: c.role, personality: c.personality, background: c.background, power_level: c.power_level }),
- });
- }
- toast.success(c.id ? '角色已更新' : '角色已添加');
- setShowCharForm(false);
- setEditingChar(null);
- loadData();
- } catch { toast.error('保存失败'); }
- }
+	 const c = editingChar;
+	 if (!c.char_key?.trim()) { toast.error('角色标识不能为空'); return; }
+	 try {
+	 let response: Response;
+	 if (c.id) {
+	 // Update existing
+	 response = await fetch(`/api/novels/${id}/characters/${c.char_key}`, {
+	 method: 'PUT', headers: { 'Content-Type': 'application/json' },
+	 body: JSON.stringify({ name: c.name, role: c.role, personality: c.personality, background: c.background, power_level: c.power_level, status: c.status }),
+	 });
+	 } else {
+	 // Create new
+	 response = await fetch(`/api/novels/${id}/characters`, {
+	 method: 'POST', headers: { 'Content-Type': 'application/json' },
+	 body: JSON.stringify({ char_key: c.char_key, name: c.name, role: c.role, personality: c.personality, background: c.background, power_level: c.power_level }),
+	 });
+	 }
+	 await throwApiError(response);
+	 toast.success(c.id ? '角色已更新' : '角色已添加');
+	 setShowCharForm(false);
+	 setEditingChar(null);
+	 loadData();
+	 } catch (error) { toast.error(`保存失败: ${(error as Error).message}`); }
+	 }
 
- async function deleteChar(charKey: string) {
- if (!id || !confirm('确定删除这个角色？')) return;
- try {
- await fetch(`/api/novels/${id}/characters/${charKey}`, { method: 'DELETE' });
- toast.success('角色已删除');
- loadData();
- } catch { toast.error('删除失败'); }
+ function deleteChar(charKey: string) {
+ const c = data?.characters?.find((ch: any) => ch.char_key === charKey);
+ setConfirmDelete({ type: 'character', key: charKey, name: c?.name || charKey });
  }
+	 async function doDeleteChar(charKey: string) {
+	 try {
+	 const response = await fetch(`/api/novels/${id}/characters/${charKey}`, { method: 'DELETE' });
+	 await throwApiError(response);
+	 toast.success('角色已删除');
+	 loadData();
+	 } catch (error) { toast.error(`删除失败: ${(error as Error).message}`); }
+	 }
 
  // ---- Faction CRUD ----
  function startAddFaction() {
@@ -172,30 +184,35 @@ export function WorldEditor() {
 
  async function saveFaction() {
  if (!id || !editingFaction) return;
- const f = editingFaction;
- if (!f.name?.trim()) { toast.error('势力名称不能为空'); return; }
- try {
- const body = { name: f.name, description: f.description || '', leader: f.leader || '', sort_order: f.sort_order || 0 };
- if (f.id) {
- await fetch(`/api/novels/${id}/factions/${f.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
- } else {
- await fetch(`/api/novels/${id}/factions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
- }
- toast.success(f.id ? '势力已更新' : '势力已添加');
- setShowFactionForm(false);
- setEditingFaction(null);
- loadData();
- } catch { toast.error('保存失败'); }
- }
+	 const f = editingFaction;
+	 if (!f.name?.trim()) { toast.error('势力名称不能为空'); return; }
+	 try {
+	 const body = { name: f.name, description: f.description || '', leader: f.leader || '', sort_order: f.sort_order || 0 };
+	 let response: Response;
+	 if (f.id) {
+	 response = await fetch(`/api/novels/${id}/factions/${f.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+	 } else {
+	 response = await fetch(`/api/novels/${id}/factions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+	 }
+	 await throwApiError(response);
+	 toast.success(f.id ? '势力已更新' : '势力已添加');
+	 setShowFactionForm(false);
+	 setEditingFaction(null);
+	 loadData();
+	 } catch (error) { toast.error(`保存失败: ${(error as Error).message}`); }
+	 }
 
- async function deleteFaction(fid: number) {
- if (!id || !confirm('确定删除这个势力？')) return;
- try {
- await fetch(`/api/novels/${id}/factions/${fid}`, { method: 'DELETE' });
- toast.success('势力已删除');
- loadData();
- } catch { toast.error('删除失败'); }
+ function deleteFaction(fid: number, name: string) {
+ setConfirmDelete({ type: 'faction', key: String(fid), name });
  }
+	 async function doDeleteFaction(fid: string) {
+	 try {
+	 const response = await fetch(`/api/novels/${id}/factions/${fid}`, { method: 'DELETE' });
+	 await throwApiError(response);
+	 toast.success('势力已删除');
+	 loadData();
+	 } catch (error) { toast.error(`删除失败: ${(error as Error).message}`); }
+	 }
 
  // ---- Field helpers ----
  function updateWorldField(field: string, value: string | number) {
@@ -453,7 +470,7 @@ export function WorldEditor() {
  </div>
  <div className="flex gap-1 ml-2">
  <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => startEditFaction(f)}>编辑</Button>
- <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive hover:text-destructive dark:hover:text-destructive" onClick={() => deleteFaction(f.id)}>删除</Button>
+ <Button size="sm" variant="ghost" className="text-xs h-7 text-destructive hover:text-destructive dark:hover:text-destructive" onClick={() => deleteFaction(f.id, f.name)}>删除</Button>
  </div>
  </div>
  </CardContent>
@@ -463,6 +480,24 @@ export function WorldEditor() {
  )}
  </TabsContent>
  </Tabs>
+
+ {confirmDelete && (
+   <ConfirmDialog
+     open={true}
+     title={`删除${confirmDelete.type === 'character' ? '角色' : '势力'}`}
+     message={`确定删除「${confirmDelete.name}」吗？此操作不可撤销。`}
+     confirmLabel="删除"
+     variant="danger"
+     onConfirm={() => {
+       if (confirmDelete.type === 'character') doDeleteChar(confirmDelete.key);
+       else doDeleteFaction(confirmDelete.key);
+       setConfirmDelete(null);
+     }}
+     onCancel={() => setConfirmDelete(null)}
+   />
+ )}
  </div>
  );
+
+
 }

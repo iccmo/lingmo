@@ -1,0 +1,53 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 构建前端
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: 安装 PyInstaller
+        run: pip install pyinstaller -r requirements.txt
+
+      - name: 打包后端
+        run: |
+          pyinstaller --onefile --name lingmo-server `
+            --add-data "novel_writer;novel_writer" `
+            --add-data "frontend/dist;frontend/dist" `
+            --hidden-import uvicorn `
+            --hidden-import fastapi `
+            --hidden-import sqlite3 `
+            novel_writer/server.py
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingmo-windows-${{ inputs.version || 'latest' }}
+          path: |
+            dist/lingmo-server.exe
+            frontend/dist/**
+            .env.example
+            DEPLOY.md

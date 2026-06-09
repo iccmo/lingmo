@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Palette, Check, ChevronDown } from 'lucide-react';
+import { Palette, Check } from 'lucide-react';
 import { useTheme } from 'src/hooks/useTheme';
 
 interface Props {
@@ -8,7 +8,7 @@ interface Props {
 
 export function ThemeSwitcher({ compact = false }: Props) {
   const { currentTheme, themes, setTheme } = useTheme();
-  const [open, setOpen] = useState(false);
+  const [, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭

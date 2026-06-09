@@ -178,12 +178,12 @@ export function StoryboardPanel({ novelId, chapters }: Props) {
  </span>
  )}
  {storyboard.overall_mood && (
- <span className="px-2 py-1 bg-warn-soft0/10 border border-amber-500/20 rounded text-amber-700">
+ <span className="px-2 py-1 bg-warn-soft0/10 border border-amber-500/20 rounded text-amber-700 dark:text-amber-300">
  {storyboard.overall_mood}
  </span>
  )}
  {storyboard.pacing && (
- <span className="px-2 py-1 bg-info-soft0/10 border border-sky-500/20 rounded text-sky-700">
+ <span className="px-2 py-1 bg-info-soft0/10 border border-sky-500/20 rounded text-sky-700 dark:text-sky-300">
  {storyboard.pacing}
  </span>
  )}

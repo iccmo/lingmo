@@ -2,7 +2,7 @@
 import threading
 import time
 
-from novel_writer.state import GenerationState
+from novel_writer.state import GenerationState, is_active_generation_status
 
 
 class TestGenerationState:
@@ -46,6 +46,77 @@ class TestGenerationState:
         status = gs.get_status("nov-1")
         assert "overall" not in status
 
+    def test_update_stream_content_increments_version_without_resetting_status(self):
+        """流式正文更新应保留当前阶段，并递增版本供 SSE 推送。"""
+        gs = GenerationState()
+        gs.set_status("nov-1", "generating", "正在生成", 20)
+        gs.update_stream_content("nov-1", "第一段")
+        gs.update_stream_content("nov-1", "第一段第二句")
+
+        status = gs.get_status("nov-1")
+        assert status["status"] == "generating"
+        assert status["message"] == "正在生成"
+        assert status["progress"] == 20
+        assert status["stream_content"] == "第一段第二句"
+        assert status["stream_version"] == 2
+
+    def test_set_status_preserves_stream_content_across_generation_phases(self):
+        """编辑和评分阶段不应让实时预览突然消失。"""
+        gs = GenerationState()
+        gs.set_status("nov-1", "generating", "正在生成", 20)
+        gs.update_stream_content("nov-1", "已经生成的正文")
+
+        gs.set_status("nov-1", "editing", "正在精修", 65)
+        editing_status = gs.get_status("nov-1")
+        gs.set_status("nov-1", "judging", "正在评分", 80)
+        judging_status = gs.get_status("nov-1")
+
+        assert editing_status["stream_content"] == "已经生成的正文"
+        assert editing_status["stream_version"] == 1
+        assert judging_status["stream_content"] == "已经生成的正文"
+        assert judging_status["stream_version"] == 1
+
+    def test_set_status_clears_stale_stream_content_when_new_generation_starts(self):
+        """新一轮生成排队时不能显示上一章的旧预览。"""
+        gs = GenerationState()
+        gs.set_status("nov-1", "complete", "完成", 100)
+        gs.update_stream_content("nov-1", "上一章正文")
+
+        gs.set_status("nov-1", "generating", "正在排队", 5)
+
+        status = gs.get_status("nov-1")
+        assert "stream_content" not in status
+        assert "stream_version" not in status
+
+    def test_set_status_clears_stale_stream_content_when_batch_generation_starts(self):
+        """批量生成可能直接进入高进度 generating，也不能继承上一章预览。"""
+        gs = GenerationState()
+        gs.set_status("nov-1", "complete", "上一章完成", 100)
+        gs.update_stream_content("nov-1", "上一章正文")
+
+        gs.set_status("nov-1", "generating", "正在生成第2章", 50)
+
+        status = gs.get_status("nov-1")
+        assert "stream_content" not in status
+        assert "stream_version" not in status
+
+    def test_set_status_can_apply_quality_fields_atomically(self):
+        """完成态质量详情应随同一状态事件写入，避免 SSE 最终包缺字段。"""
+        gs = GenerationState()
+        gs.set_status(
+            "nov-1",
+            "complete",
+            "完成",
+            100,
+            0.87,
+            extra={"grade": "A", "quality_detail": {"plot": 0.9}},
+        )
+
+        status = gs.get_status("nov-1")
+        assert status["overall"] == 0.87
+        assert status["grade"] == "A"
+        assert status["quality_detail"] == {"plot": 0.9}
+
     def test_get_status_dict_copy(self):
         """get_status_dict 返回副本，外部修改不影响内部。"""
         gs = GenerationState()
@@ -61,6 +132,15 @@ class TestGenerationState:
         popped = gs.pop_status("x")
         assert popped["status"] == "done"
         assert gs.get_status("x")["status"] == "idle"
+
+    def test_active_generation_status_helper(self):
+        assert is_active_generation_status("generating")
+        assert is_active_generation_status("polishing")
+        assert is_active_generation_status("running")
+        assert not is_active_generation_status("complete")
+        assert not is_active_generation_status("done")
+        assert not is_active_generation_status("error")
+        assert not is_active_generation_status(None)
 
     # ── Directions ──
 

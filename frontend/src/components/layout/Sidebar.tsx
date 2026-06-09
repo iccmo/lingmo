@@ -3,7 +3,7 @@ import { Separator } from 'src/components/ui/separator';
 import type { NovelSummary } from 'src/types';
 import { useEffect, useState } from 'react';
 import { api } from 'src/lib/api';
-import { LayoutDashboard, Settings, ScrollText, BarChart3, PenLine, BookOpen, Headphones, ArrowLeft, Eye, Users, Globe, Send, Wrench, X, AlertTriangle, type LucideIcon } from 'lucide-react';
+import { LayoutDashboard, Settings, ScrollText, BarChart3, PenLine, BookOpen, Headphones, ArrowLeft, Eye, Users, Globe, Send, Wrench, X, AlertTriangle, GitBranch, Brain, type LucideIcon } from 'lucide-react';
 
 interface Props {
  onNovelSelect?: (id: string) => void;
@@ -153,6 +153,8 @@ function NovelNav({ novelId, onClose }: { novelId: string; onClose?: () => void 
  { label: '分析', icon: BarChart3, path: `${basePath}/analysis` },
  { label: '角色', icon: Users, path: `${basePath}/characters` },
  { label: '世界', icon: Globe, path: `${basePath}/world` },
+ { label: '伏笔', icon: GitBranch, path: `${basePath}/foreshadowing` },
+ { label: '记忆', icon: Brain, path: `${basePath}/memory` },
  { label: '出版', icon: Send, path: `${basePath}/publish` },
  { label: '工具箱', icon: Wrench, path: `${basePath}/tools` },
  ];
@@ -162,7 +164,7 @@ function NovelNav({ novelId, onClose }: { novelId: string; onClose?: () => void 
  {/* Back button + novel title */}
  <div className="px-4 pb-2">
  <button
- onClick={() => { navigate('/'); onClose?.(); }}
+ onClick={() => { navigate(-1); onClose?.(); }}
  className="flex items-center gap-1.5 text-[11px] text-ink-subtle hover:text-accent transition-colors mb-2"
  >
  <ArrowLeft size={12} />

@@ -161,7 +161,7 @@ export function ListenPage() {
  className={`px-3 py-1.5 transition-colors ${tab === 'bookmarks' ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}
  >🔖 标记 {bookmarks.length > 0 ? `(${bookmarks.length})` : ''}</button>
  </div>
- <button onClick={playRandom} disabled={playlist.length === 0}
+ <button aria-label="随机播放" onClick={playRandom} disabled={playlist.length === 0}
  className="text-xs px-3 py-1.5 rounded-lg border border-border hover:border-accent/30 text-ink-muted hover:text-accent transition-colors disabled:opacity-30">
  🔀 随机
  </button>
@@ -219,10 +219,10 @@ export function ListenPage() {
  {/* Controls */}
  <div className="flex items-center justify-center gap-3 mt-3">
  <button onClick={() => skipChapter(-1)} className="text-sm p-1 text-ink-muted hover:text-ink">⏮</button>
- <button onClick={togglePause} className="text-2xl p-1 text-accent hover:scale-110 transition-transform">
+ <button aria-label="播放/暂停" onClick={togglePause} className="text-2xl p-1 text-accent hover:scale-110 transition-transform">
  {paused ? '▶' : '⏸'}
  </button>
- <button onClick={stop} className="text-sm p-1 text-destructive hover:text-destructive dark:hover:text-destructive">⏹</button>
+ <button aria-label="停止" onClick={stop} className="text-sm p-1 text-destructive hover:text-destructive dark:hover:text-destructive">⏹</button>
  <button onClick={() => skipChapter(1)} className="text-sm p-1 text-ink-muted hover:text-ink">⏭</button>
  <button onClick={() => addBookmark()} className="text-sm p-1 text-warn hover:text-warn dark:hover:text-warn transition-colors" title="标记当前位置">
  🔖

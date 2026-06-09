@@ -108,7 +108,7 @@ export function WordSprint({ onComplete }: Props) {
  ▶ 开始
  </button>
  ) : (
- <button onClick={stop}
+ <button aria-label="停止" onClick={stop}
  className="flex-1 text-xs py-1.5 rounded-md bg-warn-soft0 text-white hover:bg-amber-600 transition-colors">
  ⏸ 暂停
  </button>

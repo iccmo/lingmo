@@ -51,8 +51,8 @@ def test_generate_returns_chapter_meta(gen):
 
     assert isinstance(chapter, ChapterMeta)
     assert chapter.number == 1
-    assert chapter.word_count == len(mock_body)
-    assert chapter.content == mock_body
+    assert chapter.word_count == len("天雷滚滚，叶凡睁开双眼。他感受着体内澎湃的灵力...（省略2000字）")
+    assert chapter.content == "天雷滚滚，叶凡睁开双眼。他感受着体内澎湃的灵力...（省略2000字）"
     assert len(chapter.title) > 0
 
 
@@ -126,6 +126,61 @@ def test_build_prompt_no_rag(gen):
     assert "## 相关历史剧情" not in system
 
 
+def test_build_prompt_injects_long_term_memory(gen):
+    """Narrative facts from earlier chapters become hard continuity constraints."""
+    state = build_sample_state(1)
+    state.chapters[0].narrative_facts = ["林逸已经知道锈剑会吸收月光", "柳青烟欠林逸一次人情"]
+
+    msgs = gen._build_prompt(state)
+    system = msgs[0]["content"]
+
+    assert "## 长期事实账本" in system
+    assert "锈剑会吸收月光" in system
+    assert "不能遗忘" in system
+
+
+def test_generate_extracts_narrative_facts_from_metadata(gen):
+    """generate() stores continuity facts for the next chapter without another LLM call."""
+    state = build_sample_state(0)
+    raw = """## 标题
+月下锈剑
+
+## 正文
+林逸发现锈剑会吸收月光。他决定隐瞒这件事。
+
+## 元数据
+```json
+{"summary": "林逸发现锈剑异变", "key_events": ["锈剑吸收月光"], "revelations": ["锈剑与月光有关"], "narrative_facts": ["林逸已经知道锈剑会吸收月光"], "ending_hook": "剑身浮出一个陌生名字"}
+```"""
+
+    with patch.object(gen, '_call_llm_with_retry', return_value=raw):
+        chapter = gen.generate(state)
+
+    assert "林逸已经知道锈剑会吸收月光" in chapter.narrative_facts
+
+
+def test_generate_normalizes_string_metadata_lists(gen):
+    """LLMs sometimes return semicolon-delimited strings instead of arrays."""
+    state = build_sample_state(0)
+    raw = """## 标题
+月痕
+
+## 正文
+林逸发现锈剑会吸收月光。
+
+## 元数据
+```json
+{"summary": "林逸发现锈剑异变", "key_events": "锈剑吸收月光；林逸决定隐瞒", "revelations": "锈剑与月光有关", "ending_hook": "剑身浮出一个陌生名字"}
+```"""
+
+    with patch.object(gen, '_call_llm_with_retry', return_value=raw):
+        chapter = gen.generate(state)
+
+    assert chapter.key_events == ["锈剑吸收月光", "林逸决定隐瞒"]
+    assert chapter.revelations == ["锈剑与月光有关"]
+    assert "锈剑吸收月光" in chapter.narrative_facts
+
+
 # ═══════════════════ 4. score_quality 五维评分 ═══════════════════
 
 def test_score_quality_high(gen):
@@ -139,7 +194,7 @@ def test_score_quality_high(gen):
     assert 'scores' in result
     assert 'grade' in result
     assert 'issues' in result
-    assert len(result['scores']) == 8  # coherence, consistency, pacing, hook, readability, show_dont_tell, formatting, antagonist
+    assert len(result['scores']) == 10
     assert result['overall'] >= 0.5, f"Expected >= 0.5, got {result['overall']}"
     assert result['passed'] is True
 
@@ -165,6 +220,52 @@ def test_score_quality_consistency_checks_protagonist(gen):
     result = gen.score_quality(body, state)
     assert result['scores']['consistency'] < 0.5  # protagonist not found
     assert any("林逸" in issue for issue in result['issues'])
+
+
+def test_score_quality_rewards_agency_and_cost(gen):
+    state = build_sample_state(3)
+    body = """
+林逸站在演武场中央，林浩逼他交出锈剑。
+
+"交出来，你还能活。"
+
+林逸握紧锈剑，选择守住演武场。他知道这会暴露剑骨，也知道林家长老会因此追杀他。
+
+他主动踏前一步，宁可押上前途，也不再逃。
+
+剑光落下，林浩败退。可林逸的掌心裂开，鲜血顺着剑柄流下。突破带来反噬，也让他欠下剑尘一个无法偿还的债。
+
+远处，林啸天冷冷抬眼。
+
+这意味着，从今夜开始，他再也不能回头。
+"""
+
+    result = gen.score_quality(body, state)
+
+    assert result["scores"]["agency"] >= 0.7
+    assert result["scores"]["cost"] >= 0.7
+
+
+def test_score_quality_penalizes_gain_without_choice_or_cost(gen):
+    state = build_sample_state(3)
+    body = """
+林逸来到山洞。
+
+一道光落下来，他获得了上古传承，成功突破，赢得所有人的称赞。
+
+系统奖励了法宝和丹药。
+
+众人都很高兴。
+
+第二天，他继续前进。
+"""
+
+    result = gen.score_quality(body, state)
+
+    assert result["scores"]["agency"] < 0.5
+    assert result["scores"]["cost"] < 0.5
+    assert any("主动选择" in issue for issue in result["issues"])
+    assert any("缺少代价" in issue for issue in result["issues"])
 
 
 # ═══════════════════ 5. de_ai post-processing ═══════════════════
@@ -215,6 +316,42 @@ def test_batch_generate_picks_best(gen):
     assert best_ch.title == "Version B"
     assert best_q['overall'] == 0.82
     assert best_q['grade'] == 'A'
+
+
+def test_batch_generate_commits_only_best_candidate_state(gen):
+    """Rejected candidates must not mutate plot/character state for later chapters."""
+    state = build_sample_state(0)
+    state.plot.next_plot_points = ["原始目标"]
+    low_quality_raw = """## 标题
+低分候选
+
+## 正文
+林逸误入歧路。
+
+## 元数据
+```json
+{"summary":"低分候选","updated_plot_points":["错误目标"],"key_events":["误入歧路"]}
+```"""
+    high_quality_raw = """## 标题
+高分候选
+
+## 正文
+林逸握紧锈剑，选择守住演武场。
+
+## 元数据
+```json
+{"summary":"高分候选","updated_plot_points":["守住演武场"],"key_events":["守住演武场"]}
+```"""
+    q1 = {'overall': 0.45, 'scores': {}, 'grade': 'D', 'passed': False, 'issues': [], 'word_count': 20}
+    q2 = {'overall': 0.88, 'scores': {}, 'grade': 'A', 'passed': True, 'issues': [], 'word_count': 20}
+
+    with patch.object(gen, '_call_llm_with_retry', side_effect=[low_quality_raw, high_quality_raw]):
+        with patch.object(gen, 'score_quality', side_effect=[q1, q2]):
+            best_ch, best_q = gen.batch_generate(state, n=2)
+
+    assert best_ch.title == "高分候选"
+    assert best_q["overall"] == 0.88
+    assert state.plot.next_plot_points == ["守住演武场"]
 
 
 def test_batch_generate_varying_temperature(gen):
@@ -290,6 +427,9 @@ def test_scheduler_run_once_full_pipeline(_mock_db_cls):
     call_kwargs = mock_add.call_args[1]
     assert call_kwargs['content'] == 'de_ai_body'
     assert call_kwargs['quality_score'] == 0.72
+    assert mock_gen.store_chapter_embedding.call_args.args[2] == 'de_ai_body'
+    mock_gen.score_quality.assert_called_once()
+    assert mock_gen.score_quality.call_args.args[0] == 'de_ai_body'
 
 
 @patch('novel_writer.scheduler.Database')
@@ -334,3 +474,140 @@ def test_scheduler_run_once_retry_on_low_quality(_mock_db_cls):
     assert 'success' in result
     # batch_generate called twice: initial + 1 retry
     assert mock_gen.batch_generate.call_count == 2
+
+
+@patch('novel_writer.scheduler.Database')
+def test_scheduler_run_once_rejects_explanation_without_saving(_mock_db_cls):
+    """scheduler.run_once should not persist non-prose model output."""
+    from novel_writer.config import Config as Cfg
+    from novel_writer.scheduler import Scheduler
+
+    sched = Scheduler(Cfg())
+    _mock_db_cls.return_value = sched.db
+
+    body = "以下是本章正文：\n\n我会加强主角主动性，并加入更多冲突。"
+    ch = ChapterMeta(number=1, title="Bad", word_count=len(body), summary="", content=body)
+    quality = {'overall': 0.72, 'scores': {}, 'grade': 'B', 'passed': True, 'issues': [], 'word_count': len(body)}
+
+    with patch.object(sched.db, 'get_novel', return_value={
+        'id': 'test', 'title': 'test', 'author': 'AI', 'genre': '玄幻',
+        'synopsis': '', 'world_name': '', 'world_era': '', 'world_geo': '',
+        'power_system': '', 'main_arc': '', 'current_arc': '开篇',
+        'arc_chapter_start': 1, 'characters': [], 'chapters': [],
+    }):
+        with patch.object(sched.db, 'get_provider', return_value={'api_key': 'sk-test', 'base_url': '', 'models': ['gpt-4o']}):
+            with patch.object(sched.db, 'add_chapter', return_value=1) as mock_add:
+                with patch.object(sched.db, 'log'):
+                    with patch.object(sched.db, 'record_scheduler_run') as mock_record:
+                        with patch.object(sched.db, 'conn'):
+                            with patch('novel_writer.generator.Generator') as MockGen:
+                                mock_gen = MockGen.return_value
+                                mock_gen.batch_generate.return_value = (ch, quality)
+                                mock_gen.score_quality.return_value = quality
+                                mock_gen.de_ai.return_value = (body, 0)
+                                mock_gen.retrieve_relevant_context.return_value = []
+                                mock_gen.store_chapter_embedding.return_value = None
+
+                                result = sched.run_once('test')
+
+    assert result.startswith("failed:")
+    mock_add.assert_not_called()
+    mock_record.assert_called_once_with('test', 'failed')
+
+
+@patch('novel_writer.scheduler.Database')
+def test_scheduler_run_once_loads_story_state_continuity(_mock_db_cls):
+    """scheduler.run_once should inject persisted foreshadowing and plot targets."""
+    from novel_writer.config import Config as Cfg
+    from novel_writer.scheduler import Scheduler
+
+    sched = Scheduler(Cfg())
+    _mock_db_cls.return_value = sched.db
+
+    ch = ChapterMeta(number=1, title="Test", word_count=2600, summary="summary", content="body" * 600)
+    quality = {'overall': 0.72, 'scores': {}, 'grade': 'B', 'passed': True, 'issues': [], 'word_count': 2600}
+
+    with patch.object(sched.db, 'get_novel', return_value={
+        'id': 'test', 'title': 'test', 'author': 'AI', 'genre': '玄幻',
+        'synopsis': '', 'world_name': '', 'world_era': '', 'world_geo': '',
+        'power_system': '', 'main_arc': '', 'current_arc': '开篇',
+        'arc_chapter_start': 1, 'characters': [], 'chapters': [],
+        'plot_points': [
+            {'type': 'plot', 'content': '调查铜镜来源', 'is_resolved': 0},
+            {'type': 'plot', 'content': '已完成旧目标', 'is_resolved': 1},
+            {'type': 'foreshadowing', 'content': '不是剧情目标', 'is_resolved': 0},
+        ],
+    }):
+        with patch.object(sched.db, 'get_all_foreshadowing', return_value=[
+            {'description': '青铜铃会在月圆夜响起', 'status': 'active'},
+            {'description': '镜中人知道真相', 'status': 'overdue'},
+            {'description': '已回收旧伏笔', 'status': 'resolved'},
+        ]):
+            with patch.object(sched.db, 'get_provider', return_value={'api_key': 'sk-test', 'base_url': '', 'models': ['gpt-4o']}):
+                with patch.object(sched.db, 'add_chapter', return_value=1):
+                    with patch.object(sched.db, 'log'):
+                        with patch.object(sched.db, 'record_scheduler_run'):
+                            with patch.object(sched.db, 'conn'):
+                                with patch('novel_writer.generator.Generator') as MockGen:
+                                    mock_gen = MockGen.return_value
+                                    mock_gen.batch_generate.return_value = (ch, quality)
+                                    mock_gen.score_quality.return_value = quality
+                                    mock_gen.de_ai.return_value = ("de_ai_body", 0)
+                                    mock_gen.retrieve_relevant_context.return_value = []
+                                    mock_gen.store_chapter_embedding.return_value = None
+
+                                    result = sched.run_once('test')
+
+    assert 'success' in result
+    state = mock_gen.batch_generate.call_args.args[0]
+    assert state.plot.foreshadowing == ["青铜铃会在月圆夜响起", "镜中人知道真相"]
+    assert state.plot.next_plot_points == ["调查铜镜来源"]
+
+
+@patch('novel_writer.scheduler.Database')
+def test_scheduler_run_once_syncs_story_state_updates(_mock_db_cls):
+    """scheduler.run_once should persist generated plot/foreshadowing state updates."""
+    from novel_writer.config import Config as Cfg
+    from novel_writer.scheduler import Scheduler
+
+    sched = Scheduler(Cfg())
+    _mock_db_cls.return_value = sched.db
+
+    ch = ChapterMeta(number=3, title="Test", word_count=2600, summary="summary", content="body" * 600)
+    quality = {'overall': 0.72, 'scores': {}, 'grade': 'B', 'passed': True, 'issues': [], 'word_count': 2600}
+
+    with patch.object(sched.db, 'get_novel', return_value={
+        'id': 'test', 'title': 'test', 'author': 'AI', 'genre': '玄幻',
+        'synopsis': '', 'world_name': '', 'world_era': '', 'world_geo': '',
+        'power_system': '', 'main_arc': '', 'current_arc': '开篇',
+        'arc_chapter_start': 1, 'characters': [], 'chapters': [],
+        'plot_points': [],
+    }):
+        with patch.object(sched.db, 'get_all_foreshadowing', return_value=[]):
+            with patch.object(sched.db, 'get_provider', return_value={'api_key': 'sk-test', 'base_url': '', 'models': ['gpt-4o']}):
+                with patch.object(sched.db, 'add_chapter', return_value=1):
+                    with patch.object(sched.db, 'log'):
+                        with patch.object(sched.db, 'record_scheduler_run'):
+                            with patch.object(sched.db, 'conn'):
+                                with patch('novel_writer.generator.Generator') as MockGen:
+                                    mock_gen = MockGen.return_value
+
+                                    def batch_generate(state, n, rag_context=None, outline=None):
+                                        state.plot.next_plot_points = ["寻找失踪证人"]
+                                        state.plot.resolved_foreshadowing.append({"content": "青铜铃响起", "chapter": 3})
+                                        return ch, quality
+
+                                    mock_gen.batch_generate.side_effect = batch_generate
+                                    mock_gen.score_quality.return_value = quality
+                                    mock_gen.de_ai.return_value = ("de_ai_body", 0)
+                                    mock_gen.retrieve_relevant_context.return_value = []
+                                    mock_gen.store_chapter_embedding.return_value = None
+
+                                    with patch('novel_writer.scheduler._sync_next_plot_points') as sync_plot:
+                                        with patch('novel_writer.scheduler._sync_resolved_foreshadowing') as sync_fs:
+                                            result = sched.run_once('test')
+
+    assert 'success' in result
+    sync_plot.assert_called_once()
+    sync_fs.assert_called_once()
+    assert sync_fs.call_args.args[3] == 3

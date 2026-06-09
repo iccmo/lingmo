@@ -44,13 +44,17 @@ export function NovelCharacters() {
             <h3 className="text-sm font-semibold text-ink mb-3">角色关系图</h3>
             <CharacterGraph
               characters={novel.characters.map(c => ({
-                id: c.id, name: c.name, role: c.role || '', power_level: '', status: '',
+                id: c.id, char_key: c.char_key, name: c.name, role: c.role || '', power_level: '', status: '',
               }))}
-              chapters={novel.chapters}
+              relations={(novel.character_relations || []).map(r => ({
+                c1_name: r.c1_name,
+                c2_name: r.c2_name,
+                relation: r.relation_type,
+              }))}
             />
           </div>
         )}
-        <CharacterVoices chapters={novel.chapters} genre={novel.genre} />
+        <CharacterVoices novelId={novel.id} chapters={novel.chapters} />
         <SoulWorkshop novelId={novel.id} chapters={novel.chapters} />
         <SoulEngine novelId={novel.id} genre={novel.genre} />
       </div>

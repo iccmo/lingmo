@@ -3,8 +3,8 @@
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -44,6 +44,7 @@ class ChapterMeta:
     content: str = ""              # 章节目录正文
     key_events: list[str] = field(default_factory=list)
     revelations: list[str] = field(default_factory=list)  # 新揭示的信息
+    narrative_facts: list[str] = field(default_factory=list)  # 后续章节必须记住的稳定事实
     ending_hook: str = ""          # 结尾钩子
     generated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -82,7 +83,7 @@ class StoryState:
 
     @property
     def total_chapters(self) -> int:
-        return len(self.chapters)
+        return max((chapter.number for chapter in self.chapters), default=0)
 
     @property
     def total_words(self) -> int:
@@ -90,18 +91,83 @@ class StoryState:
 
     @property
     def latest_chapter(self) -> ChapterMeta | None:
-        return self.chapters[-1] if self.chapters else None
+        return max(self.chapters, key=lambda chapter: chapter.number, default=None)
 
     # --- 上下文摘要（注入 prompt） ---
     def recent_context(self, n: int = 5) -> str:
         """最近 n 章摘要，用于控制 prompt 长度"""
-        recent = self.chapters[-n:] if len(self.chapters) >= n else self.chapters
+        ordered_chapters = sorted(self.chapters, key=lambda chapter: chapter.number)
+        recent = ordered_chapters[-n:] if len(ordered_chapters) >= n else ordered_chapters
         parts = []
         for ch in recent:
             parts.append(f"第{ch.number}章《{ch.title}》：{ch.summary}")
             if ch.ending_hook:
                 parts.append(f"结尾钩子：{ch.ending_hook}")
         return "\n".join(parts)
+
+    def memory_context(
+        self,
+        max_chapters: int = 12,
+        max_items: int = 18,
+        anchor_chapters: int = 4,
+        anchor_items: int = 6,
+    ) -> str:
+        """Long-running continuity facts distilled from previous chapters."""
+        if not self.chapters:
+            return "暂无长期事实。"
+
+        def as_text_list(value: Any) -> list[str]:
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [item.strip() for item in value.replace("；", "\n").replace(";", "\n").splitlines() if item.strip()]
+            if isinstance(value, list):
+                return [str(item).strip() for item in value if str(item).strip()]
+            return [str(value).strip()] if str(value).strip() else []
+
+        seen: set[str] = set()
+        ordered_chapters = sorted(self.chapters, key=lambda chapter: chapter.number)
+
+        def chapter_items(chapters: list[ChapterMeta], limit: int) -> list[str]:
+            items: list[str] = []
+            for ch in chapters:
+                candidates = [
+                    *as_text_list(getattr(ch, "narrative_facts", [])),
+                    *as_text_list(getattr(ch, "key_events", []))[:2],
+                    *as_text_list(getattr(ch, "revelations", []))[:2],
+                ]
+                if ch.ending_hook:
+                    candidates.append(f"第{ch.number}章留下悬念：{ch.ending_hook}")
+                for fact in candidates:
+                    fact = str(fact).strip()
+                    if not fact or fact in seen:
+                        continue
+                    seen.add(fact)
+                    items.append(f"第{ch.number}章：{fact}")
+                    if len(items) >= limit:
+                        return items
+            return items
+
+        recent_chapters = ordered_chapters[-max_chapters:]
+        anchor_chapter_list: list[ChapterMeta] = []
+        if len(ordered_chapters) > max_chapters + anchor_chapters:
+            recent_numbers = {chapter.number for chapter in recent_chapters}
+            anchor_chapter_list = [
+                chapter
+                for chapter in ordered_chapters[:anchor_chapters]
+                if chapter.number not in recent_numbers
+            ]
+
+        anchor_limit = min(anchor_items, max_items) if anchor_chapter_list else 0
+        recent_limit = max(0, max_items - anchor_limit)
+        items = [
+            *chapter_items(anchor_chapter_list, anchor_limit),
+            *chapter_items(recent_chapters, recent_limit),
+        ]
+
+        if not items:
+            return "暂无长期事实。"
+        return "\n".join(f"- {item}" for item in items)
 
     # --- 角色上下文 ---
     def character_context(self) -> str:

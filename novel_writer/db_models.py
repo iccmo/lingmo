@@ -56,12 +56,15 @@ class Chapter(Base):
     ending_hook: Mapped[str] = mapped_column(Text, default="")
     key_events: Mapped[str] = mapped_column(Text, default="[]")
     revelations: Mapped[str] = mapped_column(Text, default="[]")
+    narrative_facts: Mapped[str] = mapped_column(Text, default="[]")
     quality_score: Mapped[float] = mapped_column(Float, default=0)
     model_used: Mapped[str] = mapped_column(Text, default="")
+    prompt_version: Mapped[str] = mapped_column(Text, default="")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0)
     generation_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    edit_ratio: Mapped[float] = mapped_column(Float, default=0)
     generated_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     published_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
@@ -140,6 +143,20 @@ class ChapterVersion(Base):
     created_at: Mapped[str] = mapped_column(Text, default=lambda: datetime.now().isoformat())
 
 
+class ChapterTrace(Base):
+    __tablename__ = "chapter_traces"
+    __table_args__ = (UniqueConstraint("novel_id", "chapter_num"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    novel_id: Mapped[str] = mapped_column(Text, ForeignKey("novels.id", ondelete="CASCADE"), nullable=False)
+    chapter_num: Mapped[int] = mapped_column(Integer, nullable=False)
+    steps_json: Mapped[str] = mapped_column(Text, default="[]")
+    final_quality: Mapped[float] = mapped_column(Float, default=0)
+    total_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0)
+    created_at: Mapped[str] = mapped_column(Text, default=lambda: datetime.now().isoformat())
+
+
 class StyleProfile(Base):
     __tablename__ = "style_profiles"
 
@@ -166,7 +183,9 @@ class CostLog(Base):
     model: Mapped[str] = mapped_column(Text, default="")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost: Mapped[float] = mapped_column(Float, default=0)
+    purpose: Mapped[str] = mapped_column(Text, default="generate")
     created_at: Mapped[str] = mapped_column(Text, default=lambda: datetime.now().isoformat())
 
 

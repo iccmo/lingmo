@@ -115,7 +115,7 @@ export function Foreshadowing() {
  {/* Stale warning */}
  {audit?.warning && (
  <div className="mb-4 p-3 bg-warn-soft border border-warn/20 rounded-lg ">
- <p className="text-xs text-amber-700 font-medium"><AlertTriangle size={12} className='mr-0.5' /> {audit.warning}</p>
+ <p className="text-xs text-amber-700 dark:text-amber-300 font-medium"><AlertTriangle size={12} className='mr-0.5' /> {audit.warning}</p>
  {audit.stale.length > 0 && (
  <div className="mt-2 space-y-1">
  {audit.stale.map((s, i) => (

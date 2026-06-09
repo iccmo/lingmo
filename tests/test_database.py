@@ -51,6 +51,8 @@ def test_update_chapter(db):
     db.update_chapter("n1", 1, content="修改后的正文", edit_ratio=0.3)
     ch = db.get_chapter("n1", 1)
     assert ch["content"] == "修改后的正文"
+    assert ch["word_count"] == len("修改后的正文")
+    assert ch["summary"] == "修改后的正文"
     assert ch["edit_ratio"] == 0.3
 
 def test_scheduler_state(db):

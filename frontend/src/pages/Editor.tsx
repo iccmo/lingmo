@@ -4,11 +4,18 @@ import { Card, CardContent } from 'src/components/ui/card';
 import { Badge } from 'src/components/ui/badge';
 import { Skeleton } from 'src/components/ui/skeleton';
 import { api } from 'src/lib/api';
+import { getNextWritableChapterNumber } from 'src/lib/chapter-numbering';
 import { toast } from 'sonner';
 import { Sparkles, Anchor, Eye } from 'lucide-react';
 import type { DraftOption, NovelDetail, ChapterMeta } from 'src/types';
 
 type Step = 'input' | 'selecting' | 'editing' | 'saving';
+
+export function buildExpansionEdits(edits: string): string {
+ const clean = edits.trim();
+ if (!clean) return '';
+ return `扩写时必须执行以下作者补充要求：${clean}`;
+}
 
 export function Editor() {
  const { id } = useParams<{ id: string }>();
@@ -16,6 +23,7 @@ export function Editor() {
  const [step, setStep] = useState<Step>('input');
  const [novel, setNovel] = useState<NovelDetail | null>(null);
  const [direction, setDirection] = useState('');
+ const [expansionEdits, setExpansionEdits] = useState('');
  const [drafts, setDrafts] = useState<DraftOption[]>([]);
  const [selectedDraft, setSelectedDraft] = useState<DraftOption | null>(null);
  const [body, setBody] = useState('');
@@ -29,6 +37,7 @@ export function Editor() {
  const [replaceTerm, setReplaceTerm] = useState('');
  const [showFind, setShowFind] = useState(false);
  const [matchCount, setMatchCount] = useState(0);
+ const nextChapterNumber = getNextWritableChapterNumber(novel?.chapters || chapterList);
 
  // Undo/redo history
  const [history, setHistory] = useState<string[]>([]);
@@ -142,6 +151,7 @@ export function Editor() {
  try {
  const res = await api.novels.draft(id, direction);
  setDrafts(res.directions);
+ setExpansionEdits('');
  } catch (e: unknown) {
  toast.error('生成草稿失败: ' + (e as Error).message);
  setStep('input');
@@ -155,7 +165,12 @@ export function Editor() {
  setSelectedDraft(draft);
  setLoading(true);
  try {
- const res = await api.novels.expand(id, draft.id, { direction: draft.direction, preview: draft.preview, hook: draft.hook });
+ const res = await api.novels.expand(
+ id,
+ draft.id,
+ { direction: draft.direction, preview: draft.preview, hook: draft.hook },
+ buildExpansionEdits(expansionEdits),
+ );
  setTitle(res.title);
  setBody(res.body);
  setEditChapterNum(null);
@@ -169,7 +184,7 @@ export function Editor() {
 
  async function handleSave() {
  if (!id || !novel) return;
- const chapterNum = editChapterNum || (novel.total_chapters || 0) + 1;
+ const chapterNum = editChapterNum || nextChapterNumber;
  if (!body.trim()) { toast.error('内容不能为空'); return; }
  setStep('saving');
  try {
@@ -264,6 +279,14 @@ export function Editor() {
  ) : (
  <div>
  <p className="text-sm text-ink-muted mb-4">选择最合适的剧情走向，AI 将据此展开完整章节：</p>
+ <textarea
+ value={expansionEdits}
+ onChange={e => setExpansionEdits(e.target.value)}
+ placeholder="可选：补充扩写要求。例如：选择这个走向，但让主角主动押注；突破必须留下伤口、债务或关系裂痕。"
+ rows={2}
+ className="w-full mb-3 rounded-lg border border-input bg-card text-ink text-xs px-3 py-2 resize-none
+ placeholder:text-ink-subtle focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all"
+ />
  <div className="grid gap-3">
  {drafts.map(d => (
  <Card key={d.id}
@@ -301,7 +324,7 @@ export function Editor() {
  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
  <div className="flex items-center gap-2">
  <Badge variant="outline" className="text-xs">
- {editChapterNum ? `编辑第${editChapterNum}章` : `新章 ${(novel.total_chapters || 0) + 1}`}
+ {editChapterNum ? `编辑第${editChapterNum}章` : `新章 ${nextChapterNumber}`}
  </Badge>
  {title && <span className="text-sm text-ink font-medium">{title}</span>}
  </div>
@@ -392,7 +415,7 @@ export function Editor() {
  重新选择走向
  </button>
  <button className="text-sm px-4 py-2.5 rounded-lg border border-border text-ink-muted hover:text-ink transition-colors"
- onClick={() => { if (confirm('确定放弃当前编辑？')) { setBody(''); setStep('input'); } }}>
+ onClick={() => { if (window.confirm('确定放弃当前编辑？')) { setBody(''); setStep('input'); } }}>
  放弃
  </button>
  </div>

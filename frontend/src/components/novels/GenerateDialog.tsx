@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
-import { Brain, Pin, Zap } from 'lucide-react';
+import { Brain, Pin, Zap, PenLine } from 'lucide-react';
 
 const BASE_SUGGESTIONS = [
  { emoji: '', label: '打斗场面', text: '本章需要有激烈的打斗场面' },
@@ -50,6 +50,18 @@ function getAdaptiveSuggestions(novelId: string) {
  if (soulSuggestions) return [...soulSuggestions, ...BASE_SUGGESTIONS.slice(0, 5)];
  } catch {}
  return BASE_SUGGESTIONS;
+}
+
+export function buildGenerateDirection(direction: string, memoryInput = '', creativeRisk = false): string {
+ let finalDir = direction.trim();
+ const memory = memoryInput.trim();
+ if (memory) {
+  finalDir = `【记忆注入】将以下真实细节融入本章：${memory}。\n\n${finalDir}`;
+ }
+ if (creativeRisk) {
+  finalDir = `【打破常规模式】不要写读者能预测到的内容。至少做一件让读者完全意想不到的事——但要合理。${finalDir}`;
+ }
+ return finalDir;
 }
 
 export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevHook, novelId, prefillDirection }: {
@@ -120,17 +132,22 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
  }
  }, [open, prefillDirection]);
 
+ const submitGenerate = useCallback((baseDirection = direction) => {
+ const finalDir = buildGenerateDirection(baseDirection, memoryInput, creativeRisk);
+ onGenerate(finalDir, qualityThreshold, revisionMode, selectedModel);
+ }, [creativeRisk, direction, memoryInput, onGenerate, qualityThreshold, revisionMode, selectedModel]);
+
  useEffect(() => {
  const handler = (e: KeyboardEvent) => {
  if (e.key === 'Escape') onClose();
  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
  e.preventDefault();
- onGenerate(direction, qualityThreshold, revisionMode);
+ submitGenerate();
  }
  };
  if (open) window.addEventListener('keydown', handler);
  return () => window.removeEventListener('keydown', handler);
- }, [open, direction, qualityThreshold, onClose, onGenerate]);
+ }, [open, onClose, submitGenerate]);
 
  if (!open) return null;
 
@@ -243,7 +260,7 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
  {/* Previous chapter hook context */}
  {prevHook && (
  <div className="mb-3 p-2.5 rounded-lg bg-warn-soft/50 border border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30">
- <p className="text-[10px] text-amber-700 font-medium mb-0.5"><Pin size={12} className="inline" /> 上章结尾钩子</p>
+ <p className="text-[10px] text-amber-700 dark:text-amber-300 font-medium mb-0.5"><Pin size={12} className="inline" /> 上章结尾钩子</p>
  <p className="text-[11px] text-ink-muted leading-relaxed line-clamp-2">{prevHook}</p>
  </div>
  )}
@@ -354,9 +371,8 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
  <div className="flex gap-2 justify-between">
  {prevHook && (
  <button onClick={() => {
- let d = `延续上章结尾：${prevHook.slice(0, 100)}`;
- if (memoryInput.trim()) d = `【记忆注入】${memoryInput.trim()}\n\n${d}`;
- onGenerate(d, qualityThreshold, revisionMode, selectedModel);
+ const d = `延续上章结尾：${prevHook.slice(0, 100)}`;
+ submitGenerate(d);
  }}
  className="text-xs px-3 py-2 rounded-md border border-accent/30 text-accent hover:bg-accent-soft transition-colors">
  <Zap size={12} className="inline" /> 直接续写
@@ -368,10 +384,7 @@ export function GenerateDialog({ open, onClose, onGenerate, chapterNumber, prevH
  取消
  </button>
  <button onClick={() => {
- let finalDir = direction || '';
- if (memoryInput.trim()) finalDir = `【记忆注入】将以下真实细节融入本章：${memoryInput.trim()}。\n\n${finalDir}`;
- if (creativeRisk) finalDir = `【打破常规模式】不要写读者能预测到的内容。至少做一件让读者完全意想不到的事——但要合理。${finalDir}`;
- onGenerate(finalDir, qualityThreshold, revisionMode, selectedModel);
+ submitGenerate();
  }}
  className="px-4 py-2 text-sm rounded-md bg-accent text-white hover:bg-accent-hover transition-colors font-medium flex items-center gap-1.5">
  {revisionMode === 'deep' ? '💎' : ''} {direction ? '按方向生成' : '自动构思'}

@@ -1,0 +1,111 @@
+<h2>灵墨 · AI 创作伴侣 — 项目全景评估</h2>
+<p class="subtitle">当前状态、亮点与待打磨方向</p>
+
+<div class="section">
+  <h3>📊 项目规模</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:12px 0">
+    <div class="mockup" style="text-align:center">
+      <div class="mockup-header">后端</div>
+      <div class="mockup-body">
+        <div style="font-size:28px;font-weight:700">50+</div>
+        <div>Python 文件</div>
+        <div style="font-size:12px;color:#888">FastAPI · SQLite · 工位模式</div>
+      </div>
+    </div>
+    <div class="mockup" style="text-align:center">
+      <div class="mockup-header">前端</div>
+      <div class="mockup-body">
+        <div style="font-size:28px;font-weight:700">100+</div>
+        <div>TSX 组件</div>
+        <div style="font-size:12px;color:#888">React · Tailwind · 6 主题</div>
+      </div>
+    </div>
+    <div class="mockup" style="text-align:center">
+      <div class="mockup-header">测试</div>
+      <div class="mockup-body">
+        <div style="font-size:28px;font-weight:700">355</div>
+        <div>通过 / 365</div>
+        <div style="font-size:12px;color:#888">6 失败 + 4 错误</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>✅ 已有的亮点</h3>
+  <div class="options">
+    <div class="option" style="border-left:3px solid #22c55e;cursor:default">
+      <div class="content">
+        <h3>工位管线架构</h3>
+        <p>novel/drama/script 三种工位，每工位内模块独立（chapter_writer, consistency_checker, editor_review...），职责清晰</p>
+      </div>
+    </div>
+    <div class="option" style="border-left:3px solid #22c55e;cursor:default">
+      <div class="content">
+        <h3>6 写作高级功能</h3>
+        <p>TechniqueAdvisor 技法注入 · Deslop 反套路过滤 · Foreshadowing 伏笔解析 · Consistency 一致性评分 · EditorReview 编辑审稿 · 知识基底注入</p>
+      </div>
+    </div>
+    <div class="option" style="border-left:3px solid #22c55e;cursor:default">
+      <div class="content">
+        <h3>写作界面体系</h3>
+        <p>WriterView 三栏写作 · 4 布局模式 · 6 主题 · 打字机效果 · 专注计时 · 纸纹切换 · 自定义主题编辑器</p>
+      </div>
+    </div>
+    <div class="option" style="border-left:3px solid #22c55e;cursor:default">
+      <div class="content">
+        <h3>StyleProfile 数据驱动</h3>
+        <p>每本小说独立的风格档案，包含情绪预算、节奏模式、知识基底、思想系统、核心追问等 30+ 参数，自动演化</p>
+      </div>
+    </div>
+    <div class="option" style="border-left:3px solid #22c55e;cursor:default">
+      <div class="content">
+        <h3>影音扩展</h3>
+        <p>Film Studio（视觉圣经/分镜脚本/制片中心）+ Audiobook（有声书）+ ComfyUI 图片生成 + 视频合成管线</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🔍 待打磨方向</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="arch" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>架构瘦身</h3>
+        <p>generator.py 3329 行单体巨石 · server.py 路由混杂 · 部分模块只有 3-75 行未完成</p>
+      </div>
+    </div>
+    <div class="option" data-choice="quality" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>质量闭环</h3>
+        <p>A 级门槛≥0.8 但缺少质量趋势追踪 · 6 个测试失败待修 · 集成测试不稳定 · 前端无测试</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ux" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>UX 体验打磨</h3>
+        <p>100+ 组件但部分交互粗糙 · 移动端适配不完整 · 首屏加载优化 · 写作区沉浸感可提升</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ai" onclick="toggleSelect(this)">
+      <div class="letter">D</div>
+      <div class="content">
+        <h3>AI 创作深度</h3>
+        <p>当前"一章一章写"模式 · 可增加大纲联动写作、多线并行、读者视角模拟、风格迁移</p>
+      </div>
+    </div>
+    <div class="option" data-choice="perf" onclick="toggleSelect(this)">
+      <div class="letter">E</div>
+      <div class="content">
+        <h3>性能与工程化</h3>
+        <p>LLM 调用无缓存 · 无请求队列 · 日志体系可加强 · CI/CD 可收紧</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">👆 点击选择你最关心的方向（可多选），我帮你深入分析</p>

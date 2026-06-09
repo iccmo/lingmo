@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, Network, Trash2, Zap } from 'lucide-react';
+import { throwApiError } from 'src/lib/api-error';
 
 interface CharacterBlueprint {
  id: string;
@@ -40,16 +41,42 @@ const DEFAULT_BLUEPRINT: CharacterBlueprint = {
  contrastHow: '',
 };
 
-function loadCharacters(novelId: string): CharacterBlueprint[] {
+function loadCharactersSync(novelId: string): CharacterBlueprint[] {
  try {
  const saved = localStorage.getItem(`characters-soul-${novelId}`);
  return saved ? JSON.parse(saved) : [];
  } catch { return []; }
 }
 
-function saveCharacters(novelId: string, chars: CharacterBlueprint[]) {
- localStorage.setItem(`characters-soul-${novelId}`, JSON.stringify(chars));
-}
+async function loadCharactersFromAPI(novelId: string): Promise<CharacterBlueprint[]> {
+	 const r = await fetch(`/api/v2/novels/${novelId}/character-blueprints`);
+	 await throwApiError(r);
+	 const data = await r.json();
+	 if (Array.isArray(data)) return data;
+	 return Array.isArray(data.characters) ? data.characters : [];
+	}
+
+function saveCharactersToLocal(novelId: string, chars: CharacterBlueprint[]) {
+	 localStorage.setItem(`characters-soul-${novelId}`, JSON.stringify(chars));
+	}
+
+async function saveCharactersToAPI(novelId: string, chars: CharacterBlueprint[]) {
+	 const response = await fetch(`/api/v2/novels/${novelId}/character-blueprints`, {
+	   method: 'POST',
+	   headers: { 'Content-Type': 'application/json' },
+	   body: JSON.stringify({ characters: chars }),
+	 });
+	 await throwApiError(response);
+	}
+
+async function deleteCharacterAPI(novelId: string, charId: string) {
+	 const response = await fetch(`/api/v2/novels/${novelId}/character-blueprints/${charId}`, { method: 'DELETE' });
+	 await throwApiError(response);
+	 const result = await response.json().catch(() => ({ ok: true }));
+	 if (result && result.ok === false) {
+	   throw new Error('角色不存在或删除失败');
+	 }
+	}
 
 /* ─── Character Card ─── */
 function CharacterCard({ char, onEdit, onDelete }: {
@@ -75,7 +102,7 @@ function CharacterCard({ char, onEdit, onDelete }: {
  char.role === '主角' ? 'bg-accent text-white' :
  char.role === '反派' ? 'bg-destructive-soft text-destructive dark:bg-red-900/30 ' :
  char.role === '导师' ? 'bg-success-soft text-success dark:bg-emerald-900/30 ' :
- 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
+ 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400'
  }`}>{char.role}</span>
  </div>
  {char.voiceSample && (
@@ -140,11 +167,12 @@ function CharacterCard({ char, onEdit, onDelete }: {
 }
 
 /* ─── Character Editor Form ─── */
-function CharacterForm({ initial, onSave, onCancel }: {
- initial: CharacterBlueprint;
- onSave: (c: CharacterBlueprint) => void;
- onCancel: () => void;
-}) {
+function CharacterForm({ initial, onSave, onCancel, saving }: {
+	 initial: CharacterBlueprint;
+	 onSave: (c: CharacterBlueprint) => void | Promise<void>;
+	 onCancel: () => void;
+	 saving?: boolean;
+	}) {
  const [c, setC] = useState<CharacterBlueprint>(initial);
 
  function field(key: keyof CharacterBlueprint, label: string, placeholder: string, rows = 1) {
@@ -203,12 +231,12 @@ function CharacterForm({ initial, onSave, onCancel }: {
  </div>
 
  <div className="flex gap-2">
- <button onClick={() => onSave(c)}
- className="px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors text-xs font-medium">
- 保存角色
- </button>
- <button onClick={onCancel}
- className="px-4 py-2 rounded-lg border border-border text-ink-muted hover:text-ink transition-colors text-xs">
+	 <button onClick={() => onSave(c)} disabled={saving}
+	 className="px-4 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors text-xs font-medium disabled:opacity-50">
+	 {saving ? '保存中...' : '保存角色'}
+	 </button>
+	 <button onClick={onCancel} disabled={saving}
+	 className="px-4 py-2 rounded-lg border border-border text-ink-muted hover:text-ink transition-colors text-xs disabled:opacity-50">
  取消
  </button>
  </div>
@@ -218,30 +246,59 @@ function CharacterForm({ initial, onSave, onCancel }: {
 
 /* ─── Main Component ─── */
 export function CharacterSoul({ novelId }: { novelId: string }) {
- const [characters, setCharacters] = useState<CharacterBlueprint[]>(() => loadCharacters(novelId));
- const [editing, setEditing] = useState<CharacterBlueprint | null>(null);
- const [showForm, setShowForm] = useState(false);
+	 const [characters, setCharacters] = useState<CharacterBlueprint[]>(() => loadCharactersSync(novelId));
+	 const [editing, setEditing] = useState<CharacterBlueprint | null>(null);
+	 const [showForm, setShowForm] = useState(false);
+	 const [saving, setSaving] = useState(false);
 
- useEffect(() => { saveCharacters(novelId, characters); }, [characters, novelId]);
+ // Load from API on mount, fall back to localStorage
+	 useEffect(() => {
+	   loadCharactersFromAPI(novelId).then(apiChars => {
+	     setCharacters(apiChars);
+	     saveCharactersToLocal(novelId, apiChars);
+	   }).catch((error) => {
+	     toast.error(`角色蓝图同步失败: ${(error as Error).message}`);
+	   });
+	 }, [novelId]);
 
- function handleSave(c: CharacterBlueprint) {
- if (!c.name.trim()) { toast.error('角色名不能为空'); return; }
- const id = c.id || `char-${Date.now()}`;
- const updated = { ...c, id };
- setCharacters(prev => {
- const idx = prev.findIndex(x => x.id === id);
- if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
- return [...prev, updated];
- });
- setEditing(null);
- setShowForm(false);
- toast.success(`角色「${c.name}」已保存`);
- }
+	 useEffect(() => { saveCharactersToLocal(novelId, characters); }, [characters, novelId]);
 
- function handleDelete(id: string) {
- setCharacters(prev => prev.filter(c => c.id !== id));
- toast.success('角色已删除');
- }
+	 async function handleSave(c: CharacterBlueprint) {
+	 if (!c.name.trim()) { toast.error('角色名不能为空'); return; }
+	 const id = c.id || `char-${Date.now()}`;
+	 const updated = { ...c, id };
+	 const nextCharacters = (() => {
+	 const prev = characters;
+	 const idx = prev.findIndex(x => x.id === id);
+	 if (idx >= 0) { const next = [...prev]; next[idx] = updated; return next; }
+	 return [...prev, updated];
+	 })();
+	 setSaving(true);
+	 try {
+	 await saveCharactersToAPI(novelId, nextCharacters);
+	 setCharacters(nextCharacters);
+	 setEditing(null);
+	 setShowForm(false);
+	 toast.success(`角色「${c.name}」已保存`);
+	 } catch (error) {
+	 toast.error(`保存失败: ${(error as Error).message}`);
+	 } finally {
+	 setSaving(false);
+	 }
+	 }
+
+	 async function handleDelete(id: string) {
+	 setSaving(true);
+	 try {
+	 await deleteCharacterAPI(novelId, id);
+	 setCharacters(prev => prev.filter(c => c.id !== id));
+	 toast.success('角色已删除');
+	 } catch (error) {
+	 toast.error(`删除失败: ${(error as Error).message}`);
+	 } finally {
+	 setSaving(false);
+	 }
+	 }
 
  // Character web insights
  const pairs: { a: CharacterBlueprint; b: CharacterBlueprint; insight: string }[] = [];
@@ -268,10 +325,10 @@ export function CharacterSoul({ novelId }: { novelId: string }) {
  {characters.length === 0 ? '金庸的人物为什么难忘？因为每个人都有自己的出场·标志·创伤·弧线' : `${characters.length} 个角色已设计`}
  </p>
  </div>
- <button onClick={() => { setEditing({ ...DEFAULT_BLUEPRINT }); setShowForm(true); }}
- className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors">
- + 设计角色
- </button>
+	 <button onClick={() => { setEditing({ ...DEFAULT_BLUEPRINT }); setShowForm(true); }} disabled={saving}
+	 className="text-xs px-3 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50">
+	 {saving ? '同步中...' : '+ 设计角色'}
+	 </button>
  </div>
 
  {/* Character grid */}
@@ -292,11 +349,12 @@ export function CharacterSoul({ novelId }: { novelId: string }) {
 
  {/* Edit form */}
  {showForm && editing && (
- <CharacterForm
- initial={editing}
- onSave={handleSave}
- onCancel={() => { setEditing(null); setShowForm(false); }}
- />
+	 <CharacterForm
+	 initial={editing}
+	 onSave={handleSave}
+	 onCancel={() => { setEditing(null); setShowForm(false); }}
+	 saving={saving}
+	 />
  )}
 
  {/* Character web insights */}

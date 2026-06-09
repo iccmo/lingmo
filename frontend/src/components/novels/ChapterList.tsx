@@ -10,17 +10,21 @@ import { AudioTextSync } from 'src/components/novels/AudioTextSync';
 import { SceneEditor } from 'src/components/novels/SceneEditor';
 import { WordFrequency } from 'src/components/novels/WordFrequency';
 import { useAudio } from 'src/lib/AudioContext';
+import { throwApiError } from 'src/lib/api-error';
+import { waitForNovelTaskCompletion } from 'src/lib/task-status';
 import type { ChapterMeta } from 'src/types';
-import { BookOpen, Sparkles, FileText, Search, PenLine, Star, Pin, Tag, CheckCircle2, Trash2, Anchor, Smartphone, Film, Scissors, TrendingUp, BarChart3, Copy } from 'lucide-react';
+import { BookOpen, Sparkles, FileText, Search, PenLine, Star, Pin, CheckCircle2, Trash2, Smartphone, Film, Scissors, TrendingUp, BarChart3, Copy, Flame, Telescope, Swords, RefreshCw } from 'lucide-react';
+import { ChapterTags } from './chapters/ChapterTags';
+import { ChapterProofread } from './chapters/ChapterProofread';
 
 /* ─── Chapter tags ─── */
 const TAG_OPTIONS = [
- { key: '高潮', Icon: Flame, label: '高潮', color: 'bg-destructive-soft text-red-700 border-destructive/20 dark:bg-red-900/30 ' },
+ { key: '高潮', Icon: Flame, label: '高潮', color: 'bg-destructive-soft text-red-700 dark:text-red-300 border-destructive/20 dark:bg-red-900/30 ' },
  { key: '过渡', emoji: '🌊', label: '过渡', color: 'bg-info-soft text-blue-700 border-info/20 dark:bg-blue-900/30 dark:border-blue-800' },
- { key: '伏笔', Icon: Telescope, label: '伏笔', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+ { key: '伏笔', Icon: Telescope, label: '伏笔', color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
  { key: '战斗', Icon: Swords, label: '战斗', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
  { key: '日常', emoji: '☕', label: '日常', color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/30 dark:text-teal-400 dark:border-teal-800' },
- { key: '转折', Icon: RefreshCw, label: '转折', color: 'bg-warn-soft text-amber-700 border-warn/20 dark:bg-amber-900/30 ' },
+ { key: '转折', Icon: RefreshCw, label: '转折', color: 'bg-warn-soft text-amber-700 dark:text-amber-300 border-warn/20 dark:bg-amber-900/30 ' },
  { key: '感情', emoji: '💕', label: '感情', color: 'bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-900/30 dark:text-pink-400 dark:border-pink-800' },
 ];
 
@@ -51,6 +55,24 @@ function highlightText(text: string, term: string): ReactNode {
  ? <mark key={i} className="search-highlight">{part}</mark>
  : part
  );
+}
+
+export function buildChapterRevisionCritique(chapterNum: number, feedback: string, focus = ''): string {
+ const cleanFeedback = feedback.trim();
+ const focusHint = focus ? `重点改进${focus}。` : '';
+ const directives = [
+  `重写第${chapterNum}章。`,
+  `作者反馈：${cleanFeedback}。`,
+  focusHint,
+  '保持原有剧情主线、人物关系、已发生事实不变，但改进指出的问题。',
+  '修订底线：不得削弱主角主动选择、拒绝、承担、冒险或反击；重要收益必须伴随具体代价、后患、身份暴露、资源消耗或关系裂痕。',
+ ];
+
+ if (focus.includes('爽感') || focus.includes('高潮') || /爽感|高潮|胜利|突破|打脸|反击/.test(cleanFeedback)) {
+  directives.push('爽感/高潮必须由主角主动押注推动，不能写成无代价开挂；高潮后至少留下一个可延续的麻烦。');
+ }
+
+ return directives.filter(Boolean).join('');
 }
 
 interface Props {
@@ -124,26 +146,47 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  }, [positionSec, audioProgress]);
 
  // Check if the currently playing chapter matches the expanded one
- const isAudioSyncing =
- expanded !== null &&
- audioCurrent !== null &&
+	 const isAudioSyncing =
+	 expanded !== null &&
+	 audioCurrent !== null &&
  audioCurrent.novelId === novelId &&
  audioCurrent.chapterNum === expanded &&
- audioPlaying &&
- !audioPaused;
+	 audioPlaying &&
+	 !audioPaused;
+
+	 async function saveChapterContent(chapterNumber: number, nextContent: string) {
+	 const response = await fetch(`/api/novels/${novelId}/chapters/${chapterNumber}`, {
+	 method: 'PUT',
+	 headers: { 'Content-Type': 'application/json' },
+	 body: JSON.stringify({ content: nextContent }),
+	 });
+	 await throwApiError(response);
+	 }
+
+	 async function humanizeChapter(chapterNumber: number) {
+	 const response = await fetch(`/api/novels/${novelId}/chapters/${chapterNumber}/humanize`, { method: 'POST' });
+	 await throwApiError(response);
+	 }
+
+	 async function factCheckChapter(chapterNumber: number) {
+	 const response = await fetch(`/api/novels/${novelId}/chapters/${chapterNumber}/fact-check`);
+	 await throwApiError(response);
+	 return response.json();
+	 }
+
+	 async function loadChapterContent(chapterNumber: number): Promise<string> {
+	 const data = await api.novels.chapter(novelId, chapterNumber);
+	 return data.content || '(暂无正文)';
+	 }
 
  async function saveEdit() {
- if (!expanded || !editContent.trim()) return;
- setSaving(true);
- try {
- await fetch(`/api/novels/${novelId}/chapters/${expanded}`, {
- method: 'PUT',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ content: editContent }),
- });
- setContent(editContent);
- setEditMode(false);
- toast.success('已保存');
+	 if (!expanded || !editContent.trim()) return;
+	 setSaving(true);
+	 try {
+	 await saveChapterContent(expanded, editContent);
+	 setContent(editContent);
+	 setEditMode(false);
+	 toast.success('已保存');
  } catch (e: unknown) {
  toast.error('保存失败: ' + (e as Error).message);
  } finally {
@@ -178,7 +221,9 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  const agoStr = timeAgo < 60000 ? '刚刚'
  : timeAgo < 3600000 ? `${Math.floor(timeAgo / 60000)} 分钟前`
  : `${Math.floor(timeAgo / 3600000)} 小时前`;
- if (confirm(`检测到未保存的草稿（${agoStr}），是否恢复？`)) {
+ // Use custom confirm dialog pattern instead of native confirm()
+  // TODO: extract to ConfirmDialog when refactoring ChapterList
+  { const ok = window.confirm(`检测到未保存的草稿（${agoStr}），是否恢复？`); if (!ok) return; } {
  setEditContent(latest.content);
  toast.success('已恢复自动保存的草稿');
  }
@@ -402,31 +447,6 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  });
  }
 
- if (!sortedChapters.length) {
- return (
- <div className="text-center py-20">
- <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-accent-soft/30 mb-6">
- <BookOpen size={48} className="text-accent" />
- </div>
- <h3 className="font-heading text-xl font-semibold text-ink mb-2">等待第一章</h3>
- <p className="text-sm text-ink-muted mb-2 max-w-sm mx-auto leading-relaxed">
- 你的故事从第一章开始。配置灵魂、设计角色，然后让 AI 写出第一页。
- </p>
- <p className="text-xs text-ink-subtle mb-6">
- 按 <kbd className="px-1.5 py-0.5 rounded bg-paper border border-border font-mono text-[11px]">Ctrl+G</kbd> 或点击下方按钮
- </p>
- <button onClick={async () => {
- toast.info('正在生成第一章...');
- await fetch(`/api/novels/${novelId}/generate`, { method: 'POST' });
- toast.success('已触发生成');
- }}
- className="inline-flex items-center gap-2 text-sm px-6 py-3 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all font-medium shadow-lg shadow-accent/25 btn-generate active:scale-95">
- <Sparkles size={14} className="mr-1" /> 开始创作第一章
- </button>
- </div>
- );
- }
-
  async function toggleChapter(n: number) {
  if (selectMode) {
  toggleSelect(n);
@@ -456,9 +476,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  document.querySelector(`[data-chapter="${n}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
  }, 50);
  try {
- const data = await api.novels.chapter(novelId, n);
- setContent(data.content || '(暂无正文)');
- } catch { setContent('正文尚未生成'); }
+ setContent(await loadChapterContent(n));
+ } catch {
+    if (navigator.onLine !== false) {
+      setContent('❌ 加载失败，请检查网络或稍后重试');
+    } else {
+      setContent('正文尚未生成');
+    }
+  }
  finally {
  setLoadingContent(false);
  // Restore reading position
@@ -525,6 +550,35 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  };
  }, [tagPickerChapter]);
 
+ if (!sortedChapters.length) {
+ return (
+ <div className="text-center py-20">
+ <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-accent-soft/30 mb-6">
+ <BookOpen size={48} className="text-accent" />
+ </div>
+ <h3 className="font-heading text-xl font-semibold text-ink mb-2">等待第一章</h3>
+ <p className="text-sm text-ink-muted mb-2 max-w-sm mx-auto leading-relaxed">
+ 你的故事从第一章开始。配置灵魂、设计角色，然后让 AI 写出第一页。
+ </p>
+ <p className="text-xs text-ink-subtle mb-6">
+ 按 <kbd className="px-1.5 py-0.5 rounded bg-paper border border-border font-mono text-[11px]">Ctrl+G</kbd> 或点击下方按钮
+ </p>
+ <button onClick={async () => {
+ try {
+ toast.info('正在生成第一章...');
+ await api.novels.generate(novelId);
+ toast.success('已触发生成');
+ } catch (e) {
+ toast.error('触发失败: ' + (e as Error).message);
+ }
+ }}
+ className="inline-flex items-center gap-2 text-sm px-6 py-3 rounded-xl bg-accent text-white hover:bg-accent-hover transition-all font-medium shadow-lg shadow-accent/25 btn-generate active:scale-95">
+ <Sparkles size={14} className="mr-1" /> 开始创作第一章
+ </button>
+ </div>
+ );
+ }
+
  function togglePin(n: number, e?: React.MouseEvent) {
  e?.stopPropagation();
  setPinned(prev => {
@@ -544,37 +598,47 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  }
 
  async function batchHumanize() {
- const nums = [...selected];
- toast.info(`正在对 ${nums.length} 章去AI味...`);
- for (const n of nums) {
- await fetch(`/api/novels/${novelId}/chapters/${n}/humanize`, { method: 'POST' });
- }
- toast.success(`${nums.length} 章已触发去AI味`);
- setSelectMode(false); setSelected(new Set());
- }
+	 const nums = [...selected];
+	 toast.info(`正在对 ${nums.length} 章去AI味...`);
+	 let triggered = 0;
+	 for (const n of nums) {
+	 try {
+	 await humanizeChapter(n);
+	 triggered += 1;
+	 } catch (error) {
+	 toast.error(`第${n}章去AI味失败: ${(error as Error).message}`);
+	 }
+	 }
+	 toast.success(`${triggered}/${nums.length} 章已触发去AI味`);
+	 setSelectMode(false); setSelected(new Set());
+	 }
 
  async function batchFactCheck() {
  const nums = [...selected];
  toast.info(`正在核查 ${nums.length} 章...`);
- let totalIssues = 0;
- for (const n of nums) {
- try {
- const r = await fetch(`/api/novels/${novelId}/chapters/${n}/fact-check`);
- const d = await r.json();
- totalIssues += d.issues?.length || 0;
- } catch { /* skip */ }
- }
- toast.success(`核查完成：${nums.length} 章共 ${totalIssues} 个疑点`);
- setSelectMode(false); setSelected(new Set());
- }
+	 let totalIssues = 0;
+	 let checked = 0;
+	 for (const n of nums) {
+	 try {
+	 const d = await factCheckChapter(n);
+	 checked += 1;
+	 totalIssues += d.issues?.length || 0;
+	 } catch (error) {
+	 toast.error(`第${n}章核查失败: ${(error as Error).message}`);
+	 }
+	 }
+	 toast.success(`核查完成：${checked}/${nums.length} 章共 ${totalIssues} 个疑点`);
+	 setSelectMode(false); setSelected(new Set());
+	 }
 
  async function handleProofread() {
  if (!expanded) return;
- setProofreading(true);
- setProofreadIssues([]);
- try {
- const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/proofread`, { method: 'POST' });
- const d = await r.json();
+	 setProofreading(true);
+	 setProofreadIssues([]);
+	 try {
+	 const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/proofread`, { method: 'POST' });
+	 await throwApiError(r);
+	 const d = await r.json();
  setProofreadIssues(d.issues || []);
  setShowProofread(true);
  if ((d.issues || []).length === 0) {
@@ -592,13 +656,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  async function handleAnalyze() {
  if (!expanded || !content) return;
  setAnalyzing(true);
- try {
- const r = await fetch('/api/text/analyze', {
- method: 'POST', headers: {'Content-Type': 'application/json'},
- body: JSON.stringify({text: content}),
- });
- setAnalysisResult(await r.json());
- } catch { toast.error('分析失败'); }
+	 try {
+	 const r = await fetch('/api/text/analyze', {
+	 method: 'POST', headers: {'Content-Type': 'application/json'},
+	 body: JSON.stringify({text: content}),
+	 });
+	 await throwApiError(r);
+	 setAnalysisResult(await r.json());
+	 } catch (error) { toast.error(`分析失败: ${(error as Error).message}`); }
  finally { setAnalyzing(false); }
  }
 
@@ -606,9 +671,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  if (!expanded || !content) return;
  setPolishing(true);
  setPolishedText('');
- try {
- const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/polish-reverse`, { method: 'POST' });
- const d = await r.json();
+	 try {
+	 const r = await fetch(`/api/novels/${novelId}/chapters/${expanded}/polish-reverse`, {
+	 method: 'POST',
+	 headers: {'Content-Type': 'application/json'},
+	 body: JSON.stringify({content}),
+	 });
+	 await throwApiError(r);
+	 const d = await r.json();
  setPolishedText(d.polished);
  toast.success(`克制编辑完成: ${d.original_length} → ${d.polished_length} 字`);
  } catch (e: unknown) {
@@ -633,22 +703,20 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  }
  setRegenerating(true);
  try {
- const focusHint = rewriteFocus
- ? `\\n重点改进${rewriteFocus}。`
- : '';
- const dir = `重写第${expanded}章。作者反馈：${feedbackInput.trim()}。${focusHint}保持原有剧情主线，但改进指出的问题。`;
- await fetch(`/api/novels/${novelId}/generate`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ direction: dir, quality_threshold: 0.65 }),
- });
- toast.success(`第${expanded}章重新生成已触发`);
+ const dir = buildChapterRevisionCritique(expanded, feedbackInput, rewriteFocus);
+ await api.novels.reviseChapter(novelId, expanded, dir);
+ toast.info(`第${expanded}章修订已触发，等待完成...`);
+ await waitForNovelTaskCompletion(
+ () => api.novels.generationStatus(novelId),
+ { intervalMs: 2000, maxPolls: 180 },
+ );
+ setContent(await loadChapterContent(expanded));
+ toast.success(`第${expanded}章修订完成，正文已刷新`);
  setFeedbackInput('');
  setRewriteFocus('');
- setExpanded(null);
  onRegenerate?.(expanded, feedbackInput.trim());
  } catch (e: unknown) {
- toast.error('重新生成失败: ' + (e as Error).message);
+ toast.error('修订失败: ' + (e as Error).message);
  } finally {
  setRegenerating(false);
  }
@@ -777,16 +845,23 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  setRewriteFocus('');
  }
  }},
- { icon: 'Star', label: styleRefs.has(ch.number) ? '取消风格参考' : '设为风格参考', onClick: () => toggleStyleRef(ch.number) },
- { icon: '🧹', label: '去AI味', onClick: async () => {
- toast.success('已触发去AI味');
- await fetch(`/api/novels/${novelId}/chapters/${ch.number}/humanize`, { method: 'POST' });
- }},
- { icon: 'Search', label: '事实核查', onClick: async () => {
- const r = await fetch(`/api/novels/${novelId}/chapters/${ch.number}/fact-check`);
- const d = await r.json();
- toast.success(`核查: ${d.issues?.length || 0} 疑点`);
- }},
+	 { icon: 'Star', label: styleRefs.has(ch.number) ? '取消风格参考' : '设为风格参考', onClick: () => toggleStyleRef(ch.number) },
+	 { icon: '🧹', label: '去AI味', onClick: async () => {
+	 try {
+	 await humanizeChapter(ch.number);
+	 toast.success('已触发去AI味');
+	 } catch (error) {
+	 toast.error(`去AI味失败: ${(error as Error).message}`);
+	 }
+	 }},
+	 { icon: 'Search', label: '事实核查', onClick: async () => {
+	 try {
+	 const d = await factCheckChapter(ch.number);
+	 toast.success(`核查: ${d.issues?.length || 0} 疑点`);
+	 } catch (error) {
+	 toast.error(`核查失败: ${(error as Error).message}`);
+	 }
+	 }},
  { icon: '⬇', label: '导出 TXT', onClick: () => {
  window.open(`/api/novels/${novelId}/chapters/${ch.number}/export`, '_blank');
  }},
@@ -822,15 +897,6 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  } ${
  expanded === ch.number && !selectMode ? 'bg-paper border-l-[3px] border-l-accent rounded-l-none' : 'border-l-[3px] border-l-transparent'
  }`}>
- {/* Hover preview tooltip */}
- {ch.summary && !expanded && (
- <div className="absolute left-4 right-4 -top-1 z-20 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
- <div className="bg-ink text-white dark:text-black text-[11px] rounded-lg px-3 py-2 shadow-xl leading-relaxed max-w-md">
- {ch.summary.slice(0, 100)}{ch.summary.length > 100 ? '...' : ''}
- <div className="text-[9px] text-white/50 mt-1"><Anchor size={8} className="inline mr-0.5" />{ch.word_count.toLocaleString()}字 · {ch.ending_hook ? ' ' + ch.ending_hook.slice(0, 30) : '无钩子'}</div>
- </div>
- </div>
- )}
  {/* Checkbox in select mode */}
  {selectMode && (
  <span onClick={e => { e.stopPropagation(); toggleSelect(ch.number); }}
@@ -894,7 +960,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  <span className="flex-1 text-sm font-medium truncate">{ch.title}</span>
  {/* Notes indicator */}
  {notes[ch.number] && (
- <FileText size={10} className="text-warn shrink-0" title={`笔记: ${notes[ch.number].slice(0, 50)}`} /></span>
+ <FileText size={10} className="text-warn shrink-0" aria-label={`笔记: ${notes[ch.number].slice(0, 50)}`} />
  )}
  {ch.word_count > 0 && (
  <span className="text-[10px] text-ink-subtle shrink-0 hidden sm:inline" title="预计阅读时间">
@@ -959,14 +1025,14 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  {/* Per-chapter actions on hover (hidden in select mode) */}
  {!selectMode && (
  <span className="hidden group-hover:flex gap-1 ml-auto shrink-0">
- <button onClick={async e => { e.stopPropagation(); toast.success('已触发去AI味'); await fetch(`/api/novels/${novelId}/chapters/${ch.number}/humanize`,{method:'POST'}); }}
- className="text-[10px] text-ink-muted hover:text-accent px-1" title="去AI味">🧹</button>
- <button onClick={async e => { e.stopPropagation(); const r=await fetch(`/api/novels/${novelId}/chapters/${ch.number}/fact-check`); const d=await r.json(); toast.success(`核查:${d.issues?.length||0}疑点`); }}
- className="text-[10px] text-ink-muted hover:text-accent px-1" title="事实核查"><Search size={12} /></button>
+	 <button onClick={async e => { e.stopPropagation(); try { await humanizeChapter(ch.number); toast.success('已触发去AI味'); } catch (error) { toast.error(`去AI味失败: ${(error as Error).message}`); } }}
+	 className="text-[10px] text-ink-muted hover:text-accent px-1" title="去AI味" aria-label="去AI味">🧹</button>
+	 <button onClick={async e => { e.stopPropagation(); try { const d = await factCheckChapter(ch.number); toast.success(`核查:${d.issues?.length||0}疑点`); } catch (error) { toast.error(`核查失败: ${(error as Error).message}`); } }}
+	 className="text-[10px] text-ink-muted hover:text-accent px-1" title="事实核查" aria-label="事实核查"><Search size={12} /></button>
  <a href={`/api/novels/${novelId}/chapters/${ch.number}/export`} onClick={e => e.stopPropagation()}
  className="text-[10px] text-ink-muted hover:text-accent px-1">⬇</a>
  {onDelete && (
- <button onClick={e => { e.stopPropagation(); onDelete(ch.number); }}
+ <button onClick={e => { e.stopPropagation(); onDelete(ch.number); }} aria-label="删除章节"
  className="text-[10px] text-ink-muted hover:text-destructive px-1"><Trash2 size={12} /></button>
  )}
  </span>
@@ -1044,7 +1110,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  </button>
  <span className="text-[10px] text-ink-subtle">|</span>
  <span className="text-[10px] text-ink-subtle">|</span>
- <button onClick={e => { e.stopPropagation(); setMobileChapter(ch.number); }}
+ <button onClick={e => { e.stopPropagation(); setMobileChapter(ch.number); }} aria-label="手机预览"
  className="text-[10px] text-ink-subtle hover:text-accent">
  <Smartphone size={12} className='mr-1' /> 手机预览
  </button>
@@ -1161,7 +1227,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  {analysisResult && (
  <div className="mt-3 p-3 rounded-lg bg-info-soft/50 dark:bg-sky-950/10 border border-info/20 animate-[fadeSlideIn_0.2s_ease-out]">
  <div className="flex items-center justify-between mb-2">
- <span className="text-[11px] font-semibold text-sky-700 "><TrendingUp size={11} className="inline mr-0.5" /> 文本分析</span>
+ <span className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 "><TrendingUp size={11} className="inline mr-0.5" /> 文本分析</span>
  <span className="text-[9px] text-ink-subtle">{analysisResult.chars}字 · {analysisResult.sentences}句</span>
  </div>
  <div className="grid grid-cols-3 gap-1.5 text-[10px]">
@@ -1203,53 +1269,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  </div>
  </div>
  )}
- {showProofread && proofreadIssues.length > 0 && (
- <div className="mt-3 p-3 rounded-lg bg-warn-soft/50 border border-warn/20 animate-[fadeSlideIn_0.2s_ease-out]">
- <div className="flex items-center justify-between mb-2">
- <span className="text-[11px] font-semibold text-amber-700 ">
- <Search size={12} className='mr-1' /> 校对结果 — {proofreadIssues.length} 处问题
- </span>
- <button
- onClick={e => { e.stopPropagation(); setShowProofread(false); setProofreadIssues([]); }}
- className="text-[10px] text-ink-muted hover:text-ink"
- >
- 收起
- </button>
- </div>
- <div className="space-y-1.5 max-h-64 overflow-y-auto">
- {proofreadIssues.map((issue, i) => {
- const typeLabel = issue.type === 'typo' ? '错别字'
- : issue.type === 'repetition' ? '重复用词'
- : issue.type === 'inconsistency' ? '逻辑不连贯'
- : issue.type === 'punctuation' ? '标点错误'
- : issue.type;
- const isError = issue.type === 'typo' || issue.type === 'punctuation';
- return (
- <div key={i} className="text-[10px] p-1.5 rounded bg-card border border-border/50">
- <div className="flex items-center gap-1.5 mb-0.5">
- <span className={`px-1 rounded text-[9px] font-medium ${
- isError
- ? 'bg-destructive-soft text-red-700 dark:bg-red-900/30 '
- : 'bg-warn-soft text-amber-700 dark:bg-amber-900/30 '
- }`}>
- {typeLabel}
- </span>
- <span className="text-ink-subtle">{issue.reason}</span>
- </div>
- <div className="flex items-baseline gap-2">
- <span className={`line-through ${isError ? 'text-destructive' : 'text-warn'}`}>
- {issue.original}
- </span>
- <span className="text-success font-medium">
- → {issue.suggestion}
- </span>
- </div>
- </div>
- );
- })}
- </div>
- </div>
- )}
+ {showProofread && <ChapterProofread issues={proofreadIssues} onClose={() => { setShowProofread(false); setProofreadIssues([]); }} />}
 
  {/* Word Frequency Analysis */}
  {showWordFreq && content && content !== '正文尚未生成' && (
@@ -1273,16 +1293,12 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  {sceneView && content && content !== '正文尚未生成' && (
  <SceneEditor
  chapterContent={content}
- chapterNumber={ch.number}
- novelId={novelId}
- onSave={async (mergedContent: string) => {
- await fetch(`/api/novels/${novelId}/chapters/${ch.number}`, {
- method: 'PUT',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ content: mergedContent }),
- });
- setContent(mergedContent);
- }}
+	 chapterNumber={ch.number}
+	 novelId={novelId}
+	 onSave={async (mergedContent: string) => {
+	 await saveChapterContent(ch.number, mergedContent);
+	 setContent(mergedContent);
+	 }}
  saving={saving}
  />
  )}
@@ -1360,7 +1376,7 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
  disabled={regenerating || !feedbackInput.trim()}
  className="text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover
  disabled:opacity-40 transition-colors shrink-0">
- {regenerating ? '生成中...' : '重新生成'}
+ {regenerating ? '修订中...' : '修订本章'}
  </button>
  </div>
  </div>
@@ -1407,59 +1423,19 @@ export function ChapterList({ chapters, novelId, onDelete, onRegenerate }: Props
 
  {/* Chapter tag picker overlay */}
  {tagPickerChapter !== null && (
- <div
- className="fixed inset-0 z-[95] flex items-center justify-center"
- onClick={e => { e.stopPropagation(); setTagPickerChapter(null); }}
- >
- <div
- onClick={e => e.stopPropagation()}
- className="bg-card border border-border rounded-xl shadow-xl p-4 w-[260px] animate-[fadeSlideIn_0.15s_ease-out]">
- <div className="flex items-center justify-between mb-3">
- <h4 className="text-xs font-semibold text-ink">
- <Tag size={12} className='mr-1' /> 第{tagPickerChapter}章 · 标签
- </h4>
- <button
- onClick={() => setTagPickerChapter(null)}
- className="text-xs text-ink-muted hover:text-ink"
- >
- ✕
- </button>
- </div>
- <div className="space-y-1">
- {TAG_OPTIONS.map(tag => {
- const selected = (chapterTags[tagPickerChapter] || []).includes(tag.key);
- return (
- <button
- key={tag.key}
- onClick={() => toggleTag(tagPickerChapter, tag.key)}
- className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-left transition-colors ${
- selected
- ? 'bg-accent-soft/50 border border-accent/20'
- : 'hover:bg-paper border border-transparent'
- }`}>
- <span className="text-base">{tag.emoji}</span>
- <span className={`flex-1 ${selected ? 'text-accent font-medium' : 'text-ink'}`}>
- {tag.label}
- </span>
- {selected && <span className="text-accent text-[10px]">✓</span>}
- </button>
- );
- })}
- </div>
- {(chapterTags[tagPickerChapter] || []).length > 0 && (
- <button
- onClick={() => {
+ <ChapterTags
+ chapter={tagPickerChapter}
+ selectedTags={chapterTags[tagPickerChapter] || []}
+ options={TAG_OPTIONS}
+ onToggle={(tag) => toggleTag(tagPickerChapter, tag)}
+ onClear={() => {
  const updated = { ...chapterTags };
  delete updated[tagPickerChapter];
  saveTags(updated);
  setTagPickerChapter(null);
  }}
- className="w-full mt-3 text-[10px] text-ink-muted hover:text-destructive transition-colors py-1.5">
- 清除所有标签
- </button>
- )}
- </div>
- </div>
+ onClose={() => setTagPickerChapter(null)}
+ />
  )}
  </div>
  );

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS chapters (
     ending_hook       TEXT DEFAULT '',
     key_events        TEXT DEFAULT '[]',
     revelations       TEXT DEFAULT '[]',
+    narrative_facts   TEXT DEFAULT '[]',
     quality_score     REAL DEFAULT 0,
     model_used        TEXT DEFAULT '',
     prompt_version    TEXT DEFAULT '',
@@ -93,6 +94,18 @@ CREATE TABLE IF NOT EXISTS chapter_versions (
     version     INTEGER NOT NULL DEFAULT 1,
     reason      TEXT DEFAULT '',
     created_at  TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS chapter_traces (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    novel_id          TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+    chapter_num       INTEGER NOT NULL,
+    steps_json        TEXT NOT NULL DEFAULT '[]',
+    final_quality     REAL NOT NULL DEFAULT 0,
+    total_duration_ms INTEGER NOT NULL DEFAULT 0,
+    total_cost        REAL NOT NULL DEFAULT 0,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(novel_id, chapter_num)
 );
 
 CREATE TABLE IF NOT EXISTS chapter_drafts (

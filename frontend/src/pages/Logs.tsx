@@ -158,7 +158,7 @@ export function Logs() {
 
  {/* Filters */}
  <div className="flex gap-2 mb-4 flex-wrap">
- <select value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}
+ <select aria-label="筛选器" value={filterSeverity} onChange={e => setFilterSeverity(e.target.value)}
  className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
  <option value="">全部级别</option>
  <option value="error-group">🔴🟠 错误</option>
@@ -166,7 +166,7 @@ export function Logs() {
  <option value="error">🟠 错误</option>
  <option value="warning">🟡 警告</option>
  </select>
- <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
+ <select aria-label="筛选器" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
  className="text-xs rounded-md border border-input bg-card text-ink px-2 py-1.5">
  <option value="">全部类型</option>
  <option value="章节">章节</option>

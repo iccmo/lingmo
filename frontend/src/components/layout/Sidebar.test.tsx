@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { BrowserRouter } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
@@ -26,12 +26,11 @@ test('renders sidebar without crashing', () => {
   expect(screen.getByText('工作台')).toBeInTheDocument();
 });
 
-test('shows all four module sections', () => {
+test('shows global module sections', () => {
   renderSidebar();
   expect(screen.getByText('导航')).toBeInTheDocument();
   expect(screen.getByText('小说')).toBeInTheDocument();
   expect(screen.getByText('听书')).toBeInTheDocument();
-  expect(screen.getByText('短剧')).toBeInTheDocument();
 });
 
 test('shows global nav items', () => {
@@ -41,7 +40,8 @@ test('shows global nav items', () => {
   expect(screen.getByText('统计')).toBeInTheDocument();
 });
 
-test('shows placeholder when no novel selected for drama module', () => {
+test('does not render novel links when the list is empty', async () => {
   renderSidebar();
-  expect(screen.getByText('选择小说后可用')).toBeInTheDocument();
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  expect(screen.queryByText(/章$/)).not.toBeInTheDocument();
 });

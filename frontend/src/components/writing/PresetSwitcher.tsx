@@ -3,7 +3,7 @@ import { Sparkles, Check } from 'lucide-react';
 import { usePreset } from 'src/hooks/usePreset';
 
 export function PresetSwitcher() {
-  const { currentPreset, presets, applyPreset, cyclePreset } = usePreset();
+  const { currentPreset, presets, applyPreset } = usePreset();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 

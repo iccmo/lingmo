@@ -14,6 +14,13 @@ import { QualityTrend } from 'src/components/novels/QualityTrend';
 import { EmotionalArc } from 'src/components/novels/EmotionalArc';
 import { useWritingStats } from 'src/hooks/useWritingStats';
 import { genErrorMessage } from 'src/lib/error-messages';
+import { normalizeQualityMetrics } from 'src/lib/quality-detail';
+import type { QualityDetail } from 'src/lib/quality-detail';
+import {
+  isCompletedGenerationStatus,
+  isFailedGenerationStatus,
+  queueStatusToActiveGenerationStatus,
+} from 'src/lib/generation-status';
 
 interface GenStatus {
   status: string;
@@ -22,7 +29,7 @@ interface GenStatus {
   overall?: number;
   grade?: string;
   stream_content?: string;
-  quality_detail?: Record<string, { score: number; reason: string }>;
+  quality_detail?: QualityDetail;
   causal_events?: string;
 }
 
@@ -49,7 +56,6 @@ export function WriterView() {
   // Outline data
   interface OutlineItem { number: number; title: string; summary: string }
   const [outlineItems, setOutlineItems] = useState<OutlineItem[]>([]);
-  const [outlineNext, setOutlineNext] = useState<number>(0);
 
   // Load outline
   useEffect(() => {
@@ -58,7 +64,6 @@ export function WriterView() {
       .then(r => r.json())
       .then((d: { outline: OutlineItem[]; next_number: number }) => {
         setOutlineItems(d.outline || []);
-        setOutlineNext(d.next_number || 0);
       })
       .catch(() => { /* outline fetch is best-effort */ });
   }, [id]);
@@ -101,6 +106,42 @@ export function WriterView() {
 
   // Generate with SSE + polling fallback
   const genStartRef = useRef(0);
+  // Generate state refs — instant guards against stale React state between clicks.
+  const generatingRef = useRef(false);
+  const queueBusyRef = useRef(false);
+
+  useEffect(() => {
+    if (!id || polling) return;
+    let cancelled = false;
+
+    const syncQueueStatus = async () => {
+      try {
+        const queueStatus = await api.novels.queueStatus(id);
+        if (cancelled) return;
+
+        const activeQueue = queueStatusToActiveGenerationStatus(queueStatus);
+        queueBusyRef.current = Boolean(activeQueue);
+        if (activeQueue) {
+          setGenStatus(activeQueue);
+          return;
+        }
+
+        setGenStatus(current => {
+          if (current?.status === 'running' && current.message.startsWith('批量生成')) return null;
+          return current;
+        });
+      } catch {
+        // Queue polling is a UX hint; the backend guard remains authoritative.
+      }
+    };
+
+    syncQueueStatus();
+    const timer = window.setInterval(syncQueueStatus, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [id, polling]);
 
   useEffect(() => {
     if (!polling || !id) return;
@@ -115,7 +156,7 @@ export function WriterView() {
         try {
           const s = JSON.parse(event.data) as GenStatus;
           setGenStatus(s);
-          if (s.status === 'complete') {
+          if (isCompletedGenerationStatus(s)) {
             cleanup();
             const elapsed = Math.round((Date.now() - genStartRef.current) / 1000);
             toast.success(`生成完成！耗时${elapsed}秒`);
@@ -126,7 +167,7 @@ export function WriterView() {
               if (latest) setActiveChapter(latest.number);
             });
           }
-          if (s.status === 'error') {
+          if (isFailedGenerationStatus(s)) {
             cleanup();
             // Keep error visible in banner with friendly message
             setGenStatus({ ...s, message: genErrorMessage(s.message) });
@@ -143,15 +184,19 @@ export function WriterView() {
           if (!pollTimer) {
             pollTimer = setInterval(async () => {
               try {
-                const r = await fetch(`/api/novels/${id}/generate/queue-status`);
-                const d = await r.json();
-                if (d.status === 'done' || d.status === 'complete') {
+                const d = await api.novels.generationStatus(id!);
+                if (isCompletedGenerationStatus(d)) {
                   cleanup();
+                  setGenStatus(d);
                   toast.success('生成完成！');
-                  api.novels.get(id!).then(data => setNovel(data));
-                } else if (d.status === 'error') {
+                  api.novels.get(id!).then(data => {
+                    setNovel(data);
+                    const latest = data.chapters.filter(c => c.word_count > 0).pop();
+                    if (latest) setActiveChapter(latest.number);
+                  });
+                } else if (isFailedGenerationStatus(d)) {
                   cleanup();
-                  setGenStatus({ status: 'error', message: d.last_error || '生成失败', progress: 0 });
+                  setGenStatus({ ...d, message: genErrorMessage(d.message || '生成失败') });
                 } else if (d.status === 'idle' && Date.now() - genStartRef.current > 300000) {
                   cleanup();
                   setGenStatus({ status: 'error', message: '生成超时，模型可能过载，请稍后重试', progress: 0 });
@@ -174,9 +219,6 @@ export function WriterView() {
     return cleanup;
   }, [polling, id]);
 
-  // Generate state ref — instant guard against double-clicks (React state is async)
-  const generatingRef = useRef(false);
-
   // Generate next chapter
   const handleGenerate = useCallback(async () => {
     if (!id) return;
@@ -184,7 +226,24 @@ export function WriterView() {
       toast('正在生成中，请等待当前章节完成', { description: genStatus?.message || '' });
       return;
     }
+    if (queueBusyRef.current) {
+      toast('批量生成正在进行中，请等待完成', { description: genStatus?.message || '' });
+      return;
+    }
     try {
+      try {
+        const queueStatus = await api.novels.queueStatus(id);
+        const activeQueue = queueStatusToActiveGenerationStatus(queueStatus);
+        queueBusyRef.current = Boolean(activeQueue);
+        if (activeQueue) {
+          setGenStatus(activeQueue);
+          toast('批量生成正在进行中，请等待完成', { description: activeQueue.message });
+          return;
+        }
+      } catch {
+        // If this hint fails, let the authoritative generate endpoint decide.
+      }
+
       const body: Record<string, unknown> = {
         quality_threshold: 0.78,
         compression: 'L1',
@@ -198,18 +257,14 @@ export function WriterView() {
       generatingRef.current = true;
       setPolling(true);  // set BEFORE fetch to prevent double requests
       setGenStatus({ status: 'generating', message: '正在构思下一章...', progress: 10 });
-      await fetch(`/api/novels/${id}/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      await api.novels.generate(id, body);
     } catch (e: unknown) {
       const errMsg = genErrorMessage((e as Error).message || '网络错误');
       generatingRef.current = false;
       setPolling(false);
       setGenStatus({ status: 'error', message: errMsg, progress: 0 });
     }
-  }, [id, direction, polling]);
+  }, [id, direction, genStatus?.message]);
 
   // Save edited chapter
   const handleSave = useCallback(async (silent = false) => {
@@ -257,7 +312,7 @@ export function WriterView() {
       }
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
-        if (!generatingRef.current) handleGenerate();
+        handleGenerate();
       }
     };
     window.addEventListener('keydown', handler);
@@ -272,6 +327,7 @@ export function WriterView() {
 
   // Quality grade from score
   const qualityGrade = novel?.chapters.find(c => c.number === activeChapter)?.quality_score;
+  const qualityMetrics = normalizeQualityMetrics(genStatus?.quality_detail);
 
   // ── Loading states ──
   if (loading) {
@@ -379,12 +435,12 @@ export function WriterView() {
 
           {/* Generation pipeline — shows streams, quality, retry */}
           <GenerationPipeline
-            genStatus={genStatus as unknown as { status: string; message: string; progress: number; overall?: number; grade?: string; stream_content?: string; quality_detail?: Record<string, number> }}
+            genStatus={genStatus}
             onRetry={handleGenerate}
           />
 
           {/* Post-generation quality panel */}
-          {genStatus?.status === 'complete' && genStatus.quality_detail && (
+          {genStatus?.status === 'complete' && qualityMetrics.length > 0 && (
             <div className="mx-4 lg:mx-6 mt-3 p-4 bg-card/60 rounded-xl border border-border animate-[fadeSlideIn_0.2s_ease-out]">
               <h4 className="text-xs font-semibold text-ink mb-3 flex items-center gap-1.5">
                 <BarChart3 size={13} className="text-accent" /> 质量细分
@@ -396,27 +452,22 @@ export function WriterView() {
                   }`}>{genStatus.grade}级</span>
                 )}
               </h4>
-              <div className="grid grid-cols-3 gap-2">
-                {Object.entries(genStatus.quality_detail).slice(0, 6).map(([key, val]) => {
-                  const score = typeof val === 'number' ? val : (val as { score: number; reason: string }).score;
-                  const reason = typeof val === 'object' ? (val as { score: number; reason: string }).reason : '';
-                  const pct = Math.min(100, Math.max(0, score * 10));
-                  return (
-                    <div key={key} className="p-2 rounded-lg bg-surface/50" title={reason}>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {qualityMetrics.map(metric => (
+                    <div key={metric.key} className="p-2 rounded-lg bg-surface/50" title={metric.reason || metric.key}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] text-ink-muted">{key}</span>
+                        <span className="text-[10px] text-ink-muted">{metric.label}</span>
                         <span className={`text-[10px] font-bold tabular-nums ${
-                          score >= 8 ? 'text-emerald-500' : score >= 6 ? 'text-amber-500' : 'text-red-400'
-                        }`}>{score}</span>
+                          metric.score >= 8 ? 'text-emerald-500' : metric.score >= 6 ? 'text-amber-500' : 'text-red-400'
+                        }`}>{metric.score.toFixed(1)}</span>
                       </div>
                       <div className="h-1 bg-border rounded-full overflow-hidden">
                         <div className={`h-full rounded-full transition-all ${
-                          score >= 8 ? 'bg-emerald-400' : score >= 6 ? 'bg-amber-400' : 'bg-red-400'
-                        }`} style={{ width: `${pct}%` }} />
+                          metric.score >= 8 ? 'bg-emerald-400' : metric.score >= 6 ? 'bg-amber-400' : 'bg-red-400'
+                        }`} style={{ width: `${metric.pct}%` }} />
                       </div>
                     </div>
-                  );
-                })}
+                  ))}
               </div>
               {genStatus.causal_events && (
                 <div className="mt-3 pt-3 border-t border-border">
@@ -459,7 +510,7 @@ export function WriterView() {
                   取消
                 </button>
                 <button
-                  onClick={handleSave}
+                  onClick={() => handleSave(false)}
                   disabled={saving}
                   className="px-4 py-1.5 text-xs rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-all"
                 >

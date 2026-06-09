@@ -163,7 +163,7 @@ export function DialogueRatio({ chapters, contentMap }: Props) {
  className={`mb-3 px-3 py-2 rounded-lg text-[11px] border ${
  inGoldenRange
  ? 'bg-success-soft dark:bg-emerald-950/20 border-success/20 text-success '
- : 'bg-warn-soft dark:bg-amber-950/20 border-warn/20 text-amber-700 '
+ : 'bg-warn-soft dark:bg-amber-950/20 border-warn/20 text-amber-700 dark:text-amber-300 '
  }`}
  >
  <span className="font-semibold">黄金对话比：30-50%</span>

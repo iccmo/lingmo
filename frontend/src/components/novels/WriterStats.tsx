@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ChapterMeta } from 'src/types';
 import { Target } from 'lucide-react';
 
@@ -11,10 +11,8 @@ const INSPIRATIONS = [
  '一个让人记住的角色，胜过十个功能性的配角。',
 ];
 
-let sparkId = 0;
-
 function Sparkline({ data, width, height }: { data: number[]; width: number; height: number }) {
- const id = useMemo(() => `spark-fill-${sparkId++}`, []);
+ const id = useRef(`spark-fill-${Math.random().toString(36).slice(2,8)}`).current;
  if (data.length < 2) return null;
  const min = Math.min(...data);
  const max = Math.max(...data);
@@ -48,7 +46,6 @@ export function WriterStats({ novelId, totalChapters, totalWords, chapters }: {
  chapters?: ChapterMeta[];
 }) {
  const [goal, setGoal] = useState(() => Number(localStorage.getItem(`goal-${novelId}`)) || 50000);
- const [, ] = useState(() => Number(localStorage.getItem(`day-${novelId}`)) || 0);
  const [inspiration, setInspiration] = useState(INSPIRATIONS[0]);
 
  useEffect(() => {

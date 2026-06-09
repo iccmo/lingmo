@@ -1,10 +1,31 @@
 """调度器 — 模式 A 全自动定时执行"""
+import json
 import signal
 import time
 from datetime import datetime, timedelta
 
 from .config import Config, config
 from .database import Database
+from .routers.novel.chapter_metadata import chapter_content_rejection
+from .routers.novel.generation_service import (
+    _sync_new_foreshadowing,
+    _sync_next_plot_points,
+    _sync_resolved_foreshadowing,
+)
+
+
+def _safe_json_list(value):
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    if isinstance(value, str):
+        return [item.strip() for item in value.replace("；", "\n").replace(";", "\n").splitlines() if item.strip()]
+    return []
 
 
 class Scheduler:
@@ -49,6 +70,24 @@ class Scheduler:
         if not novel:
             return "error: novel not found"
 
+        if hasattr(self.db, "get_all_foreshadowing"):
+            active_foreshadowing = [
+                thread.get("description", "")
+                for thread in self.db.get_all_foreshadowing(novel_id)
+                if thread.get("description") and thread.get("status", "active") in ("active", "overdue")
+            ]
+        else:
+            active_foreshadowing = [
+                thread.get("description", "")
+                for thread in self.db.get_active_foreshadowing(novel_id)
+                if thread.get("description")
+            ]
+        next_plot_points = [
+            point.get("content", "")
+            for point in novel.get("plot_points", [])
+            if point.get("content") and point.get("type", "plot") == "plot" and not point.get("is_resolved")
+        ][:8]
+
         state = StoryState(
             novel_id=novel_id, title=novel["title"], author=novel["author"],
             synopsis=novel.get("synopsis",""), genre=novel["genre"],
@@ -60,15 +99,20 @@ class Scheduler:
                          for ch in novel.get("characters", [])],
             plot=Plot(premise=novel.get("synopsis",""), main_arc=novel.get("main_arc",""),
                        current_arc=novel.get("current_arc","开篇"),
-                       arc_chapter_start=novel.get("arc_chapter_start",1)),
+                       arc_chapter_start=novel.get("arc_chapter_start",1),
+                       next_plot_points=next_plot_points,
+                       foreshadowing=active_foreshadowing),
             chapters=[ChapterMeta(number=ch["number"], title=ch["title"],
                          word_count=ch["word_count"], summary=ch.get("summary",""),
+                         content=ch.get("content",""),
                          ending_hook=ch.get("ending_hook",""),
+                         key_events=_safe_json_list(ch.get("key_events")),
+                         revelations=_safe_json_list(ch.get("revelations")),
+                         narrative_facts=_safe_json_list(ch.get("narrative_facts")),
                          generated_at=ch.get("generated_at",""))
                          for ch in novel.get("chapters", []) if ch.get("word_count", 0) > 0],
         )
 
-        import json
         try:
             # Use provider model if configured
             from .config import Config as Cfg
@@ -87,10 +131,13 @@ class Scheduler:
             # Load outline for context injection
             outline = []
             try:
+                next_outline_ch = self.db.get_next_chapter_number(novel_id) if hasattr(self.db, "get_next_chapter_number") else (state.total_chapters + 1)
                 with self.db.conn() as conn:
                     rows = conn.execute(
-                        "SELECT number, title, summary FROM chapters WHERE novel_id=? AND word_count=0 ORDER BY number LIMIT 5",
-                        (novel_id,)
+                        """SELECT number, title, summary FROM chapters
+                           WHERE novel_id=? AND word_count=0 AND number>=? AND number<?
+                           ORDER BY number""",
+                        (novel_id, next_outline_ch, next_outline_ch + 1)
                     ).fetchall()
                     outline = [{"number": r["number"], "title": r["title"], "summary": r["summary"]} for r in rows]
             except Exception:
@@ -102,22 +149,35 @@ class Scheduler:
             # ── Generation + Quality + De-AI pipeline ──
             def _process(chapter, body):
                 """Score, de-AI, and save a generated chapter. Returns (cid, cleaned_body, quality)."""
-                quality = gen.score_quality(body, state)
                 cleaned_body, de_ai_changes = gen.de_ai(body)
                 if de_ai_changes > 0:
                     print(f"[SCHED] de-AI: {de_ai_changes} changes")
+                final_body = cleaned_body or body
+                quality = gen.score_quality(final_body, state)
+                try:
+                    gen.refresh_chapter_content(chapter, final_body)
+                except Exception:
+                    pass
+                if chapter.content != final_body:
+                    chapter.content = final_body
+                    chapter.word_count = len(final_body)
+                    chapter.summary = final_body[:200]
+                rejection = chapter_content_rejection("", chapter.content)
+                if rejection:
+                    raise ValueError(f"生成结果不是有效章节正文：{rejection}")
                 cid = self.db.add_chapter(
                     novel_id=novel_id, number=chapter.number, title=chapter.title,
                     word_count=chapter.word_count, summary=chapter.summary,
-                    content=cleaned_body or chapter.content or chapter.summary,
+                    content=chapter.content,
                     ending_hook=chapter.ending_hook,
                     key_events=json.dumps(chapter.key_events),
                     revelations=json.dumps(chapter.revelations),
+                    narrative_facts=json.dumps(chapter.narrative_facts, ensure_ascii=False),
                     quality_score=quality['overall'], model_used=gen_cfg.model,
                 )
                 # Store embeddings (non-blocking)
                 try:
-                    gen.store_chapter_embedding(cid, novel_id, chapter.summary)  # type: ignore[attr-defined]
+                    gen.store_chapter_embedding(cid, novel_id, chapter.content)  # type: ignore[attr-defined]
                 except Exception:
                     pass
                 return cid, cleaned_body, quality
@@ -134,6 +194,12 @@ class Scheduler:
                 body = chapter.content or chapter.summary
 
             cid, cleaned_body, quality = _process(chapter, body)
+            try:
+                _sync_resolved_foreshadowing(self.db, novel_id, state, chapter.number)
+                _sync_new_foreshadowing(self.db, novel_id, state, chapter.number)
+                _sync_next_plot_points(self.db, novel_id, state)
+            except Exception as sync_exc:
+                self.db.log(novel_id, "story_state.sync_failed", {"error": str(sync_exc)[:200]})
 
             self.db.record_scheduler_run(novel_id, "success")
             self.db.log(novel_id, "chapter.generated", {

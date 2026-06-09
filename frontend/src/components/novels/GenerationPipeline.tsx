@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
+import { isCompletedGenerationStatus, isFailedGenerationStatus } from 'src/lib/generation-status';
+import { normalizeQualityMetrics } from 'src/lib/quality-detail';
+import type { QualityDetail } from 'src/lib/quality-detail';
 
 /** Simulated progress during long blocking phases */
 function useSmoothProgress(status: string, realProgress: number): number {
@@ -43,7 +46,7 @@ interface GenStatus {
  status: string;
  message: string;
  progress: number;
- quality_detail?: Record<string, number>;
+ quality_detail?: QualityDetail;
  grade?: string;
  overall?: number;
  stream_content?: string;
@@ -65,12 +68,14 @@ function gatePhase(progress: number): number {
 }
 
 export function GenerationPipeline({ genStatus, onRetry }: {
- genStatus: GenStatus;
+ genStatus: GenStatus | null;
  onRetry: () => void;
 }) {
- const isError = genStatus.status === 'error';
- const isComplete = genStatus.status === 'complete';
- const active = isError || isComplete ? -1 : gatePhase(genStatus.progress);
+ const displayStatus = genStatus ?? { status: 'idle', message: '', progress: 0 };
+ const isError = isFailedGenerationStatus(displayStatus);
+ const isComplete = isCompletedGenerationStatus(displayStatus);
+ const active = isError || isComplete ? -1 : gatePhase(displayStatus.progress);
+ const qualityMetrics = normalizeQualityMetrics(genStatus?.quality_detail);
 
  // Desktop notification on complete
  useEffect(() => {
@@ -78,13 +83,13 @@ export function GenerationPipeline({ genStatus, onRetry }: {
  if (!('Notification' in window)) return;
  if (Notification.permission === 'granted') {
  new Notification('章节生成完成', {
- body: genStatus.message.slice(0, 100),
+ body: displayStatus.message.slice(0, 100),
  icon: '/favicon.ico',
  });
  } else if (Notification.permission !== 'denied') {
  Notification.requestPermission();
  }
- }, [isComplete]);
+ }, [isComplete, displayStatus.message]);
 
  // Elapsed time
  const [elapsed, setElapsed] = useState(0);
@@ -98,9 +103,11 @@ export function GenerationPipeline({ genStatus, onRetry }: {
  setElapsed(Math.round((Date.now() - startTime.current) / 1000));
  }, 1000);
  return () => clearInterval(timer);
- }, [genStatus.status, isComplete, isError]);
+ }, [displayStatus.status, isComplete, isError]);
 
- const smoothProgress = useSmoothProgress(genStatus.status, genStatus.progress);
+ const smoothProgress = useSmoothProgress(displayStatus.status, displayStatus.progress);
+
+ if (!genStatus) return null;
 
  return (
  <div className={`mb-4 p-4 rounded-xl border-2 transition-all duration-500 ${
@@ -266,13 +273,13 @@ export function GenerationPipeline({ genStatus, onRetry }: {
  <span className="text-ink-subtle ml-2 font-normal">耗时 {fmtElapsed(elapsed)}</span>
  </p>
  {/* Quality breakdown */}
- {genStatus.quality_detail && Object.keys(genStatus.quality_detail).length > 0 && (
- <div className="mt-2 pt-2 border-t border-success/20 grid grid-cols-3 gap-1.5">
- {Object.entries(genStatus.quality_detail).slice(0, 6).map(([k, v]) => (
- <div key={k} className="text-center p-1.5 rounded-lg bg-success-soft/50 dark:bg-emerald-950/30">
- <div className="text-[10px] text-ink-muted">{k}</div>
- <div className={`text-xs font-bold tabular-nums ${Number(v) >= 8 ? 'text-success' : Number(v) >= 6 ? 'text-warn' : 'text-destructive'}`}>
- {Number(v).toFixed(1)}
+ {qualityMetrics.length > 0 && (
+ <div className="mt-2 pt-2 border-t border-success/20 grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+ {qualityMetrics.map(metric => (
+ <div key={metric.key} className="text-center p-1.5 rounded-lg bg-success-soft/50 dark:bg-emerald-950/30" title={metric.reason || metric.key}>
+ <div className="text-[10px] text-ink-muted">{metric.label}</div>
+ <div className={`text-xs font-bold tabular-nums ${metric.score >= 8 ? 'text-success' : metric.score >= 6 ? 'text-warn' : 'text-destructive'}`}>
+ {metric.score.toFixed(1)}
  </div>
  </div>
  ))}

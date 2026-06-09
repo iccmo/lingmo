@@ -86,6 +86,12 @@ class TestGenerationStatus:
         assert resp.status_code == 200
         assert resp.json()["status"] in ("idle", "done", "running", "queued", "error")
 
+    def test_generate_status_idle(self, client):
+        novel = client.post("/api/novels", json={"id": _uid("gen-status"), "title": "生成状态"}).json()
+        resp = client.get(f"/api/novels/{novel['id']}/generate/status")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "idle"
+
     def test_foreshadowing(self, client):
         resp = client.get("/api/novels/gongmou/foreshadowing")
         assert resp.status_code == 200

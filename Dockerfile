@@ -1,11 +1,9 @@
 FROM python:3.12-slim
+
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends calibre && rm -rf /var/lib/apt/lists/*
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY novel_writer/ novel_writer/
-COPY tests/ tests/
-COPY data/ data/
 COPY frontend/dist/ frontend/dist/
 ENV LINGMO_HOST=0.0.0.0 LINGMO_PORT=8000
 EXPOSE 8000

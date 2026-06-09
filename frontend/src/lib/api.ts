@@ -1,10 +1,23 @@
 import type { NovelSummary, NovelDetail, DraftOption, SystemStatus, PublishResult } from 'src/types';
+import { responseErrorMessage } from './api-error';
+import type { QualityDetail } from './quality-detail';
+
+export interface GenerationStatus {
+  status: string;
+  message: string;
+  progress: number;
+  overall?: number;
+  grade?: string;
+  stream_content?: string;
+  quality_detail?: QualityDetail;
+  causal_events?: string;
+}
 
 const BASE = '/api';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path);
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -14,7 +27,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -24,7 +37,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -33,18 +46,21 @@ export const api = {
     list:      () => get<NovelSummary[]>('/novels'),
     get:       (id: string) => get<NovelDetail>(`/novels/${id}`),
     create:    (d: Record<string, unknown>) => post<NovelSummary>('/novels', d),
-    generate:  (id: string) => post(`/novels/${id}/generate`),
+    generate:  (id: string, body?: Record<string, unknown>) => post(`/novels/${id}/generate`, body),
     generateBatch: (id: string, count: number, qualityThreshold: number) =>
       post<{ job_id: string; status: string; count: number; next_chapter: number }>(
         `/novels/${id}/generate-batch`, { count, quality_threshold: qualityThreshold }),
     queueStatus: (id: string) => get<{ job_id: string | null; status: string; progress: { current: number; total: number }; last_error: string | null }>(
       `/novels/${id}/generate/queue-status`),
+    generationStatus: (id: string) => get<GenerationStatus>(`/novels/${id}/generate/status`),
     publish:   (id: string) => post<PublishResult>(`/novels/${id}/publish`),
     draft:     (id: string, input: string) => post<{ directions: DraftOption[] }>(`/novels/${id}/draft`, { input }),
     expand:    (id: string, chosenId: string, draft?: { direction: string; preview: string; hook: string }, edits?: string) =>
       post<{ title: string; body: string }>(`/novels/${id}/expand`, { chosen_id: chosenId, direction: draft?.direction, preview: draft?.preview, hook: draft?.hook, edits }),
     chapter:   (id: string, n: number) => get<{ number: number; content: string; title?: string }>(`/novels/${id}/chapters/${n}`),
     saveChapter: (id: string, n: number, content: string) => put(`/novels/${id}/chapters/${n}`, { content }),
+    reviseChapter: (id: string, n: number, critique: string) =>
+      post<{ status: string; novel_id: string; chapter: number }>(`/novels/${id}/chapters/${n}/revise`, { critique }),
     autoStart: (id: string) => post(`/novels/${id}/auto/start`),
     autoStop:  (id: string) => post(`/novels/${id}/auto/stop`),
     autoOnce:  (id: string) => post(`/novels/${id}/auto/once`),

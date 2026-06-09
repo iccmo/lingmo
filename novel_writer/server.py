@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .database import Database
+from .generator import humanize_llm_error
 from .state import gen_state
 
 # ═══════════════ App Init ═══════════════
@@ -367,7 +368,7 @@ def test_provider(provider_id: str):
             "response": r.choices[0].message.content if r.choices else "ok",
         }
     except Exception as e:
-        return {"ok": False, "error": str(e)[:200]}
+        return {"ok": False, "error": humanize_llm_error(e)}
 
 
 # ═══════════════ App Settings ═══════════════

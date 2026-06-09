@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { AlertTriangle } from 'lucide-react';
+import { throwApiError } from 'src/lib/api-error';
 
 /* ─── The 16 Fundamental Polarities ─── */
 interface Polarity {
@@ -67,38 +68,90 @@ interface SoulFingerprint {
  answer: string; // The author's personal answer to the question
 }
 
-function loadFingerprint(novelId: string): SoulFingerprint | null {
+function loadFingerprintSync(novelId: string): SoulFingerprint | null {
  try { return JSON.parse(localStorage.getItem(`soul-fingerprint-${novelId}`) || 'null'); }
  catch { return null; }
 }
-function saveFingerprint(novelId: string, fp: SoulFingerprint) {
- localStorage.setItem(`soul-fingerprint-${novelId}`, JSON.stringify(fp));
+async function loadFingerprintFromAPI(novelId: string, setFp: (f: SoulFingerprint | null) => void, setSelected: (s: string | null) => void) {
+	 try {
+	   const r = await fetch(`/api/v2/novels/${novelId}/soul-fingerprint`);
+	   await throwApiError(r);
+	   const d = await r.json();
+	   if (d.polarity) {
+	     const fp = { primaryPolarity: d.polarity, position: d.position, answer: d.answer };
+	     setFp(fp);
+	     setSelected(fp.primaryPolarity);
+	     localStorage.setItem(`soul-fingerprint-${novelId}`, JSON.stringify(fp));
+	     return;
+	   }
+	 } catch {}
+	}
+async function saveFingerprint(novelId: string, fp: SoulFingerprint) {
+	 const response = await fetch(`/api/v2/novels/${novelId}/soul-fingerprint`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ primaryPolarity: fp.primaryPolarity, position: fp.position, answer: fp.answer }) });
+	 await throwApiError(response);
+	 localStorage.setItem(`soul-fingerprint-${novelId}`, JSON.stringify(fp));
+	}
+
+async function clearFingerprint(novelId: string) {
+	 const response = await fetch(`/api/v2/novels/${novelId}/soul-fingerprint`, { method: 'DELETE' });
+	 await throwApiError(response);
+	 localStorage.removeItem(`soul-fingerprint-${novelId}`);
 }
 
 /* ─── Component ─── */
 export function SoulEngine({ novelId }: { novelId: string; genre: string }) {
- const [fp, setFp] = useState<SoulFingerprint | null>(() => loadFingerprint(novelId));
- const [selected, setSelected] = useState<string | null>(fp?.primaryPolarity || null);
- const [answer, setAnswer] = useState(fp?.answer || '');
- const [position, setPosition] = useState(fp?.position || 5);
- const [showPrompt, setShowPrompt] = useState(false);
+ const [fp, setFp] = useState<SoulFingerprint | null>(() => loadFingerprintSync(novelId));
+ const [selected, setSelected] = useState<string | null>(null);
+ // On mount, load fresh data from API
+ useEffect(() => {
+   loadFingerprintFromAPI(novelId, setFp, setSelected);
+ }, [novelId]);
+	 // Init selected from localStorage-loaded fp
+	 useEffect(() => {
+	   if (fp?.primaryPolarity && !selected) setSelected(fp.primaryPolarity);
+	 }, [fp]);
+	 const [answer, setAnswer] = useState(fp?.answer || '');
+	 const [position, setPosition] = useState(fp?.position || 5);
+	 const [saving, setSaving] = useState(false);
+	 const [showPrompt, setShowPrompt] = useState(false);
  const [categoryFilter, setCategoryFilter] = useState('all');
  const [polaritySearch, setPolaritySearch] = useState('');
 
- const polarity = POLARITIES.find(p => p.id === selected);
+	 const polarity = POLARITIES.find(p => p.id === selected);
 
- function save() {
- if (!selected || !answer.trim()) { toast.error('请选择核心矛盾并写下你的回答'); return; }
- const data: SoulFingerprint = { primaryPolarity: selected, position, answer: answer.trim() };
- setFp(data);
- saveFingerprint(novelId, data);
- toast.success('灵魂已注入');
- }
+	 useEffect(() => {
+	   if (!fp) return;
+	   setAnswer(fp.answer || '');
+	   setPosition(fp.position || 5);
+	 }, [fp]);
 
- function clear() {
- setFp(null); setSelected(null); setAnswer(''); setPosition(5);
- localStorage.removeItem(`soul-fingerprint-${novelId}`);
- }
+	 async function save() {
+	 if (!selected || !answer.trim()) { toast.error('请选择核心矛盾并写下你的回答'); return; }
+	 const data: SoulFingerprint = { primaryPolarity: selected, position, answer: answer.trim() };
+	 setSaving(true);
+	 try {
+	 await saveFingerprint(novelId, data);
+	 setFp(data);
+	 toast.success('灵魂已注入');
+	 } catch (error) {
+	 toast.error(`保存失败: ${(error as Error).message}`);
+	 } finally {
+	 setSaving(false);
+	 }
+	 }
+
+	 async function clear() {
+	 setSaving(true);
+	 try {
+	 await clearFingerprint(novelId);
+	 setFp(null); setSelected(null); setAnswer(''); setPosition(5);
+	 toast.success('灵魂设定已清除');
+	 } catch (error) {
+	 toast.error(`清除失败: ${(error as Error).message}`);
+	 } finally {
+	 setSaving(false);
+	 }
+	 }
 
  const injectionPrompt = polarity && answer.trim()
  ? `【灵魂注入 · 核心矛盾：${polarity.name}】\n${polarity.question}\n\n作者的回答：${answer}\n\n写作法则：${polarity.prompt}\n\n绝对不能：${polarity.deadlySins.join('、')}`
@@ -234,9 +287,9 @@ export function SoulEngine({ novelId }: { novelId: string; genre: string }) {
  placeholder:text-ink-subtle focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-all" />
  </div>
 
- <button onClick={save} disabled={!answer.trim()}
+ <button onClick={save} disabled={!answer.trim() || saving}
  className="w-full py-2.5 rounded-lg bg-accent text-white hover:bg-accent-hover transition-colors text-sm font-medium disabled:opacity-50">
- 💎 这是我的灵魂
+ {saving ? '保存中...' : '💎 这是我的灵魂'}
  </button>
  </div>
  )}

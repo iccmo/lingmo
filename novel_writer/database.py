@@ -24,6 +24,10 @@ class Database:
                 conn.execute("ALTER TABLE novels ADD COLUMN provider_id TEXT DEFAULT 'openai'")
             except Exception:
                 pass  # Column already exists
+            try:
+                conn.execute("ALTER TABLE chapters ADD COLUMN narrative_facts TEXT DEFAULT '[]'")
+            except Exception:
+                pass  # Column already exists
             # V11: Add updated_at column to foreshadowing_tracker
             try:
                 conn.execute("ALTER TABLE foreshadowing_tracker ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'))")
@@ -48,12 +52,22 @@ class Database:
                 pass
             # V28: soul_fingerprints
             try:
-                conn.execute('''CREATE TABLE IF NOT EXISTS soul_fingerprints (novel_id TEXT PRIMARY KEY, polarity TEXT DEFAULT '', position INTEGER DEFAULT 5, answer TEXT DEFAULT '', created_at TEXT DEFAULT (datetime(''now'')), updated_at TEXT DEFAULT (datetime(''now'')))''')
+                conn.execute("""CREATE TABLE IF NOT EXISTS soul_fingerprints (
+                    novel_id TEXT PRIMARY KEY,
+                    polarity TEXT DEFAULT '',
+                    position INTEGER DEFAULT 5,
+                    answer TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')))""")
             except Exception:
                 pass
             # V29: character_blueprints
             try:
-                conn.execute('''CREATE TABLE IF NOT EXISTS character_blueprints (novel_id TEXT PRIMARY KEY, characters_json TEXT DEFAULT '[]', created_at TEXT DEFAULT (datetime(''now'')), updated_at TEXT DEFAULT (datetime(''now'')))''')
+                conn.execute("""CREATE TABLE IF NOT EXISTS character_blueprints (
+                    novel_id TEXT PRIMARY KEY,
+                    characters_json TEXT DEFAULT '[]',
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now')))""")
             except Exception:
                 pass
             # V12: chapter_versions table
@@ -66,6 +80,19 @@ class Database:
                     version INTEGER NOT NULL DEFAULT 1,
                     reason TEXT DEFAULT '',
                     created_at TEXT DEFAULT (datetime('now')))""")
+            except Exception:
+                pass
+            try:
+                conn.execute("""CREATE TABLE IF NOT EXISTS chapter_traces (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    novel_id TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+                    chapter_num INTEGER NOT NULL,
+                    steps_json TEXT NOT NULL DEFAULT '[]',
+                    final_quality REAL NOT NULL DEFAULT 0,
+                    total_duration_ms INTEGER NOT NULL DEFAULT 0,
+                    total_cost REAL NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(novel_id, chapter_num))""")
             except Exception:
                 pass
 
@@ -143,12 +170,15 @@ class Database:
             d["factions"] = [dict(r) for r in c.execute(
                 "SELECT * FROM factions WHERE novel_id=? ORDER BY sort_order", (novel_id,))]
             d["chapters"] = [dict(r) for r in c.execute(
-                "SELECT number,title,word_count,summary,ending_hook,quality_score,model_used,generated_at FROM chapters WHERE novel_id=? ORDER BY number", (novel_id,))]
+                """SELECT number,title,word_count,summary,content,ending_hook,key_events,revelations,narrative_facts,
+                          quality_score,model_used,generated_at
+                   FROM chapters WHERE novel_id=? ORDER BY number""", (novel_id,))]
             d["plot_points"] = [dict(r) for r in c.execute(
                 "SELECT * FROM plot_points WHERE novel_id=? ORDER BY is_resolved,sort_order", (novel_id,))]
-            d["total_chapters"] = len(d["chapters"])
+            generated_chapters = [ch for ch in d["chapters"] if ch["word_count"] > 0]
+            d["total_chapters"] = len(generated_chapters)
             d["total_words"] = sum(ch["word_count"] for ch in d["chapters"])
-            latest = d["chapters"][-1] if d["chapters"] else None
+            latest = generated_chapters[-1] if generated_chapters else None
             d["latest_chapter"] = {"number": latest["number"], "title": latest["title"],
                                     "generated_at": latest["generated_at"]} if latest else None
             # Character relations
@@ -163,11 +193,11 @@ class Database:
     def list_novels(self) -> list[dict]:
         with self.conn() as c:
             rows = c.execute("""SELECT n.id, n.title, n.author, n.genre, n.synopsis, n.status, n.mode,
-                COUNT(c.id) as total_chapters,
+                COALESCE(SUM(CASE WHEN c.word_count > 0 THEN 1 ELSE 0 END), 0) as total_chapters,
                 COALESCE(SUM(c.word_count), 0) as total_words,
-                (SELECT c2.title FROM chapters c2 WHERE c2.novel_id=n.id ORDER BY c2.number DESC LIMIT 1) as latest_title,
-                (SELECT c2.number FROM chapters c2 WHERE c2.novel_id=n.id ORDER BY c2.number DESC LIMIT 1) as latest_number,
-                (SELECT c2.generated_at FROM chapters c2 WHERE c2.novel_id=n.id ORDER BY c2.number DESC LIMIT 1) as latest_generated_at
+                (SELECT c2.title FROM chapters c2 WHERE c2.novel_id=n.id AND c2.word_count > 0 ORDER BY c2.number DESC LIMIT 1) as latest_title,
+                (SELECT c2.number FROM chapters c2 WHERE c2.novel_id=n.id AND c2.word_count > 0 ORDER BY c2.number DESC LIMIT 1) as latest_number,
+                (SELECT c2.generated_at FROM chapters c2 WHERE c2.novel_id=n.id AND c2.word_count > 0 ORDER BY c2.number DESC LIMIT 1) as latest_generated_at
                 FROM active_novels n
                 LEFT JOIN chapters c ON c.novel_id = n.id
                 GROUP BY n.id ORDER BY n.updated_at DESC""").fetchall()
@@ -206,6 +236,7 @@ class Database:
     def add_chapter(self, novel_id: str, **kw) -> int:
         defaults = dict(number=0, title='', word_count=0, summary='', content='',
                         ending_hook='', key_events='[]', revelations='[]',
+                        narrative_facts='[]',
                         quality_score=0, model_used='', prompt_version='',
                         prompt_tokens=0, completion_tokens=0, cost=0, generation_duration_ms=0)
         defaults.update(kw)
@@ -214,10 +245,10 @@ class Database:
         with self.conn() as c:
             # Use INSERT OR REPLACE — outline chapters (word_count=0) will be overwritten by generated ones
             cur = c.execute("""INSERT OR REPLACE INTO chapters (novel_id,number,title,word_count,summary,content,
-                ending_hook,key_events,revelations,quality_score,model_used,
+                ending_hook,key_events,revelations,narrative_facts,quality_score,model_used,
                 prompt_version,prompt_tokens,completion_tokens,cost,generation_duration_ms)
                 VALUES (:novel_id,:number,:title,:word_count,:summary,:content,
-                :ending_hook,:key_events,:revelations,:quality_score,:model_used,
+                :ending_hook,:key_events,:revelations,:narrative_facts,:quality_score,:model_used,
                 :prompt_version,:prompt_tokens,:completion_tokens,:cost,:generation_duration_ms)""", kw)
             c.execute("UPDATE novels SET updated_at=datetime('now') WHERE id=?", (novel_id,))
             return cur.lastrowid
@@ -228,9 +259,44 @@ class Database:
                             (novel_id, number)).fetchone()
             return dict(row) if row else None
 
+    def get_next_chapter_number(self, novel_id: str) -> int:
+        """Return the next append-safe chapter number, ignoring outline placeholders."""
+        with self.conn() as c:
+            row = c.execute(
+                "SELECT COALESCE(MAX(number), 0) AS latest FROM chapters WHERE novel_id=? AND word_count>0",
+                (novel_id,),
+            ).fetchone()
+            return int(row["latest"] or 0) + 1
+
+    def delete_chapter(self, novel_id: str, chapter_num: int):
+        """Delete a chapter and chapter-scoped derived artifacts."""
+        self.clear_story_bible_chapter(novel_id, chapter_num)
+        with self.conn() as c:
+            c.execute(
+                "DELETE FROM chapter_summaries WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM chapter_traces WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM cost_logs WHERE novel_id=? AND chapter_number=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM chapters WHERE novel_id=? AND number=?",
+                (novel_id, chapter_num),
+            )
+            c.execute("UPDATE novels SET updated_at=datetime('now') WHERE id=?", (novel_id,))
+
     def update_chapter(self, novel_id: str, number: int, **kw):
         if not kw:
             return
+        content = kw.get("content")
+        if isinstance(content, str):
+            kw.setdefault("word_count", len(content))
+            kw.setdefault("summary", content[:200])
         sets = ", ".join(f"{k}=:{k}" for k in kw)
         kw["novel_id"] = novel_id
         kw["number"] = number
@@ -423,23 +489,41 @@ class Database:
             "created_at": r["created_at"],
         } for r in rows]
 
+    def _ensure_creation_tables(self, c):
+        c.execute("""CREATE TABLE IF NOT EXISTS soul_fingerprints (
+            novel_id TEXT PRIMARY KEY,
+            polarity TEXT DEFAULT '',
+            position INTEGER DEFAULT 5,
+            answer TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS character_blueprints (
+            novel_id TEXT PRIMARY KEY,
+            characters_json TEXT DEFAULT '[]',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')))""")
+
     def save_soul_fingerprint(self, novel_id: str, polarity: str, position: int, answer: str):
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             c.execute("INSERT OR REPLACE INTO soul_fingerprints (novel_id, polarity, position, answer, updated_at) VALUES (?, ?, ?, ?, datetime('now'))", (novel_id, polarity, position, answer))
 
     def get_soul_fingerprint(self, novel_id: str):
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             row = c.execute("SELECT * FROM soul_fingerprints WHERE novel_id=?", (novel_id,)).fetchone()
             return dict(row) if row else None
 
     def delete_soul_fingerprint(self, novel_id: str):
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             c.execute("DELETE FROM soul_fingerprints WHERE novel_id=?", (novel_id,))
 
     def save_character_blueprints(self, novel_id: str, characters: list[dict]):
         """Save all character blueprints for a novel as a JSON array."""
         import json as _json
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             c.execute(
                 "INSERT OR REPLACE INTO character_blueprints (novel_id, characters_json, updated_at) VALUES (?, ?, datetime('now'))",
                 (novel_id, _json.dumps(characters, ensure_ascii=False)),
@@ -449,6 +533,7 @@ class Database:
         """Get all character blueprints for a novel."""
         import json as _json
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             row = c.execute("SELECT characters_json FROM character_blueprints WHERE novel_id=?", (novel_id,)).fetchone()
             if not row:
                 return []
@@ -461,6 +546,7 @@ class Database:
         """Delete a single character blueprint by id. Returns True if deleted."""
         import json as _json
         with self.conn() as c:
+            self._ensure_creation_tables(c)
             row = c.execute("SELECT characters_json FROM character_blueprints WHERE novel_id=?", (novel_id,)).fetchone()
             if not row:
                 return False
@@ -670,6 +756,44 @@ class Database:
 
     # ═══════════════════ Story Bible ═══════════════════
 
+    def clear_story_bible_chapter(self, novel_id: str, chapter_num: int):
+        """Remove derived story-bible rows for one chapter before re-extraction."""
+        with self.conn() as c:
+            c.execute(
+                "DELETE FROM character_state WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM foreshadowing_tracker WHERE novel_id=? AND created_chapter=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                """UPDATE foreshadowing_tracker
+                   SET status='active', resolved_chapter=NULL, resolved_text='', updated_at=datetime('now')
+                   WHERE novel_id=? AND resolved_chapter=?""",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM location_history WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM story_timeline WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM world_state WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM cost_ledger WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+            c.execute(
+                "DELETE FROM consistency_log WHERE novel_id=? AND chapter_num=?",
+                (novel_id, chapter_num),
+            )
+
     def save_character_state(self, novel_id: str, chapter_num: int, char_name: str,
                               emotion: str = '', physical_state: str = '', knowledge: str = '[]',
                               goal: str = '', location: str = '', relationships: str = '[]',
@@ -731,7 +855,8 @@ class Database:
 
     def get_active_foreshadowing(self, novel_id: str) -> list[dict]:
         with self.conn() as c:
-            rows = c.execute("""SELECT * FROM foreshadowing_tracker WHERE novel_id=? AND status='active'
+            rows = c.execute("""SELECT * FROM foreshadowing_tracker
+                WHERE novel_id=? AND status IN ('active','overdue')
                 ORDER BY due_by_chapter""", (novel_id,)).fetchall()
             return [dict(r) for r in rows]
 
@@ -783,6 +908,14 @@ class Database:
     def log_consistency_issue(self, novel_id: str, chapter_num: int, check_type: str,
                                severity: str, description: str, fix_suggestion: str = ''):
         with self.conn() as c:
+            exists = c.execute(
+                """SELECT 1 FROM consistency_log
+                   WHERE novel_id=? AND chapter_num=? AND check_type=? AND severity=? AND description=?
+                   LIMIT 1""",
+                (novel_id, chapter_num, check_type, severity, description),
+            ).fetchone()
+            if exists:
+                return
             c.execute("""INSERT INTO consistency_log (novel_id, chapter_num, check_type, severity, description, fix_suggestion)
                 VALUES (?,?,?,?,?,?)""", (novel_id, chapter_num, check_type, severity, description, fix_suggestion))
 

@@ -416,7 +416,7 @@ export function PacingCurve({ chapters, contentMap }: Props) {
  {/* Abrupt changes detail */}
  {abruptChanges.length > 0 && (
  <div className="mt-3 p-3 rounded-lg bg-warn-soft/50 dark:bg-amber-950/20 border border-warn/20 ">
- <p className="text-[11px] font-semibold text-amber-700 mb-2">
+ <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-300 mb-2">
  节奏突变章节详情
  </p>
  <div className="grid grid-cols-2 gap-1.5">

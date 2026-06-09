@@ -178,7 +178,7 @@ export function ReaderSim({ novelId, chapters }: {
  <div className="flex gap-2 flex-wrap">
  {dangerChapters.map(r => (
  <span key={r.chapter}
- className="text-[10px] px-2 py-0.5 rounded-full bg-warn-soft border border-warn/20 text-amber-700 ">
+ className="text-[10px] px-2 py-0.5 rounded-full bg-warn-soft border border-warn/20 text-amber-700 dark:text-amber-300 ">
  Ch{r.chapter}: {r.reasons[0]}
  </span>
  ))}

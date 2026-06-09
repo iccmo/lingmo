@@ -79,7 +79,7 @@ function computeDiff(oldLines: string[], newLines: string[]): DiffLine[] {
  return result;
 }
 
-export function ChapterDiff({ novelId, chapterNum, currentContent }: Props) {
+export function ChapterDiff({ novelId, chapterNum, currentContent, prevChapterContent, outlineSummary }: Props) {
  const [compareIdx, setCompareIdx] = useState<number>(0);
  const [showDiff, setShowDiff] = useState(false);
 

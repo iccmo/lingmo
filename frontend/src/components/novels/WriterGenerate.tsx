@@ -1,4 +1,5 @@
 import { Sparkles, ChevronDown, ChevronUp, Swords, Heart, RefreshCw, Coffee, Search, Telescope, Zap } from 'lucide-react';
+import { isActiveGenerationStatus } from 'src/lib/generation-status';
 
 interface GenStatus {
   status: string;
@@ -28,13 +29,11 @@ const DIRECTION_PRESETS = [
   { icon: Zap, label: '高潮', hint: '高燃剧情，极限爆发，情绪顶点', color: 'hover:bg-accent-soft/30 hover:border-accent/30' },
 ];
 
-const IDLE_STATUSES = new Set(['complete', 'error', 'idle']);
-
 export function WriterGenerate({
   chapterCount, onGenerate, genStatus,
   direction, setDirection, showDirection, setShowDirection,
 }: Props) {
-  const isGenerating = genStatus && !IDLE_STATUSES.has(genStatus.status);
+  const isGenerating = isActiveGenerationStatus(genStatus);
 
   function addDirection(hint: string) {
     const current = direction.trim();

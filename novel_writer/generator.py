@@ -15,6 +15,68 @@ from .story_state import ChapterMeta, StoryState
 
 log = get_logger(__name__)
 
+
+def humanize_llm_error(error: Exception | str) -> str:
+    """Translate common provider failures into actionable Chinese messages."""
+    raw = str(error)
+    text = raw.lower()
+
+    if any(
+        marker in text
+        for marker in (
+            "492",
+            "token expired",
+            "token has expired",
+            "access token expired",
+            "expired token",
+            "token过期",
+            "token 已过期",
+            "令牌过期",
+            "访问令牌过期",
+        )
+    ):
+        return "模型服务 token 已过期，请在设置页重新填写或刷新 API Key"
+    if any(
+        marker in text
+        for marker in (
+            "401",
+            "unauthorized",
+            "invalid api key",
+            "incorrect api key",
+            "invalid key",
+            "authentication",
+            "api key not found",
+            "no api key",
+            "missing api key",
+            "未配置 api key",
+            "密钥无效",
+        )
+    ):
+        return "API Key 无效，请在设置页更新密钥"
+    if any(marker in text for marker in ("403", "forbidden", "permission denied")):
+        return "API Key 无权限访问该模型，请检查供应商、模型或账户权限"
+    if any(marker in text for marker in ("model_not_found", "model not found", "model does not exist", "模型不存在")):
+        return "当前模型不存在或不可用，请在设置页选择供应商支持的模型"
+    if any(marker in text for marker in ("429", "rate limit", "too many requests")):
+        return "请求过于频繁，请稍等片刻再试"
+    if any(marker in text for marker in ("quota", "insufficient_quota", "billing", "余额不足", "insufficient balance")):
+        return "API 额度不足，请检查账户余额"
+    if any(marker in text for marker in ("context length", "maximum context", "token", "exceed")) and any(
+        marker in text for marker in ("limit", "exceed", "maximum", "too long", "context")
+    ):
+        return "内容过长超出模型限制，请缩短上下文或降低章节字数"
+    if any(marker in text for marker in ("timeout", "timed out")):
+        return "请求超时，模型响应过慢，请稍后重试"
+    if any(marker in text for marker in ("connection", "network", "econnrefused", "enotfound", "fetch failed")):
+        return "网络连接失败，请检查网络状态或供应商地址"
+
+    return raw[:300]
+
+
+def _format_llm_error(error: Exception | str, attempt: int) -> str:
+    return f"[attempt {attempt}] {type(error).__name__}: {humanize_llm_error(error)}"
+
+
 # ==================== 数据结构 ====================
 
 @dataclass
@@ -747,8 +809,9 @@ class Generator:
             word_count=len(body),
             summary=meta.get("summary", body[:200]) if meta.get("summary") else body[:200],
             content=body,
-            key_events=meta.get("key_events", []),
-            revelations=meta.get("revelations", []),
+            key_events=self._normalize_text_list(meta.get("key_events"), limit=8),
+            revelations=self._normalize_text_list(meta.get("revelations"), limit=8),
+            narrative_facts=self._extract_narrative_facts(meta, body),
             ending_hook=meta.get("ending_hook", body[-100:] if not meta.get("ending_hook") else ""),
         )
 
@@ -780,26 +843,81 @@ class Generator:
         """
         best_chapter = None
         best_quality: dict[str, object] = {'overall': 0}
+        original_state = state.to_dict()
+        best_state: dict | None = None
+        last_chapter = None
+        last_state: dict | None = None
+        last_rejection = ""
 
         base_temp = self.cfg.temperature
-        for i in range(n):
-            # 轻微温度波动增加多样性
-            temp_offset = (i - (n - 1) / 2) * 0.1
-            self.cfg.temperature = min(1.0, max(0.5, base_temp + temp_offset))
+        try:
+            for i in range(n):
+                self._restore_state(state, original_state)
+                # 轻微温度波动增加多样性
+                temp_offset = (i - (n - 1) / 2) * 0.1
+                self.cfg.temperature = min(1.0, max(0.5, base_temp + temp_offset))
 
-            chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style, author_input=author_input)
-            body = chapter.content or chapter.summary
-            quality = self.score_quality(body, state, style=style)
+                chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style, author_input=author_input)
+                candidate_state = state.to_dict()
+                body = chapter.content or chapter.summary
+                rejection = self._chapter_body_rejection(body)
+                if rejection:
+                    last_chapter = chapter
+                    last_state = candidate_state
+                    last_rejection = rejection
+                    continue
+                quality = self.score_quality(body, state, style=style)
 
-            if quality['overall'] > best_quality['overall']:
-                best_chapter = chapter
-                best_quality = quality
+                if quality['overall'] > best_quality['overall']:
+                    best_chapter = chapter
+                    best_quality = quality
+                    best_state = candidate_state
+        finally:
+            # 恢复原始温度
+            self.cfg.temperature = base_temp
 
-        # 恢复原始温度
-        self.cfg.temperature = base_temp
-
+        if best_chapter is None and last_chapter is not None:
+            best_chapter = last_chapter
+            best_quality = {"overall": 0, "grade": "D", "issues": [last_rejection]}
+            best_state = last_state
         assert best_chapter is not None, "batch_generate failed to produce any chapter"
+        self._restore_state(state, best_state or original_state)
         return best_chapter, best_quality
+
+    @staticmethod
+    def _chapter_body_rejection(body: str) -> str:
+        """Return a reason when model output is not plausible chapter prose."""
+        if not isinstance(body, str) or not body.strip():
+            return "empty chapter body"
+        text = body.strip()
+        opening = text[:180].lstrip()
+        if re.search(
+            r"^(好的|当然|可以|以下是|下面是|这是|我已|已根据|根据你的|修改说明|修订说明|改动说明|说明[:：])",
+            opening,
+        ):
+            return "explanation instead of chapter prose"
+        if re.search(r"(修改如下|修订如下|改动如下|以下为修订|以下为修改)", opening):
+            return "explanation instead of chapter prose"
+        if "```" in text[:400] or re.search(r"^#{1,3}\s*(修改|修订|说明)", opening, re.M):
+            return "non-prose formatting"
+        if re.search(
+            r"^(分析报告|评估报告|质量报告|诊断报告|改写计划|修订计划|优化计划|章节大纲|故事大纲|提纲|大纲|创作思路|写作思路|改写思路|问题分析|建议[:：])",
+            opening,
+        ):
+            return "report or outline instead of chapter prose"
+        if re.search(r"以下为.*(分析|报告|计划|提纲|大纲)|(?:问题|建议|目标|修改点|优化点)[:：]", opening):
+            return "report or outline instead of chapter prose"
+        early_lines = [line.strip() for line in text[:800].splitlines() if line.strip()]
+        list_like = sum(1 for line in early_lines[:8] if re.match(r"^([-*•]|\d+[.、])\s*[^。！？]{1,30}[:：]", line))
+        if list_like >= 3:
+            return "outline list instead of chapter prose"
+        return ""
+
+    @staticmethod
+    def _restore_state(state: StoryState, snapshot: dict):
+        restored = StoryState.from_dict(snapshot)
+        state.__dict__.clear()
+        state.__dict__.update(restored.__dict__)
 
     def get_dynamic_threshold(self, novel_id: str, db=None) -> float:
         """Calculate quality threshold based on recent chapter averages.
@@ -986,8 +1104,9 @@ class Generator:
             cleaned, _ = self.de_ai(body)
             revision_chapter = ChapterMeta(number=ch_num, title=title,
                 word_count=len(cleaned), summary=meta.get("summary", cleaned[:200]),
-                content=cleaned, key_events=meta.get("key_events", []),
-                revelations=meta.get("revelations", []),
+                content=cleaned, key_events=self._normalize_text_list(meta.get("key_events"), limit=8),
+                revelations=self._normalize_text_list(meta.get("revelations"), limit=8),
+                narrative_facts=self._extract_narrative_facts(meta, cleaned),
                 ending_hook=meta.get("ending_hook", cleaned[-100:]))
             revised.append(revision_chapter)
         return revised
@@ -1020,6 +1139,7 @@ class Generator:
         rag_context: list[dict] | None = None,
         outline: list[dict] | None = None,
         style: 'StyleProfile | None' = None,
+        author_input: str = "",
     ) -> list[ChapterMeta]:
         """
         连续生成 n 个章节，每章追加到 state.chapters，使下一章看到全文。
@@ -1030,7 +1150,7 @@ class Generator:
         for i in range(n):
             # Use batch_generate for best-of-k quality
             chapter, quality = self.batch_generate(state, n=1, rag_context=rag_context,
-                                                    outline=outline, style=style)
+                                                    outline=outline, style=style, author_input=author_input)
             body = chapter.content or chapter.summary
             # Quality check
             quality = self.score_quality(body, state, style=style)
@@ -1038,7 +1158,7 @@ class Generator:
             while quality['overall'] < 0.5 and retries < 2:
                 retries += 1
                 chapter, quality = self.batch_generate(state, n=1, rag_context=rag_context,
-                                                        outline=outline, style=style)
+                                                        outline=outline, style=style, author_input=author_input)
                 body = chapter.content or chapter.summary
                 quality = self.score_quality(body, state, style=style)
             # Hard gate: skip chapter if still below minimum quality threshold
@@ -1055,8 +1175,7 @@ class Generator:
             cleaned = self.humanize(cleaned)
             # Save version snapshot
             self._save_version(state.novel_id, chapter.number, pre_edit_body, "pre-edit")
-            chapter.content = cleaned
-            chapter.word_count = len(cleaned)
+            self.refresh_chapter_content(chapter, cleaned)
             # Append so next chapter sees this one's full text via state.latest_chapter
             state.chapters.append(chapter)
             # Track character voices from this chapter
@@ -1121,7 +1240,13 @@ class Generator:
         """
         去AI味深度清洗——不是替换套话，是让AI读自己的文字然后指出哪里不像人写的。
         """
-        prompt = f"""你是一位资深编辑，专门识别AI生成的文字。请阅读以下章节，找出3处最明显像AI写的地方，然后只修改那3处。
+        chunk_size = 5000
+        chunks = [body[index : index + chunk_size] for index in range(0, len(body), chunk_size)] or [body]
+        humanized_chunks: list[str] = []
+
+        for index, chunk in enumerate(chunks, start=1):
+            scope = "章节" if len(chunks) == 1 else f"章节片段 {index}/{len(chunks)}"
+            prompt = f"""你是一位资深编辑，专门识别AI生成的文字。请阅读以下{scope}，找出3处最明显像AI写的地方，然后只修改那3处。
 
 AI写作的典型特征：
 - 段落长度均匀——每段都是3-4行，天然整齐
@@ -1139,23 +1264,26 @@ AI写作的典型特征：
 1. 打碎1处光滑过渡——让场景切换突兀一点，像人写的
 2. 把1段完整解释改成不完整暗示——删掉因果说明，让读者自己想
 3. 改写1处对话——加入打断、半句话、或者一个人问A另一个人答B
+4. 绝对不要删除或淡化主角的主动选择、拒绝、承担、冒险、伤口、代价、后果、身份暴露、关系裂痕、后续麻烦；这些是爽感和长期记忆，不属于AI味
 
 保持总字数不变。只修改3处。输出完整修改后的章节正文。
 
 原稿：
-{body[:5000]}
+{chunk}
 
 修改后："""
-        try:
-            result = self._call_llm_with_retry([
-                {"role":"system","content":"你是反AI写作专家。你只修改3处，不打乱原文。"},
-                {"role":"user","content": prompt}
-            ], max_tokens=8192)
-            if result and len(result) > len(body) * 0.7:
-                return result.strip()
-        except Exception as e:
-            log.warning("humanize failed: %s", e)
-        return body
+            try:
+                result = self._call_llm_with_retry([
+                    {"role":"system","content":"你是反AI写作专家。你只修改3处，不打乱原文，不删除主角主动选择、代价、风险或后果。"},
+                    {"role":"user","content": prompt}
+                ], max_tokens=8192)
+                if not result or len(result) <= len(chunk) * 0.7:
+                    return body
+                humanized_chunks.append(result.strip())
+            except Exception as e:
+                log.warning("humanize failed: %s", e)
+                return body
+        return "".join(humanized_chunks)
 
     def revise_chapter(self, chapter_content: str, critique: str,
                        state: 'StoryState', style: 'StyleProfile | None' = None) -> str:
@@ -1174,6 +1302,8 @@ AI写作的典型特征：
 3. 保持总字数在±15%以内
 4. 保持原有的章节标题
 5. 不改变任何角色的命运或重大事件
+6. 不得削弱主角主动选择：如果原章主角有拒绝、承担、冒险、改变计划等行动，重写后必须保留；如果原章缺少主动性，应补成具体行动而不是旁白说明
+7. 不得削弱代价与后果：胜利、突破、线索、资源、关系改善等收益必须绑定具体代价或后患，不能把风险写没
 
 输出完整重写后的章节正文。"""},
             {"role": "user", "content": f"原稿：\n\n{chapter_content}\n\n请根据批评重写。直接输出修改后的完整章节。"},
@@ -1315,17 +1445,32 @@ AI写作的典型特征：
         best = max(results.items(), key=lambda x: x[1].get("quality", 0)) if results else (None, {})
         return {"best_voice": best[0], "best_chapter": best[1], "all_results": results}
 
-    def generate_chapter_classic(self, state: 'StoryState', style: 'StyleProfile | None' = None,
-                                  rag_context=None, outline=None) -> ChapterMeta:
+    def generate_chapter_classic(
+        self,
+        state: 'StoryState',
+        style: 'StyleProfile | None' = None,
+        rag_context=None,
+        outline=None,
+        author_input: str = "",
+    ) -> ChapterMeta:
         """
         经典模式：生成多个版本，只通过符合全部质量门槛的版本。
         不通过的直接淘汰，最多生成 5 版，全不通过则返回最佳版本并标记。
         """
         best_chapter, best_quality = None, {"overall": -1, "issues": []}
+        original_state = state.to_dict()
+        accepted_state: dict | None = None
         rejected_log: list[dict] = []  # Save rejected versions for analysis
         for attempt in range(5):
-            chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style)
+            self._restore_state(state, original_state)
+            chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style, author_input=author_input)
+            candidate_state = state.to_dict()
             body = chapter.content or chapter.summary
+            rejection = self._chapter_body_rejection(body)
+            if rejection:
+                rejected_log.append({"attempt": attempt+1, "reason": f"非正文输出: {rejection}", "detail": body[:200]})
+                print(f"[CLASSIC] Attempt {attempt+1}: 非正文输出，淘汰")
+                continue
 
             # 1. Basic quality check
             quality = self.judge_quality(body, state, style)
@@ -1361,6 +1506,7 @@ AI写作的典型特征：
             body = self._self_edit(body, state, style)  # 轻量精修
             chapter.content = body
             best_chapter, best_quality = chapter, quality
+            accepted_state = candidate_state
             break
 
         # Save rejected log for analysis
@@ -1378,11 +1524,13 @@ AI写作的典型特征：
         if not best_chapter:
             # Fallback: generate one more time without classic filter
             print("[CLASSIC] ⚠️ 5次尝试未达经典标准，降级为普通生成")
-            chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style)
+            self._restore_state(state, original_state)
+            chapter = self.generate(state, rag_context=rag_context, outline=outline, style=style, author_input=author_input)
             body = self._self_edit(chapter.content or chapter.summary, state, style)
             chapter.content, _ = self.de_ai(body)
             return chapter
 
+        self._restore_state(state, accepted_state or original_state)
         return best_chapter
 
     def _classic_check(self, body: str, state: 'StoryState', style: 'StyleProfile | None' = None) -> tuple[bool, list[str]]:
@@ -1543,12 +1691,13 @@ AI写作的典型特征：
         state: StoryState,
         chosen: DraftOption,
         edits: str = "",
+        author_input: str = "",
     ) -> tuple[str, str]:
         """
         展开选定方向为完整章节。
         返回 (title, body)
         """
-        expand_prompt = self._build_expand_prompt(state, chosen, edits)
+        expand_prompt = self._build_expand_prompt(state, chosen, edits, author_input=author_input)
         raw = self._call_llm_with_retry(expand_prompt)
         title, body, _meta = self._parse_response(raw, state.total_chapters + 1)
         return title, body
@@ -2126,6 +2275,123 @@ AI写作的典型特征：
             base += f"\n\n体裁适配（{genre}）：{adapt}"
         return base
 
+    @staticmethod
+    def _normalize_text_list(value: Any, limit: int = 8) -> list[str]:
+        """Normalize LLM metadata fields that may be strings, lists, or mixed values."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw_items = re.split(r"[\n；;]+", value)
+        elif isinstance(value, list):
+            raw_items = value
+        else:
+            raw_items = [value]
+
+        items: list[str] = []
+        seen: set[str] = set()
+        for item in raw_items:
+            text = str(item).strip().strip("-•、，。")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            items.append(text[:120])
+            if len(items) >= limit:
+                break
+        return items
+
+    def _extract_narrative_facts(self, meta: dict, body: str) -> list[str]:
+        """Build a zero-cost memory packet for future chapters."""
+        facts = self._normalize_text_list(meta.get("narrative_facts") or meta.get("facts"), limit=10)
+        if facts:
+            return facts
+
+        fallback: list[str] = []
+        fallback.extend(self._normalize_text_list(meta.get("key_events"), limit=4))
+        fallback.extend(self._normalize_text_list(meta.get("revelations"), limit=4))
+        if meta.get("ending_hook"):
+            fallback.append(f"结尾悬念：{str(meta.get('ending_hook')).strip()[:100]}")
+
+        if body:
+            memory_markers = (
+                "发现", "决定", "知道", "突破", "答应", "失去", "得到", "暴露",
+                "受伤", "伤口", "流血", "反噬", "透支", "欠", "债", "后患",
+                "追杀", "惩罚", "误会", "决裂", "关系裂痕", "资源消耗", "身份暴露",
+                "后续麻烦", "代价", "后果", "牺牲",
+            )
+            for sentence in re.split(r"[。！？!?]\s*", body):
+                sentence = sentence.strip()
+                if 12 <= len(sentence) <= 80 and any(word in sentence for word in memory_markers):
+                    fallback.append(sentence)
+                if len(fallback) >= 6:
+                    break
+
+        return self._normalize_text_list(fallback, limit=8)
+
+    def refresh_chapter_content(self, chapter: ChapterMeta, content: str) -> ChapterMeta:
+        """Make persisted chapter metadata match the final edited body."""
+        final_content = content or chapter.content or chapter.summary or ""
+        chapter.content = final_content
+        chapter.word_count = len(final_content)
+        chapter.summary = final_content[:200]
+        body_facts = self._extract_narrative_facts({}, final_content)
+        retained_facts = [
+            fact for fact in chapter.narrative_facts
+            if self._fact_supported_by_body(fact, final_content)
+        ]
+        chapter.narrative_facts = self._normalize_text_list(
+            [*body_facts, *retained_facts],
+            limit=10,
+        )
+        return chapter
+
+    @staticmethod
+    def _fact_supported_by_body(fact: str, body: str) -> bool:
+        """Return whether an existing memory fact is still supported by final text."""
+        fact_text = str(fact or "").strip()
+        body_text = str(body or "").strip()
+        if not fact_text or not body_text:
+            return False
+        if fact_text in body_text or body_text in fact_text:
+            return True
+
+        def tokens(text: str) -> set[str]:
+            compact = re.sub(r"[\s，。！？；：、“”‘’《》【】（）()\[\],.!?;:'\"-]+", "", text)
+            chunks = {item.lower() for item in re.findall(r"[A-Za-z0-9_]{3,}", text)}
+            chunks.update(compact[index:index + 2] for index in range(max(0, len(compact) - 1)))
+            return {chunk for chunk in chunks if chunk}
+
+        fact_tokens = tokens(fact_text)
+        if len(fact_tokens) < 3:
+            return False
+        body_tokens = tokens(body_text)
+        overlap = len(fact_tokens & body_tokens) / max(1, len(fact_tokens))
+        return overlap >= 0.5
+
+    @staticmethod
+    def _first_present(mapping: dict, keys: tuple[str, ...]) -> Any:
+        for key in keys:
+            value = mapping.get(key)
+            if value not in (None, ""):
+                return value
+        return None
+
+    @staticmethod
+    def _character_update_map(value: Any) -> dict[str, dict]:
+        """Normalize character_updates from object or list form."""
+        if isinstance(value, dict):
+            return {str(name): update for name, update in value.items() if isinstance(update, dict)}
+        if isinstance(value, list):
+            result: dict[str, dict] = {}
+            for item in value:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or item.get("姓名") or item.get("角色") or item.get("char_name")
+                if not name:
+                    continue
+                result[str(name)] = item
+            return result
+        return {}
+
     def _build_prompt(self, state: StoryState, author_input: str = "", style: StyleProfile | None = None,
                       rag_context: list[dict] | None = None,
                       outline: list[dict] | None = None) -> list[dict]:
@@ -2146,11 +2412,15 @@ AI写作的典型特征：
         # Build RAG context section
         rag_section = ""
         if rag_context:
-            rag_items = []
-            for r in rag_context[:5]:
-                rag_items.append(f"- 第{r.get('chapter_number','?')}章「{r.get('title','')}」: {r.get('chunk_text','')[:200]}")
-            if rag_items:
-                rag_section = f"""
+            if isinstance(rag_context, str):
+                rag_section = "\n## 前情与相关历史\n" + rag_context[:4000] + "\n"
+            elif isinstance(rag_context, list):
+                rag_items = []
+                for r in rag_context[:5]:
+                    if isinstance(r, dict):
+                        rag_items.append(f"- 第{r.get('chapter_number','?')}章「{r.get('title','')}」: {r.get('chunk_text','')[:200]}")
+                if rag_items:
+                    rag_section = f"""
 ## 相关历史剧情（语义检索）
 {chr(10).join(rag_items)}
 """
@@ -2163,6 +2433,8 @@ AI写作的典型特征：
         rules = [
             f"生成第{state.total_chapters + 1}章，{style.target_word_count[0]}-{style.target_word_count[1]}字",
             f"场景切换{style.scene_changes_per_chapter}次以上",
+            "本章必须让主角做出一个清晰的主动选择：拒绝、承担、改变计划、冒险出手或放弃某个安全选项；不能只被安排、被救场或被事件推着走",
+            "本章每个重要收益（胜利、突破、线索、资源、关系改善）都必须绑定具体代价或后果：受伤、失去、暴露身份、关系裂痕、资源消耗、后续麻烦至少一种",
         ]
         if is_opening:
             if style.opening_type == "atmosphere":
@@ -2231,6 +2503,9 @@ AI写作的典型特征：
 
 ## 最近章节摘要
 {state.recent_context(5) if state.total_chapters > 0 else '这是小说的第一章。'}
+
+## 长期事实账本（硬约束：这些是已经发生或已经揭示的事实，后文不能遗忘、反悔或改名）
+{state.memory_context() if state.total_chapters > 0 else '暂无长期事实。'}
 
 ## 上一章全文（注意保持文风、对话习惯、描写节奏一致）
 {state.latest_chapter.content if state.latest_chapter and state.latest_chapter.content else '（无）'}
@@ -2317,6 +2592,30 @@ AI写作的典型特征：
 {self._writing_warmup(state, style)}
 
 {requirements}
+
+## 输出格式
+请严格按以下 Markdown 结构输出，不要省略元数据。元数据是后续章节的故事状态更新源，只写已经发生或已经揭示的信息，不要把计划当事实。
+
+## 标题
+章节标题
+
+## 正文
+完整章节正文
+
+## 元数据
+```json
+{{
+  "summary": "3-5句剧情摘要",
+  "key_events": ["本章关键事件"],
+  "revelations": ["本章新揭示的信息"],
+  "narrative_facts": ["后续必须记住的稳定事实：角色已知信息、物品状态、关系变化、伤势境界、未解悬念"],
+  "character_updates": {{"角色名": {{"power_level": "当前境界/能力状态", "status": "身体/处境状态"}}}},
+  "updated_plot_points": ["下一章开始应推进的剧情目标"],
+  "new_foreshadowing": ["本章新埋下且未来需要回收的伏笔"],
+  "resolved_foreshadowing": ["本章已经回收或回答的旧伏笔"],
+  "ending_hook": "章尾钩子"
+}}
+```
 """
 
         user = f"请写第{state.total_chapters + 1}章。"
@@ -2384,10 +2683,10 @@ AI写作的典型特征：
         ]
 
     def _build_expand_prompt(
-        self, state: StoryState, chosen: DraftOption, edits: str
+        self, state: StoryState, chosen: DraftOption, edits: str, author_input: str = ""
     ) -> list[dict]:
         """构建展开全文的 prompt"""
-        base = self._build_prompt(state, "")
+        base = self._build_prompt(state, author_input)
         expand_instruction = f"""
 请写第{state.total_chapters + 1}章完整正文，2000-3000字。
 
@@ -2400,7 +2699,7 @@ AI写作的典型特征：
 
         return [
             {"role": "system", "content": base[0]["content"]},
-            {"role": "user", "content": expand_instruction},
+            {"role": "user", "content": base[1]["content"] + "\n" + expand_instruction},
         ]
 
     # ==================== LLM 调用 ====================
@@ -2412,10 +2711,38 @@ AI写作的典型特征：
             content = re.sub(r'<think>[\s\S]*?</think>\s*', '', content)
         return content.strip()
 
-    # Cost tracking — per-call accumulator
+    @staticmethod
+    def _extract_content(resp: Any) -> str:
+        """Extract content from API response, handling reasoning models (e.g. DeepSeek Flash)."""
+        msg = resp.choices[0].message
+        content = getattr(msg, 'content', '') or ''
+        if not content.strip():
+            # Reasoning models put output in reasoning_content when content is empty
+            reasoning = getattr(msg, 'reasoning_content', '') or ''
+            if reasoning.strip():
+                # Strip any thinking tags from reasoning output
+                content = Generator._strip_thinking(reasoning)
+        return content
+
+    # Cost tracking — per-call accumulator + cumulative pipeline total
     _last_usage: dict = {}
+    _cumulative_tokens: dict = {}  # {prompt_tokens, completion_tokens, cost}
     # Model switch tracking — set when fallback kicks in
     model_switched: dict = {}
+
+    def _update_cumulative_cost(self, usage: dict) -> None:
+        """Accumulate cost across all pipeline LLM calls for one chapter."""
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens", "cost"):
+            self._cumulative_tokens[key] = self._cumulative_tokens.get(key, 0) + usage.get(key, 0)
+
+    def reset_cumulative_cost(self) -> None:
+        """Reset cumulative cost counter at start of new chapter generation."""
+        self._cumulative_tokens = {}
+
+    @property
+    def pipeline_cost(self) -> dict:
+        """Return cumulative pipeline cost for current chapter."""
+        return dict(self._cumulative_tokens)
 
     @staticmethod
     def _calc_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -2446,7 +2773,7 @@ AI写作的典型特征：
                     temperature=self.cfg.temperature,
                     max_tokens=max_tokens,
                 )
-                content = resp.choices[0].message.content or ""
+                content = self._extract_content(resp)
                 content = self._strip_thinking(content)
                 if content.strip():
                     if resp.usage:
@@ -2457,10 +2784,11 @@ AI写作的典型特征：
                             "total_tokens": resp.usage.total_tokens,
                             "cost": self._calc_cost(self.cfg.model, resp.usage.prompt_tokens, resp.usage.completion_tokens),
                         }
+                        self._update_cumulative_cost(self._last_usage)
                     return content
                 print(f"[LLM] 主模型返回空内容 (attempt {attempt+1})")
             except Exception as e:
-                err = f"[attempt {attempt+1}] {type(e).__name__}: {str(e)[:300]}"
+                err = _format_llm_error(e, attempt + 1)
                 primary_errors.append(err)
                 print(f"[LLM] 主模型({self.cfg.model})错误: {err}", file=__import__("sys").stderr)
             time.sleep(2 ** attempt)
@@ -2475,7 +2803,7 @@ AI写作的典型特征：
                         temperature=0.85,
                         max_tokens=max_tokens,
                     )
-                    content = resp.choices[0].message.content or ""
+                    content = self._extract_content(resp)
                     content = self._strip_thinking(content)
                     if content.strip():
                         if resp.usage:
@@ -2486,10 +2814,11 @@ AI写作的典型特征：
                                 "total_tokens": resp.usage.total_tokens,
                                 "cost": self._calc_cost(getattr(self, '_fallback_model', 'gpt-4o-mini'), resp.usage.prompt_tokens, resp.usage.completion_tokens),
                             }
+                        self._update_cumulative_cost(self._last_usage)
                         print("[LLM] 备选模型成功")
                         return content
                 except Exception as e:
-                    err = f"[attempt {attempt+1}] {type(e).__name__}: {str(e)[:300]}"
+                    err = _format_llm_error(e, attempt + 1)
                     fallback_errors.append(err)
                 time.sleep(2 ** attempt)
 
@@ -2540,10 +2869,11 @@ AI写作的典型特征：
                             "total_tokens": usage.total_tokens,
                             "cost": self._calc_cost(self.cfg.model, usage.prompt_tokens, usage.completion_tokens),
                         }
+                        self._update_cumulative_cost(self._last_usage)
                     return content
                 print(f"[LLM] 主模型返回空内容 (attempt {attempt+1})")
             except Exception as e:
-                err = f"[attempt {attempt+1}] {type(e).__name__}: {str(e)[:300]}"
+                err = _format_llm_error(e, attempt + 1)
                 primary_errors.append(err)
                 print(f"[LLM] 主模型({self.cfg.model})错误: {err}", file=__import__("sys").stderr)
             time.sleep(2 ** attempt)  # 指数退避
@@ -2559,7 +2889,7 @@ AI写作的典型特征：
                         temperature=0.85,
                         max_tokens=max_tokens,
                     )
-                    content = resp.choices[0].message.content or ""
+                    content = self._extract_content(resp)
                     content = self._strip_thinking(content)
                     if content.strip():
                         if resp.usage:
@@ -2570,10 +2900,11 @@ AI写作的典型特征：
                                 "total_tokens": resp.usage.total_tokens,
                                 "cost": self._calc_cost(getattr(self, '_fallback_model', 'gpt-4o-mini'), resp.usage.prompt_tokens, resp.usage.completion_tokens),
                             }
+                        self._update_cumulative_cost(self._last_usage)
                         print("[LLM] 备选模型成功")
                         return content
                 except Exception as e:
-                    err = f"[attempt {attempt+1}] {type(e).__name__}: {str(e)[:300]}"
+                    err = _format_llm_error(e, attempt + 1)
                     fallback_errors.append(err)
                     print(f"[LLM] 备选模型错误: {err}", file=__import__("sys").stderr)
                 time.sleep(2 ** attempt)
@@ -2612,6 +2943,10 @@ AI写作的典型特征：
         else:
             title = self._extract_title_from_text(raw, chapter_num)
 
+        has_explicit_body = "正文" in sections or any(
+            re.match(r"^##\s+(正文|body)\s*$", line.strip(), re.I)
+            for line in raw.splitlines()
+        )
         body = sections.get("正文") or sections.get("body", "") or raw
         meta_raw = sections.get("元数据") or sections.get("meta", "") or sections.get("metadata", "")
         meta = self._parse_meta_json(meta_raw)
@@ -2619,8 +2954,30 @@ AI写作的典型特征：
         # 如果标题为空，从正文第一行提取
         if not title.strip():
             title = self._extract_title_from_text(body, chapter_num)
+        body = self._clean_response_body(body, title, chapter_num, has_explicit_body=has_explicit_body)
 
         return title.strip(), body.strip(), meta
+
+    def _clean_response_body(self, body: str, title: str, chapter_num: int, *, has_explicit_body: bool) -> str:
+        """Remove wrapper title/metadata lines when the model returned free-form text."""
+        if has_explicit_body:
+            return body
+        lines = body.strip().splitlines()
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        if lines:
+            first = re.sub(r'^#+\s*', '', lines[0]).strip()
+            title_text = (title or "").strip()
+            title_like = re.search(rf"第{chapter_num}[章節]\s*[：:\s]*", first) or (
+                title_text and first == title_text
+            )
+            if title_like:
+                lines.pop(0)
+                while lines and not lines[0].strip():
+                    lines.pop(0)
+        cleaned = "\n".join(lines).strip()
+        cleaned = re.split(r"\n\s*(?:##\s*)?(?:元数据|metadata|meta)\s*(?:\n|$)", cleaned, maxsplit=1, flags=re.I)[0]
+        return cleaned.strip()
 
     def _split_markdown_sections(self, raw: str) -> dict[str, str]:
         """按 ## 标题 分割文本为 key-value"""
@@ -2662,21 +3019,49 @@ AI写作的典型特征：
 
     def _parse_meta_json(self, raw: str) -> dict:
         """从文本中提取 JSON 元数据"""
-        # 尝试找 ```json ... ``` 块
-        m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
-        if m:
+        for candidate in self._json_object_candidates(raw):
             try:
-                return json.loads(m.group(1))
+                return json.loads(candidate)
             except json.JSONDecodeError:
-                pass
-        # 尝试找裸 JSON
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except json.JSONDecodeError:
-                pass
+                continue
         return {}
+
+    @staticmethod
+    def _json_object_candidates(raw: str) -> list[str]:
+        """Extract balanced JSON object candidates from code fences or plain text."""
+        candidates: list[str] = []
+        fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+        search_spaces = [m.group(1) for m in fence_pattern.finditer(raw)]
+        search_spaces.append(raw)
+
+        for text in search_spaces:
+            start_positions = [i for i, ch in enumerate(text) if ch == "{"]
+            for start in start_positions:
+                depth = 0
+                in_string = False
+                escape = False
+                for index in range(start, len(text)):
+                    char = text[index]
+                    if escape:
+                        escape = False
+                        continue
+                    if char == "\\":
+                        escape = True
+                        continue
+                    if char == '"':
+                        in_string = not in_string
+                        continue
+                    if in_string:
+                        continue
+                    if char == "{":
+                        depth += 1
+                    elif char == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidates.append(text[start:index + 1])
+                            break
+
+        return candidates
 
     def _parse_directions(self, raw: str) -> list[DraftOption]:
         """解析方向草稿"""
@@ -2766,37 +3151,37 @@ AI写作的典型特征：
         if state.plot is None:
             return
         # 推进剧情 — 伏笔模糊匹配回收
-        resolved = meta.get("resolved_foreshadowing", [])
-        new_foreshadowing = meta.get("new_foreshadowing", [])
-        if isinstance(resolved, list):
-            for item in resolved:
-                matched = self._fuzzy_match(item, state.plot.foreshadowing)
-                if matched:
-                    state.plot.foreshadowing.remove(matched)
-                    state.plot.resolved_foreshadowing.append({
-                        "content": matched, "chapter": chapter.number,
-                    })
-        if isinstance(new_foreshadowing, list):
-            for item in new_foreshadowing:
-                # 去重：不重复添加相似伏笔
-                if not self._fuzzy_match(item, state.plot.foreshadowing):
-                    state.plot.foreshadowing.append(item)
+        resolved = self._normalize_text_list(meta.get("resolved_foreshadowing"), limit=8)
+        new_foreshadowing = self._normalize_text_list(meta.get("new_foreshadowing"), limit=8)
+        for item in resolved:
+            matched = self._fuzzy_match(item, state.plot.foreshadowing)
+            if matched:
+                state.plot.foreshadowing.remove(matched)
+                state.plot.resolved_foreshadowing.append({
+                    "content": matched, "chapter": chapter.number,
+                })
+        for item in new_foreshadowing:
+            # 去重：不重复添加相似伏笔
+            if not self._fuzzy_match(item, state.plot.foreshadowing):
+                state.plot.foreshadowing.append(item)
 
         # 更新剧情目标
-        new_points = meta.get("updated_plot_points", [])
-        if isinstance(new_points, list) and new_points:
+        new_points = self._normalize_text_list(meta.get("updated_plot_points"), limit=8)
+        if new_points:
             state.plot.next_plot_points = new_points
 
         # 角色状态更新
-        char_updates = meta.get("character_updates", {})
-        if isinstance(char_updates, dict):
-            for char in state.characters:
-                if char.name in char_updates:
-                    update = char_updates[char.name]
-                    if "power_level" in update:
-                        char.current_power_level = update["power_level"]
-                    if "status" in update:
-                        char.status = update["status"]
+        char_updates = self._character_update_map(meta.get("character_updates", {}))
+        for char in state.characters:
+            update = char_updates.get(char.name)
+            if not update:
+                continue
+            power_level = self._first_present(update, ("power_level", "current_power_level", "境界", "当前境界", "修为"))
+            status = self._first_present(update, ("status", "状态", "身体状态"))
+            if power_level:
+                char.current_power_level = str(power_level)
+            if status:
+                char.status = str(status)
 
     def _fuzzy_match(self, item: str, candidates: list[str], threshold: float = 0.4) -> str | None:
         """在 candidates 中找最相似的，Jaccard 系数 > threshold 返回匹配项。"""
@@ -2986,6 +3371,8 @@ AI写作的典型特征：
 6. **是否想追读** (1-10)：以一个付费读者的身份回答——你会不会点下一章？为什么？
 7. **排版规范** (1-10)：引号使用是否规范（统一「」，无孤儿引号）？段落长度是否有变化（不是每段都一样长）？场景分隔是否清晰（用——或空行）？
 8. **灵魂契合** (1-10)：本章是否忠于书的灵魂和核心追问？是否让读者思考那个"没有标准答案的问题"？
+9. **人物主动性** (1-10)：主角是否做出明确选择并承担行动？还是只被事件推着走？
+10. **代价与后果** (1-10)：胜利、突破、获得线索/资源是否伴随失去、风险、伤害、关系裂痕或后续麻烦？
 
 ## 评估要求
 - 每个分数必须基于章节正文内容给出，不能凭感觉
@@ -2994,6 +3381,8 @@ AI写作的典型特征：
 - 反派压迫感评判标准：官场/都市文不要求反派亲自出场，但必须有"可感知的威胁后果"（盟友被调走/项目被冻结/被公开架空/被跟踪）。只有台词没有行动 → ≤4分；有间接行动但主角未察觉 → 5-6分；主角直接承受了反派行动的后果 → 7-9分
 - 排版规范评判标准：出现\\n」（后引号独立成行）扣3分以上；出现""英文引号混用扣2分以上；连续5段段落长度相差不到20字扣2分
 - 灵魂契合评判标准：本章是否让读者感受到"这本书在追问什么"？是否避免了给出简单的道德答案？
+- 人物主动性评判标准：主角主动选择/拒绝/承担/改变计划 → 7-10分；只响应别人安排 → 4-6分；全章被动旁观或被救场 → ≤3分
+- 代价与后果评判标准：有收益但没有任何失去/风险/后患 → ≤5分；代价只是口头说说但未影响局势 → 5-6分；代价改变人物关系、资源、身体、身份或后续局面 → 7-10分
 
 ## 书的灵魂
 {style.soul_statement if style and style.soul_statement else '（未设定）'}
@@ -3009,6 +3398,8 @@ AI写作的典型特征：
   "want_next": {{"score": 7, "reason": "想知道丹药能否炼成，但反派动机铺垫不够"}},
   "formatting": {{"score": 9, "reason": "引号规范，段落有长短变化，场景分隔清晰"}},
   "soul_alignment": {{"score": 6, "reason": "推进了主线但未触及核心追问，本章没有让读者思考"}},
+  "agency": {{"score": 8, "reason": "林逸主动拒绝退让，选择守住演武场"}},
+  "cost": {{"score": 7, "reason": "突破带来反噬和宗门追查，胜利有后患"}},
   "biggest_issue": "反派鬼手的威胁感没有建立起来，导致结尾反转冲击力不足"
 }}
 
@@ -3029,7 +3420,18 @@ AI写作的典型特征：
                 result = json.loads(json_match.group(0))
                 # Convert 1-10 to 0-1 scale
                 scores = {}
-                dims = {"hook", "pacing", "dialogue", "readability", "antagonist", "want_next", "formatting", "soul_alignment"}
+                dims = {
+                    "hook",
+                    "pacing",
+                    "dialogue",
+                    "readability",
+                    "antagonist",
+                    "want_next",
+                    "formatting",
+                    "soul_alignment",
+                    "agency",
+                    "cost",
+                }
                 for dim in dims:
                     item = result.get(dim, {})
                     if isinstance(item, dict):
@@ -3233,6 +3635,16 @@ AI写作的典型特征：
         # 8. Antagonist presence — check if villain has active role
         scores['antagonist'] = self._score_antagonist(body, state)
 
+        # 9. Agency — protagonist should make meaningful choices, not drift through plot
+        scores['agency'] = self._score_agency(body, state)
+        if scores['agency'] < 0.5:
+            issues.append('主角缺少主动选择或行动，容易显得被剧情推着走')
+
+        # 10. Cost — gains should create loss, risk, debt, or future trouble
+        scores['cost'] = self._score_cost(body)
+        if scores['cost'] < 0.5:
+            issues.append('收益缺少代价或后果，爽点容易发飘')
+
         # Genre-specific quality checks (modifier, not a scored dimension)
         genre_penalty: float = 0
         genre_issues: list[str] = []
@@ -3298,6 +3710,8 @@ AI写作的典型特征：
 要求：
 - 保持总字数不变（±10%）
 - 保持原有对话、人物、剧情完全不变
+- 不得删除或淡化主角主动选择、拒绝、承担、冒险、反击、押注
+- 不得删除或淡化收益带来的代价、后果、后患、伤口、债务、身份暴露、关系裂痕、后续麻烦；这些不是冗余
 - 不要在章节末尾加任何新内容
 - 直接输出修改后的完整章节正文，不要加注释或标记
 
@@ -3307,7 +3721,7 @@ AI写作的典型特征：
 修改后的章节："""
 
         messages = [
-            {"role": "system", "content": "你是资深网文编辑，你的任务是对稿件进行精准微调。你只修改节奏、冗余和过渡，不改剧情、人物、对白。输出格式：直接输出修改后的完整正文。"},
+            {"role": "system", "content": "你是资深网文编辑，你的任务是对稿件进行精准微调。你只修改节奏、冗余和过渡，不改剧情、人物、对白，不删除主角主动选择、代价、风险或后果。输出格式：直接输出修改后的完整正文。"},
             {"role": "user", "content": edit_prompt},
         ]
         try:
@@ -3393,6 +3807,69 @@ AI写作的典型特征：
             return 0.65
         else:
             return 0.35  # Present but passive — just mentioned, no action
+
+    @staticmethod
+    def _score_agency(body: str, state: 'StoryState') -> float:
+        """Score whether the protagonist makes an irreversible or meaningful choice."""
+        protagonist = state.protagonist if state else None
+        protagonist_name = protagonist.name if protagonist else ""
+        agency_markers = [
+            "选择", "决定", "决意", "主动", "拒绝", "不肯", "宁可", "宁愿",
+            "必须", "偏要", "转身", "站出来", "出手", "承担", "放弃", "守住",
+            "赌", "押上", "改变计划", "不再逃", "迎上", "握紧", "踏上",
+        ]
+        passive_markers = [
+            "被迫", "只能", "只好", "不得不", "被带走", "被推着", "来不及反应",
+            "还没反应", "愣在原地", "任由", "被救", "有人替他",
+        ]
+
+        name_bonus = 0.0
+        if protagonist_name:
+            for match in re.finditer(re.escape(protagonist_name), body):
+                window = body[match.start(): match.end() + 80]
+                if any(marker in window for marker in agency_markers):
+                    name_bonus += 0.18
+                if any(marker in window for marker in passive_markers):
+                    name_bonus -= 0.12
+
+        agency_hits = sum(body.count(marker) for marker in agency_markers)
+        passive_hits = sum(body.count(marker) for marker in passive_markers)
+        score = 0.35 + min(0.35, agency_hits * 0.08) + min(0.25, name_bonus) - min(0.25, passive_hits * 0.05)
+        if protagonist_name and protagonist_name not in body:
+            score -= 0.15
+        return round(max(0.1, min(1.0, score)), 2)
+
+    @staticmethod
+    def _score_cost(body: str) -> float:
+        """Score whether gains are grounded by loss, risk, debt, or consequences."""
+        gain_markers = [
+            "突破", "获得", "赢", "胜", "成功", "晋升", "觉醒", "传承", "法宝",
+            "线索", "真相", "奖励", "收服", "救下", "夺回", "解开",
+        ]
+        cost_markers = [
+            "代价", "失去", "牺牲", "受伤", "伤口", "流血", "反噬", "透支",
+            "欠", "债", "暴露", "追杀", "后患", "惩罚", "误会", "决裂",
+            "失控", "碎裂", "耗尽", "昏迷", "疼", "痛", "死", "失败",
+            "被发现", "被盯上", "付出", "扣除", "损失",
+        ]
+        consequence_markers = [
+            "从此", "再也", "以后", "这意味着", "换来", "留下", "必须面对",
+            "代价是", "后果", "麻烦", "因此", "所以",
+        ]
+
+        gains = sum(body.count(marker) for marker in gain_markers)
+        costs = sum(body.count(marker) for marker in cost_markers)
+        consequences = sum(body.count(marker) for marker in consequence_markers)
+
+        if gains == 0:
+            return 0.55 if costs == 0 else 0.65
+
+        score = 0.35 + min(0.4, costs * 0.12) + min(0.2, consequences * 0.08)
+        if costs == 0:
+            score -= min(0.2, gains * 0.04)
+        elif costs >= gains:
+            score += 0.05
+        return round(max(0.1, min(1.0, score)), 2)
 
     # ═══════════════════ V5: Enhanced De-AI Patterns ═══════════════════
 
@@ -3635,10 +4112,6 @@ AI写作的典型特征：
             s = s.strip()
             if not s:
                 continue
-            # 20% chance: slightly shorten a sentence
-            if _random.random() < 0.15 and len(s) > 20:
-                cut = _random.randint(len(s)//4, len(s)//3)
-                s = s[:-cut] if _random.random() < 0.5 else s[cut:]
             # 15% chance: merge short sentence with next
             if _random.random() < 0.1 and len(s) < 15 and i + 1 < len(sentences):
                 s = s + '，' + sentences[i+1].strip()
@@ -3655,7 +4128,7 @@ AI写作的典型特征：
     # ═══════════════════ V5: Context Retrieval (expanded) ═══════════════════
 
     def retrieve_relevant_context(self, query: str, novel_id: str, top_k: int = 5) -> list[dict]:
-        """Retrieve relevant chapter summaries. For long novels (>30 ch), expand to top_k=15."""
+        """Retrieve relevant prior context from summaries, titles, and chapter bodies."""
         try:
             from .database import Database
             db = Database()
@@ -3665,21 +4138,96 @@ AI写作的典型特征：
                 top_k = max(top_k, 15)
             with db.conn() as conn:
                 rows = conn.execute(
-                    "SELECT cs.novel_id, cs.chapter_num, c.title, cs.summary_text as summary "
-                    "FROM chapter_summaries cs "
-                    "JOIN chapters c ON c.novel_id = cs.novel_id AND c.number = cs.chapter_num "
-                    "WHERE cs.novel_id = ? AND cs.summary_text LIKE ? "
-                    "ORDER BY c.number DESC LIMIT ?",
-                    (novel_id, '%' + query + '%', top_k)).fetchall()
-                return [{
-                    "chapter_number": r["chapter_num"],
-                    "title": r["title"] or "",
-                    "chunk_text": r["summary"] or "",
-                    "similarity": 1.0,
-                } for r in rows]
+                    """SELECT c.number, c.title, c.summary, c.content, cs.summary_text
+                       FROM chapters c
+                       LEFT JOIN chapter_summaries cs
+                         ON cs.novel_id = c.novel_id AND cs.chapter_num = c.number
+                       WHERE c.novel_id = ? AND c.word_count > 0
+                       ORDER BY c.number DESC""",
+                    (novel_id,),
+                ).fetchall()
+
+            ranked = []
+            for row in rows:
+                summary_text = row["summary_text"] or row["summary"] or ""
+                title = row["title"] or ""
+                content = row["content"] or ""
+                score = self._context_match_score(query, f"{title}\n{summary_text}\n{content[:2000]}")
+                if score <= 0:
+                    continue
+                chunk = self._context_chunk(query, summary_text, content)
+                if query and query not in chunk and query in content:
+                    pos = content.find(query)
+                    chunk = content[max(0, pos - 80):pos + 220]
+                ranked.append({
+                    "chapter_number": row["number"],
+                    "title": title,
+                    "chunk_text": chunk,
+                    "similarity": round(min(1.0, score / 12), 3),
+                    "_score": score,
+                })
+
+            if not ranked:
+                ranked = [{
+                    "chapter_number": row["number"],
+                    "title": row["title"] or "",
+                    "chunk_text": row["summary_text"] or row["summary"] or (row["content"] or "")[:240],
+                    "similarity": 0.1,
+                    "_score": 0,
+                } for row in rows[:top_k]]
+
+            ranked.sort(key=lambda item: (item["_score"], item["chapter_number"]), reverse=True)
+            for item in ranked:
+                item.pop("_score", None)
+            return ranked[:top_k]
         except Exception as e:
             print(f"[RAG] Error: {e}")
             return []
+
+    @staticmethod
+    def _context_match_score(query: str, text: str) -> float:
+        query = (query or "").strip()
+        haystack = (text or "").lower()
+        if not query or not haystack:
+            return 0.0
+
+        score = 0.0
+        lowered_query = query.lower()
+        if lowered_query in haystack:
+            score += 8.0
+
+        terms = [
+            term.strip().lower()
+            for term in re.split(r"[\s,，。；;、:：!?！？（）()《》\"']+", query)
+            if len(term.strip()) >= 2
+        ]
+        if not terms and len(query) >= 2:
+            terms = [lowered_query]
+        for term in terms:
+            if term in haystack:
+                score += 2.0
+        if score > 0:
+            cost_markers = (
+                "代价", "后果", "后患", "受伤", "伤口", "流血", "反噬", "透支",
+                "欠", "债", "暴露", "追杀", "惩罚", "误会", "决裂", "关系裂痕",
+                "资源消耗", "身份暴露", "后续麻烦",
+            )
+            marker_hits = sum(1 for marker in cost_markers if marker in text)
+            score += min(3.0, marker_hits * 0.6)
+        return score
+
+    @staticmethod
+    def _context_chunk(query: str, summary_text: str, content: str) -> str:
+        cost_markers = (
+            "代价", "后果", "后患", "受伤", "伤口", "流血", "反噬", "透支",
+            "欠", "债", "暴露", "追杀", "惩罚", "误会", "决裂", "关系裂痕",
+            "资源消耗", "身份暴露", "后续麻烦",
+        )
+        for marker in cost_markers:
+            if marker in content:
+                pos = content.find(marker)
+                return content[max(0, pos - 120):pos + 240]
+        return summary_text or content[:240]
 
     def get_global_context(self, novel_id: str, max_chapters: int = 10) -> str:
         """Get a summary of the most recent chapters for long-form consistency."""
@@ -3692,9 +4240,18 @@ AI写作的典型特征：
             recent = summaries[-max_chapters:]
             lines = ["【前情提要】"]
             for s in recent:
-                lines.append(f"第{s['chapter_num']}章: {s['summary_text'][:100]}")
+                summary = s["summary_text"][:100]
+                tag = "（代价/后果需延续）" if self._contains_cost_marker(summary) else ""
+                lines.append(f"第{s['chapter_num']}章{tag}: {summary}")
             return "\n".join(lines)
         except Exception:
             return ""
 
-
+    @staticmethod
+    def _contains_cost_marker(text: str) -> bool:
+        markers = (
+            "代价", "后果", "后患", "受伤", "伤口", "流血", "反噬", "透支",
+            "欠", "债", "暴露", "追杀", "惩罚", "误会", "决裂", "关系裂痕",
+            "资源消耗", "身份暴露", "后续麻烦",
+        )
+        return any(marker in (text or "") for marker in markers)

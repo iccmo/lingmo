@@ -2,7 +2,10 @@
 
 const ERROR_MAP: Array<{ pattern: RegExp; message: string; severity: 'error' | 'warning' | 'info' }> = [
   { pattern: /timeout|timed out|Timeout/i, message: '请求超时，模型响应过慢，请稍后重试', severity: 'warning' },
-  { pattern: /401|unauthorized|Invalid.*key|authentication/i, message: 'API Key 无效，请在设置页更新密钥', severity: 'error' },
+  { pattern: /492|token.*expired|expired.*token|access token|token.*过期|令牌.*过期/i, message: '模型服务 token 已过期，请在设置页重新填写或刷新 API Key', severity: 'error' },
+  { pattern: /401|unauthorized|Invalid.*key|Incorrect.*key|authentication|api key not found|no api key|missing api key|密钥无效|未配置.*api key/i, message: 'API Key 无效，请在设置页更新密钥', severity: 'error' },
+  { pattern: /403|forbidden|permission denied/i, message: 'API Key 无权限访问该模型，请检查供应商、模型或账户权限', severity: 'error' },
+  { pattern: /model_not_found|model.*not found|model.*does not exist|模型不存在/i, message: '当前模型不存在或不可用，请在设置页选择供应商支持的模型', severity: 'error' },
   { pattern: /429|rate.?limit|too many requests/i, message: '请求过于频繁，请稍等片刻再试', severity: 'warning' },
   { pattern: /500|internal server error/i, message: '模型服务暂时不可用，正在重试...', severity: 'warning' },
   { pattern: /503|service unavailable/i, message: '模型服务繁忙，请稍后重试', severity: 'warning' },

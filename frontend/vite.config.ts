@@ -13,6 +13,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    pool: 'vmThreads',
+    include: ['src/**/*.{test,spec}.{ts,tsx}', 'tests/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
   server: {
     port: 5200,

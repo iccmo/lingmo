@@ -42,8 +42,8 @@ export function NovelTools() {
       <div className="space-y-4">
         <MasterworkLab novelId={novel.id} chapters={novel.chapters} genre={novel.genre} />
         <CreativeLab chapters={novel.chapters} genre={novel.genre} novelId={novel.id} />
-        <ReaderSim chapters={novel.chapters} />
-        <OpeningABTest synopsis={novel.synopsis} genre={novel.genre} />
+        <ReaderSim novelId={novel.id} chapters={novel.chapters} />
+        <OpeningABTest novelId={novel.id} synopsis={novel.synopsis} genre={novel.genre} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <WordSprint />
           <PomodoroTimer />

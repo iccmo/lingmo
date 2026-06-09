@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from 'src/components/ui/button';
+import { ChapterList } from 'src/components/novels/ChapterList';
 import { PenLine, BarChart3, BookOpen } from 'lucide-react';
 import { api } from 'src/lib/api';
 import { toast } from 'sonner';
@@ -29,10 +30,9 @@ export function NovelOverview() {
     if (!id) return;
     setLoadingCover(true);
     try {
-      const r = await fetch(`/api/novels/${id}/cover`, { method: 'POST' });
+      const r = await fetch(`/api/novels/${id}/generate-cover`, { method: 'POST' });
       const data = await r.json();
       setCoverSvg(data.svg);
-      setCoverPrompt(data.prompt);
     } catch (e) {
       toast.error('封面生成失败');
     } finally {
@@ -170,6 +170,14 @@ export function NovelOverview() {
           </button>
         ))}
       </div>
+
+      {/* Chapter list — read here directly */}
+      {novel.chapters && novel.chapters.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-ink mb-3">📖 章节列表</h2>
+          <ChapterList chapters={novel.chapters} novelId={novel.id} />
+        </div>
+      )}
     </div>
   );
 }

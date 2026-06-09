@@ -16,7 +16,10 @@ const DEVICES: Device[] = [
  { name: 'iPhone 14 Pro', width: 393, height: 852, notch: true, ratio: '19.5:9', icon: '' },
  { name: 'iPhone 14 Pro Max', width: 430, height: 932, notch: true, ratio: '19.5:9', icon: '' },
  { name: 'Pixel 7', width: 412, height: 915, notch: false, ratio: '20:9', icon: '' },
- { name: 'iPad Mini', width: 744, height: 1024, notch: false, ratio: '4:3', icon: '📟' },
+ { name: 'iPhone 15', width: 393, height: 852, notch: true, ratio: '19.5:9', icon: '' },
+  { name: 'Samsung S24', width: 360, height: 780, notch: false, ratio: '19.5:9', icon: '' },
+  { name: 'iPad Mini', width: 744, height: 1024, notch: false, ratio: '4:3', icon: '📟' },
+  { name: 'iPad Pro', width: 1024, height: 1366, notch: false, ratio: '4:3', icon: '📟' },
 ];
 
 const FONT_SIZES = [15, 17, 19, 22];

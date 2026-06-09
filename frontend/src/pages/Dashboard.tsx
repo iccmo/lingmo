@@ -10,6 +10,7 @@ import { Input } from 'src/components/ui/input';
 import { Textarea } from 'src/components/ui/textarea';
 import { Card, CardContent } from 'src/components/ui/card';
 import { api } from 'src/lib/api';
+import { equalIdSets, isActiveGenerationQueueStatus, isActiveGenerationStatus } from 'src/lib/generation-status';
 import { toast } from 'sonner';
 import type { NovelSummary, SystemStatus } from 'src/types';
 import { BookOpen, Star, Download, BarChart3, Zap, Check, PenLine, Sparkles, Loader2 } from 'lucide-react';
@@ -131,6 +132,67 @@ export function Dashboard() {
  .finally(() => setLoading(false));
  }, []);
 
+ useEffect(() => {
+ if (loading || novels.length === 0) return;
+
+ let cancelled = false;
+ const syncGeneratingStatuses = async () => {
+ const ids = novels.map(n => n.id);
+ const results = await Promise.all(ids.map(async id => {
+ const [generation, queue] = await Promise.allSettled([
+ api.novels.generationStatus(id),
+ api.novels.queueStatus(id),
+ ]);
+ return { id, generation, queue };
+ }));
+ if (cancelled) return;
+
+ const activeIds = new Set<string>();
+ const unresolvedIds = new Set<string>();
+ results.forEach(({ id, generation, queue }) => {
+ const generationActive = generation.status === 'fulfilled' && isActiveGenerationStatus(generation.value);
+ const queueActive = queue.status === 'fulfilled' && isActiveGenerationQueueStatus(queue.value);
+ if (generationActive || queueActive) {
+ activeIds.add(id);
+ return;
+ }
+ if (generation.status === 'rejected' && queue.status === 'rejected') {
+ unresolvedIds.add(id);
+ }
+ });
+
+ const completedSinceLastPoll = [...generatingIds].some(
+ id => !activeIds.has(id) && !unresolvedIds.has(id),
+ );
+ setGeneratingIds(prev => {
+ const next = new Set(activeIds);
+ for (const id of prev) {
+ if (unresolvedIds.has(id)) next.add(id);
+ }
+ return equalIdSets(prev, next) ? prev : next;
+ });
+
+ if (completedSinceLastPoll) {
+ try {
+ const [n, s] = await Promise.all([api.novels.list(), api.status()]);
+ if (!cancelled) {
+ setNovels(n);
+ setStatus(s);
+ }
+ } catch {
+ // A later poll can refresh the dashboard; avoid noisy toasts for background sync.
+ }
+ }
+ };
+
+ syncGeneratingStatuses();
+ const timer = window.setInterval(syncGeneratingStatuses, 5000);
+ return () => {
+ cancelled = true;
+ window.clearInterval(timer);
+ };
+ }, [loading, novels, generatingIds]);
+
  async function handleDemo() {
  toast.info('正在创建 Demo 小说...');
  try {
@@ -196,6 +258,26 @@ export function Dashboard() {
  setNovels(n); setStatus(s);
  } catch (e: unknown) {
  toast.error('创建失败: ' + (e as Error).message);
+ }
+ }
+
+ async function triggerGenerate(id: string) {
+ setGeneratingIds(prev => new Set(prev).add(id));
+ try {
+ const queue = await api.novels.queueStatus(id).catch(() => null);
+ if (isActiveGenerationQueueStatus(queue)) {
+ toast('批量生成正在进行中，请等待完成');
+ return;
+ }
+ await api.novels.generate(id);
+ toast.success('已触发');
+ } catch (e: unknown) {
+ toast.error('触发失败: ' + (e as Error).message);
+ setGeneratingIds(prev => {
+ const s = new Set(prev);
+ s.delete(id);
+ return s;
+ });
  }
  }
 
@@ -619,10 +701,7 @@ export function Dashboard() {
  .map(n => <NovelCard key={n.id} novel={n}
  onDelete={id => setNovels(prev => prev.filter(x => x.id !== id))}
  isGenerating={generatingIds.has(n.id)}
- onGenerate={id => {
- setGeneratingIds(prev => new Set(prev).add(id));
- fetch(`/api/novels/${id}/generate`,{method:'POST'}).then(()=>toast.success('已触发')).catch(()=>toast.error('失败')).finally(()=>setGeneratingIds(prev=>{const s=new Set(prev);s.delete(id);return s;}));
- }} />)}
+ onGenerate={triggerGenerate} />)}
  </div>
  </div>
  )}
@@ -642,10 +721,7 @@ export function Dashboard() {
  .map(n => <NovelCard key={n.id} novel={n}
  onDelete={id => setNovels(prev => prev.filter(x => x.id !== id))}
  isGenerating={generatingIds.has(n.id)}
- onGenerate={id => {
- setGeneratingIds(prev => new Set(prev).add(id));
- fetch(`/api/novels/${id}/generate`,{method:'POST'}).then(()=>toast.success('已触发')).catch(()=>toast.error('失败')).finally(()=>setGeneratingIds(prev=>{const s=new Set(prev);s.delete(id);return s;}));
- }} />)}
+ onGenerate={triggerGenerate} />)}
  </div>
  </div>
  )}

@@ -1,283 +1,256 @@
-"""小说 CRUD + 章节 + 生成 — FastAPI Depends + Pydantic + Service。
-挂载于 /api/v2，路径不含 /api 前缀。"""
-import asyncio
-import json
+"""Typed v2 API facade for core novel workflows.
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+This router is mounted by ``server.py`` at ``/api/v2``. Keep paths relative to
+that prefix so the public contract stays ``/api/v2/novels/...``.
+"""
 
-from ...schemas import (
-    NovelCreate, NovelUpdate, NovelSummary, NovelDetail,
-    ChapterUpdate, ChapterResponse, SystemStatus,
-    GenerateRequest, GenerateBatchRequest, GenerateResponse, QueueStatus, GenStatus,
-)
-from ...services.novel_service import NovelService, get_session
-from ...services.generation_service import GenerationService
-from ...routers.deps import get_db as _get_legacy_db
+from __future__ import annotations
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+
+from novel_writer.routers.deps import get_db, get_gen_state
+from novel_writer.routers.novel.request_validation import bounded_int, text_field
+from novel_writer.state import is_active_generation_status
+
+from . import chapters as chapter_routes
+from . import core as core_routes
+from . import generation as generation_routes
 
 router = APIRouter(tags=["v2"])
 
 
-def get_service(session: Session = Depends(get_session)) -> NovelService:
-    return NovelService(session)
+CHARACTER_BLUEPRINT_FIELDS = (
+    "id",
+    "name",
+    "role",
+    "entrance",
+    "signature",
+    "speechPattern",
+    "coreWound",
+    "surfaceTrait",
+    "hiddenSelf",
+    "arcStart",
+    "arcEnd",
+    "obsession",
+    "contradiction",
+    "voiceSample",
+    "contrastWith",
+    "contrastHow",
+)
 
 
-def get_gen_service() -> GenerationService:
-    return GenerationService(_get_legacy_db())
+def _db():
+    return get_db()
 
 
-# ═══ Novel CRUD ═══
+def _normalize_character_blueprints(data: dict) -> list[dict]:
+    raw = data.get("characters", [])
+    if not isinstance(raw, list):
+        raise HTTPException(400, "characters must be a list")
+    if len(raw) > 100:
+        raise HTTPException(400, "characters must be at most 100 items")
 
-@router.get("/novels", response_model=list[NovelSummary])
-def list_novels(svc: NovelService = Depends(get_service)):
-    return svc.list_novels()
-
-
-@router.post("/novels", response_model=NovelDetail, status_code=201)
-def create_novel(data: NovelCreate, svc: NovelService = Depends(get_service)):
-    if svc.get_novel(data.id):
-        raise HTTPException(409, f"'{data.id}' already exists")
-    return svc.create_novel(data)
-
-
-@router.get("/novels/{novel_id}", response_model=NovelDetail)
-def get_novel(novel_id: str, svc: NovelService = Depends(get_service)):
-    novel = svc.get_novel(novel_id)
-    if not novel:
-        raise HTTPException(404)
-    return novel
-
-
-@router.put("/novels/{novel_id}", response_model=NovelDetail)
-def update_novel(novel_id: str, data: NovelUpdate, svc: NovelService = Depends(get_service)):
-    novel = svc.update_novel(novel_id, data)
-    if not novel:
-        raise HTTPException(404)
-    return novel
+    normalized: list[dict] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(raw, 1):
+        if not isinstance(item, dict):
+            raise HTTPException(400, f"characters[{index}] must be an object")
+        char_id = text_field(item, "id")
+        name = text_field(item, "name")
+        if not char_id:
+            raise HTTPException(400, f"characters[{index}].id required")
+        if not name:
+            raise HTTPException(400, f"characters[{index}].name required")
+        if char_id in seen_ids:
+            raise HTTPException(400, f"duplicate character id: {char_id}")
+        seen_ids.add(char_id)
+        normalized.append({field: text_field(item, field) for field in CHARACTER_BLUEPRINT_FIELDS})
+    return normalized
 
 
-@router.delete("/novels/{novel_id}", response_model=dict)
-def delete_novel(novel_id: str, svc: NovelService = Depends(get_service)):
-    if not svc.delete_novel(novel_id):
-        raise HTTPException(404)
-    return {"ok": True}
+@router.get("/novels")
+def list_novels() -> list:
+    return core_routes.list_novels()
 
 
-@router.get("/status", response_model=SystemStatus)
-def system_status(svc: NovelService = Depends(get_service)):
-    return svc.get_stats()
+@router.post("/novels", status_code=201)
+def create_novel(data: dict) -> dict:
+    return core_routes.create_novel(data)
+
+
+@router.get("/novels/{novel_id}")
+def get_novel(novel_id: str) -> dict:
+    return core_routes.get_novel(novel_id)
+
+
+@router.put("/novels/{novel_id}")
+def update_novel(novel_id: str, data: dict) -> dict:
+    db = _db()
+    if not db.get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+
+    allowed = {
+        "title",
+        "author",
+        "synopsis",
+        "genre",
+        "world_name",
+        "world_era",
+        "world_geo",
+        "power_system",
+        "main_arc",
+        "current_arc",
+        "arc_chapter_start",
+    }
+    updates = {key: value for key, value in data.items() if key in allowed}
+    if updates:
+        db.update_novel(novel_id, **updates)
+    return core_routes.get_novel(novel_id)
+
+
+@router.delete("/novels/{novel_id}")
+def delete_novel(novel_id: str) -> dict:
+    return core_routes.delete_novel(novel_id)
+
+
+@router.get("/status")
+def system_status() -> dict:
+    novels = _db().list_novels()
+    active = sum(
+        1
+        for novel in novels
+        if is_active_generation_status(get_gen_state().get_status(novel["id"]).get("status"))
+    )
+    return {"novels": len(novels), "active_generations": active}
 
 
 @router.get("/health")
-def health_check(svc: NovelService = Depends(get_service)):
-    """v2 Health check — DB connectivity + provider status."""
-    import time
-    start = time.time()
-
-    # Check DB
-    db_ok = False
-    try:
-        stats = svc.get_stats()
-        db_ok = stats.get("novels_count", -1) >= 0
-    except Exception:
-        pass
-
-    # Check providers
-    providers = []
-    try:
-        db = _get_legacy_db()
-        for p in db.list_providers():
-            providers.append({
-                "id": p["id"],
-                "enabled": bool(p.get("is_enabled")),
-                "has_key": bool(p.get("api_key")),
-            })
-    except Exception:
-        pass
-
-    return {
-        "status": "ok" if db_ok else "degraded",
-        "db": db_ok,
-        "providers": providers,
-        "latency_ms": round((time.time() - start) * 1000),
-    }
+def health_check() -> dict:
+    """v2 Health check: DB connectivity + provider status."""
+    db = _db()
+    providers = db.list_providers()
+    return {"ok": True, "db": "ok", "providers": len(providers)}
 
 
-# ═══ Chapter CRUD ═══
-
-@router.get("/novels/{novel_id}/chapters/{chapter_num}", response_model=ChapterResponse)
-def get_chapter(novel_id: str, chapter_num: int, svc: NovelService = Depends(get_service)):
-    ch = svc.get_chapter(novel_id, chapter_num)
-    if not ch:
-        raise HTTPException(404)
-    return ch
+@router.get("/novels/{novel_id}/chapters/{chapter_num}")
+def get_chapter(novel_id: str, chapter_num: int) -> dict:
+    return chapter_routes.get_chapter(novel_id, chapter_num)
 
 
-@router.put("/novels/{novel_id}/chapters/{chapter_num}", response_model=ChapterResponse)
-def save_chapter(novel_id: str, chapter_num: int, data: ChapterUpdate, svc: NovelService = Depends(get_service)):
-    ch = svc.save_chapter(novel_id, chapter_num, data.content)
-    if not ch:
-        raise HTTPException(404)
-    return ch
+@router.put("/novels/{novel_id}/chapters/{chapter_num}")
+def save_chapter(novel_id: str, chapter_num: int, data: dict) -> dict:
+    chapter_routes.save_chapter(novel_id, chapter_num, data)
+    return chapter_routes.get_chapter(novel_id, chapter_num)
 
 
-# ═══ Generation ═══
-
-@router.post("/novels/{novel_id}/generate", response_model=GenerateResponse)
-def trigger_generate(
-    novel_id: str,
-    req: GenerateRequest = GenerateRequest(),
-    svc: GenerationService = Depends(get_gen_service),
-):
-    try:
-        return svc.trigger_generate(novel_id, req)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
+@router.delete("/novels/{novel_id}/chapters/{chapter_num}")
+def delete_chapter(novel_id: str, chapter_num: int) -> dict:
+    return chapter_routes.delete_chapter(novel_id, chapter_num)
 
 
-@router.post("/novels/{novel_id}/generate-batch", response_model=GenerateResponse)
-def trigger_generate_batch(
-    novel_id: str,
-    req: GenerateBatchRequest,
-    svc: GenerationService = Depends(get_gen_service),
-):
-    try:
-        return svc.trigger_batch(novel_id, req)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
+@router.post("/novels/{novel_id}/generate")
+def trigger_generate(novel_id: str, background: BackgroundTasks, data: dict = {}) -> dict:
+    return generation_routes.trigger_generate(novel_id, background, data)
 
 
-@router.get("/novels/{novel_id}/generate/queue-status", response_model=QueueStatus)
-def queue_status(novel_id: str, svc: GenerationService = Depends(get_gen_service)):
-    return svc.get_queue_status(novel_id)
+@router.post("/novels/{novel_id}/generate-batch")
+def trigger_generate_batch(novel_id: str, data: dict, background: BackgroundTasks) -> dict:
+    return generation_routes.trigger_generate_batch(novel_id, data, background)
+
+
+@router.get("/novels/{novel_id}/generate/queue-status")
+def queue_status(novel_id: str) -> dict:
+    return generation_routes.generate_queue_status(novel_id)
 
 
 @router.get("/novels/{novel_id}/generate/stream")
 async def generate_stream_sse(novel_id: str):
-    """v2 SSE streaming — Event-based push (no polling)."""
-    from ...state import gen_state
-
-    async def event_stream():
-        event = gen_state.get_event(novel_id)
-        last = ""
-        deadline = asyncio.get_event_loop().time() + 600  # 10 min timeout
-
-        while True:
-            try:
-                event.clear()  # Clear BEFORE wait — prevents lost updates
-                await asyncio.wait_for(event.wait(), timeout=30)
-            except asyncio.TimeoutError:
-                event.clear()  # Clear after timeout too
-                pass  # Send heartbeat even if no change
-
-            status = gen_state.get_status(novel_id)
-            current = json.dumps(status, ensure_ascii=False)
-
-            if current != last:
-                last = current
-                yield f"data: {current}\n\n"
-
-            if status["status"] in ("complete", "error"):
-                yield f"data: {current}\n\n"
-                break
-
-            if asyncio.get_event_loop().time() > deadline:
-                yield f"data: {json.dumps({'status': 'idle', 'message': 'stream timeout'})}\n\n"
-                break
-
-        gen_state.clear_event(novel_id)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    """v2 SSE streaming: event-based push."""
+    return await generation_routes.generate_stream_sse(novel_id)
 
 
-@router.get("/novels/{novel_id}/generate/status", response_model=GenStatus)
-def gen_status(novel_id: str, svc: GenerationService = Depends(get_gen_service)):
-    return svc.get_gen_status(novel_id)
+@router.get("/novels/{novel_id}/generate/status")
+def gen_status(novel_id: str) -> dict:
+    return get_gen_state().get_status(novel_id)
 
 
-# ═══ Generation Traces ═══
-
-@router.get("/novels/{novel_id}/traces", response_model=list[dict])
-def get_traces(novel_id: str):
+@router.get("/novels/{novel_id}/traces")
+def get_traces(novel_id: str) -> list[dict]:
     """获取所有章的生成追踪数据。"""
-    db = _get_legacy_db()
-    return db.get_chapter_traces(novel_id)
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    return _db().get_chapter_traces(novel_id)
 
 
-@router.get("/novels/{novel_id}/traces/latest", response_model=dict)
-def get_latest_trace(novel_id: str):
+@router.get("/novels/{novel_id}/traces/latest")
+def get_latest_trace(novel_id: str) -> dict:
     """获取最新一章的生成追踪。"""
-    db = _get_legacy_db()
-    traces = db.get_chapter_traces(novel_id)
-    if not traces:
-        from fastapi import HTTPException
-        raise HTTPException(404, "No traces found")
-    return traces[0]  # Already sorted DESC
+    traces = get_traces(novel_id)
+    return traces[0] if traces else {}
 
-
-@router.delete("/novels/{novel_id}/chapters/{chapter_num}", response_model=dict)
-def delete_chapter(novel_id: str, chapter_num: int, svc: NovelService = Depends(get_service)):
-    svc.delete_chapter(novel_id, chapter_num)
-    return {"ok": True}
-
-
-# ═══ Soul Fingerprint ═══
 
 @router.get("/novels/{novel_id}/soul-fingerprint")
 def get_soul(novel_id: str):
-    db = _get_legacy_db()
-    fp = db.get_soul_fingerprint(novel_id)
-    return fp or {"polarity": "", "position": 5, "answer": ""}
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    return _db().get_soul_fingerprint(novel_id) or {}
 
 
 @router.post("/novels/{novel_id}/soul-fingerprint")
 def save_soul(novel_id: str, data: dict):
-    db = _get_legacy_db()
-    db.save_soul_fingerprint(
-        novel_id=novel_id,
-        polarity=data.get("primaryPolarity", data.get("polarity", "")),
-        position=int(data.get("position", 5)),
-        answer=data.get("answer", "").strip(),
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    polarity = text_field(data, "polarity") or text_field(data, "primaryPolarity")
+    if not polarity:
+        raise HTTPException(400, "polarity required")
+    position = bounded_int(
+        data,
+        "position",
+        5,
+        1,
+        10,
+        status_code=400,
+        invalid_detail="position must be an integer",
+        range_detail="position must be 1-10",
     )
+    answer = text_field(data, "answer")
+    if not answer:
+        raise HTTPException(400, "answer required")
+    _db().save_soul_fingerprint(novel_id, polarity, position, answer)
     return {"ok": True}
 
 
 @router.delete("/novels/{novel_id}/soul-fingerprint")
 def delete_soul(novel_id: str):
-    db = _get_legacy_db()
-    db.delete_soul_fingerprint(novel_id)
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    _db().delete_soul_fingerprint(novel_id)
     return {"ok": True}
 
-
-# ═══ Character Blueprints ═══
 
 @router.get("/novels/{novel_id}/character-blueprints")
 def get_character_blueprints(novel_id: str):
     """获取小说所有角色蓝图。"""
-    db = _get_legacy_db()
-    return db.get_character_blueprints(novel_id)
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    return {"characters": _db().get_character_blueprints(novel_id)}
 
 
 @router.post("/novels/{novel_id}/character-blueprints")
 def save_character_blueprints(novel_id: str, data: dict):
     """批量保存角色蓝图（全量替换）。"""
-    db = _get_legacy_db()
-    characters = data.get("characters", data if isinstance(data, list) else [])
-    if isinstance(characters, dict):
-        characters = [characters]
-    db.save_character_blueprints(novel_id, characters)
-    return {"ok": True, "count": len(characters)}
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    characters = _normalize_character_blueprints(data)
+    _db().save_character_blueprints(novel_id, characters)
+    return {"ok": True, "characters": characters}
 
 
 @router.delete("/novels/{novel_id}/character-blueprints/{char_id}")
 def delete_character_blueprint(novel_id: str, char_id: str):
     """删除单个角色蓝图。"""
-    db = _get_legacy_db()
-    if not db.delete_character_blueprint(novel_id, char_id):
-        raise HTTPException(404, "Character not found")
+    if not _db().get_novel(novel_id):
+        raise HTTPException(404, "Not found")
+    if not _db().delete_character_blueprint(novel_id, char_id):
+        raise HTTPException(404, "Character blueprint not found")
     return {"ok": True}

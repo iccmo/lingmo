@@ -1,57 +1,48 @@
-import { Component, type ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
+/** React Error Boundary — 捕获异常，显示重试按钮。 */
+import { Component, type ReactNode, type ErrorInfo } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 interface Props { children: ReactNode; }
-interface State { error: Error | null; }
+interface State { error: Error | null; errorInfo: ErrorInfo | null; }
 
 export class ErrorBoundary extends Component<Props, State> {
- state: State = { error: null };
+  state: State = { error: null, errorInfo: null };
 
- static getDerivedStateFromError(error: Error): State {
- return { error };
- }
+  static getDerivedStateFromError(error: Error): Partial<State> {
+    return { error };
+  }
 
- componentDidCatch(error: Error) {
- console.error('[ErrorBoundary]', error);
- }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    this.setState({ errorInfo: info });
+    console.error('[ErrorBoundary]', error.message, info.componentStack?.slice(0, 200));
+  }
 
- render() {
- if (this.state.error) {
- return (
- <div className="flex items-center justify-center min-h-[300px] p-8">
- <div className="text-center max-w-md">
- <AlertTriangle size={48} className="text-warn mb-4" />
- <h2 className="font-heading text-xl font-semibold text-ink mb-2">出了点问题</h2>
- <p className="text-sm text-ink-muted mb-4">
- {this.state.error.message || '未知错误'}
- </p>
- <button
- onClick={() => {
- this.setState({ error: null });
- window.location.reload();
- }}
- className="px-4 py-2 text-sm rounded-md bg-accent text-white hover:bg-accent-hover transition-colors">
- 刷新页面
- </button>
- </div>
- </div>
- );
- }
- return this.props.children;
- }
-}
+  handleRetry = () => this.setState({ error: null, errorInfo: null });
 
-/** Inline error fallback for smaller sections */
-export function ErrorFallback({ message, onRetry }: { message?: string; onRetry?: () => void }) {
- return (
- <div className="p-4 border border-destructive/20 bg-destructive-soft dark:bg-red-950/30 rounded-lg text-center">
- <p className="text-sm text-destructive mb-2">{message || '加载失败'}</p>
- {onRetry && (
- <button onClick={onRetry}
- className="text-xs px-3 py-1 rounded border border-red-300 hover:bg-destructive-soft dark:border-red-700 dark:hover:bg-red-900 transition-colors text-destructive ">
- 重试
- </button>
- )}
- </div>
- );
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center animate-[fadeSlideIn_0.2s_ease-out]">
+          <AlertTriangle size={40} className="text-warn mb-4" />
+          <h2 className="text-base font-semibold text-ink mb-2">页面出错了</h2>
+          <p className="text-sm text-ink-muted mb-1 max-w-md">
+            {this.state.error.message.slice(0, 120)}
+          </p>
+          <details className="text-xs text-ink-subtle mb-4 max-w-md">
+            <summary className="cursor-pointer hover:text-ink">详细堆栈</summary>
+            <pre className="mt-2 p-2 bg-surface rounded text-[10px] overflow-auto max-h-32 whitespace-pre-wrap">
+              {this.state.errorInfo?.componentStack || this.state.error.stack || '无堆栈信息'}
+            </pre>
+          </details>
+          <button
+            onClick={this.handleRetry}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-accent text-white rounded-lg hover:bg-accent/80 transition-colors"
+          >
+            <RefreshCw size={12} /> 重试
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }

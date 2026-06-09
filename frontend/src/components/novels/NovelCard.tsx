@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import type { NovelSummary } from 'src/types';
 import { toast } from 'sonner';
+import { ConfirmDialog } from 'src/components/ui/ConfirmDialog';
 import {
  Trophy, BookOpen, FileText, Sprout, Star, Trash2,
  Zap, ArrowRight, AlertTriangle, Loader2,
@@ -31,6 +32,7 @@ export function NovelCard({ novel, onDelete, onGenerate, isGenerating }: {
  try { return JSON.parse(localStorage.getItem('starred-novels') || '[]').includes(novel.id); }
  catch { return false; }
  });
+	const [showDelete, setShowDelete] = useState(false);
 
  function toggleStar(e: { stopPropagation: () => void }) {
  e.stopPropagation();
@@ -75,23 +77,25 @@ export function NovelCard({ novel, onDelete, onGenerate, isGenerating }: {
  }
 
  async function handleDelete() {
- if (!confirm(`确定删除《${novel.title}》？`)) return;
- onDelete?.(novel.id);
- try {
- await fetch(`/api/novels/${novel.id}`, { method: 'DELETE' });
- toast.success(`已删除《${novel.title}》`, {
- action: { label: '撤销', onClick: async () => {
- try {
- await fetch(`/api/novels/${novel.id}/restore`, { method: 'POST' });
- toast.success('已恢复');
- } catch { toast.error('恢复失败'); }
- }}
- });
- } catch {
- toast.error('删除失败，请刷新');
- window.location.reload();
- }
- }
+	 setShowDelete(true);
+	 }
+	 async function doDelete() {
+	 onDelete?.(novel.id);
+	 try {
+	 await fetch(`/api/novels/${novel.id}`, { method: 'DELETE' });
+	 toast.success(`已删除《${novel.title}》`, {
+	 action: { label: '撤销', onClick: async () => {
+	 try {
+	 await fetch(`/api/novels/${novel.id}/restore`, { method: 'POST' });
+	 toast.success('已恢复');
+	 } catch { toast.error('恢复失败'); }
+	 }}
+	 });
+	 } catch {
+	 toast.error('删除失败，请刷新');
+	 window.location.reload();
+	 }
+	 }
 
  return (
  <div
@@ -217,6 +221,18 @@ export function NovelCard({ novel, onDelete, onGenerate, isGenerating }: {
  onClick={() => navigate(`/novels/${novel.id}`)}>
  {hasContent ? '继续阅读' : '详情'} <ArrowRight size={12} />
  </button>
+
+      {showDelete && (
+        <ConfirmDialog
+          open={true}
+          title="删除小说"
+          message={`确定删除《${novel.title}》吗？此操作不可撤销。`}
+          confirmLabel="删除"
+          variant="danger"
+          onConfirm={doDelete}
+          onCancel={() => setShowDelete(false)}
+        />
+      )}
  </div>
  </div>
  );

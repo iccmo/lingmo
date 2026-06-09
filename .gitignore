@@ -10,11 +10,21 @@ venv/
 # Node
 node_modules/
 frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 
 # Data
 *.db
 *.sqlite
 data/
+
+# Generated media / publishing artifacts
+douyin-video/audio/
+douyin-video/images/
+douyin-video/output/
+douyin-video/temp/
+test-results/
+playwright-report/
 
 # Environment
 .env

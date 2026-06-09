@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { ConsistencyScoreView } from './ConsistencyScoreView';
 import { BookOpen, CheckCircle2, Lightbulb, Telescope, Timer, Users } from 'lucide-react';
+import { toast } from 'sonner';
+import { responseErrorMessage } from 'src/lib/api-error';
 
 interface ReaderState {
  current_chapter: number; reader_mood: string; suggestion: string;
@@ -33,8 +35,8 @@ export function StoryBibleView({ novelId }: Props) {
  const [data, setData] = useState<StoryBibleData | null>(null);
  const [reader, setReader] = useState<ReaderState | null>(null);
  const [counterpoint, setCounterpoint] = useState<any>(null);
- const [loading, setLoading] = useState(true);
- const [_constraintPreview] = useState<any>(null);
+	 const [loading, setLoading] = useState(true);
+	 const [_constraintPreview] = useState<any>(null);
 
  useEffect(() => {
  Promise.all([
@@ -49,11 +51,37 @@ export function StoryBibleView({ novelId }: Props) {
  }, [novelId]);
 
  if (loading) return <div className="skeleton h-20 rounded-lg" />;
- if (!data) return <p className="text-xs text-ink-subtle py-4">暂无数据，生成新章后自动填充</p>;
+	 if (!data) return <p className="text-xs text-ink-subtle py-4">暂无数据，生成新章后自动填充</p>;
 
- const hasData = data.characters.length > 0 || data.foreshadowing.length > 0 || data.timeline.length > 0;
+	 const hasData = data.characters.length > 0 || data.foreshadowing.length > 0 || data.timeline.length > 0;
 
- if (!hasData) {
+	 async function resolveForeshadowing(fsId: number, defaultChapter: number | null) {
+	 const input = prompt('回收于第几章？', defaultChapter ? String(defaultChapter) : '');
+	 if (input === null) return;
+	 const chapterNum = Number(input.trim());
+	 if (!Number.isInteger(chapterNum) || chapterNum < 0) {
+	 toast.error('请输入有效章节号');
+	 return;
+	 }
+	 const response = await fetch(`/api/novels/${novelId}/foreshadowing/${fsId}/resolve`, {
+	 method: 'POST',
+	 headers: {'Content-Type': 'application/json'},
+	 body: JSON.stringify({chapter_num: chapterNum, text: ''}),
+	 });
+	 if (!response.ok) {
+	 toast.error(await responseErrorMessage(response));
+	 return;
+	 }
+	 setData(current => current ? {
+	 ...current,
+	 foreshadowing: current.foreshadowing.map(item =>
+	 item.id === fsId ? {...item, status: 'resolved'} : item
+	 ),
+	 } : current);
+	 toast.success('伏笔已标记回收');
+	 }
+
+	 if (!hasData) {
  return (
  <div className="text-center py-8">
  <p className="text-2xl mb-2"><BookOpen size={12} className="inline" /></p>
@@ -139,19 +167,12 @@ export function StoryBibleView({ novelId }: Props) {
  <span className={`text-ink-subtle ${f.status === 'overdue' ? 'text-destructive' : ''}`}>
  {f.status === 'overdue' ? '过期' : `Ch${f.created_chapter} → ${f.due_by_chapter || '?'}`}
  </span>
- {f.status === 'active' && (
- <button onClick={async (e) => {
- e.stopPropagation();
- const ch = prompt('回收于第几章？', String(f.due_by_chapter || ''));
- if (ch) {
- await fetch(`/api/novels/${novelId}/foreshadowing/${f.id}/resolve`, {
- method: 'POST', headers: {'Content-Type': 'application/json'},
- body: JSON.stringify({chapter_num: parseInt(ch), text: ''}),
- });
- window.location.reload();
- }
- }} className="text-[9px] text-accent hover:underline">回收</button>
- )}
+	 {f.status === 'active' && (
+	 <button onClick={async (e) => {
+	 e.stopPropagation();
+	 await resolveForeshadowing(f.id, f.due_by_chapter);
+	 }} className="text-[9px] text-accent hover:underline">回收</button>
+	 )}
  </span>
  </div>
  ))}

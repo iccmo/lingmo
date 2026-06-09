@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
+import { api } from 'src/lib/api';
+import { waitForNovelTaskCompletion } from 'src/lib/task-status';
 import type { ChapterMeta } from 'src/types';
 import { AlertTriangle, Bot, ClipboardList, Microscope, Sparkles } from 'lucide-react';
 
@@ -16,6 +18,8 @@ interface DeepMetrics {
  infoDumpRatio: number;
  povConsistency: number;
  timelineGaps: number;
+ agencyScore: number;
+ costScore: number;
  toolPersonWarnings: { character: string; issue: string }[];
  bodyReactionLines: string[]; // sentences that trigger physical reader response
  unreliableDetails: string[]; // small details that seem inconsistent (delayed reveals)
@@ -23,7 +27,7 @@ interface DeepMetrics {
  suggestions: string[];
 }
 
-function analyzeDeep(text: string): DeepMetrics {
+export function analyzeDeep(text: string): DeepMetrics {
  const suggestions: string[] = [];
 
  // ---- Show vs Tell ----
@@ -154,6 +158,20 @@ function analyzeDeep(text: string): DeepMetrics {
  if (timelineGaps > 10) suggestions.push('大量时间跳跃标记——确保读者能跟上时间线');
  else if (timelineGaps >= 3 && timelineGaps <= 8) suggestions.push(`时间线基本清晰（${timelineGaps}处时间标记）`);
 
+ // ---- Protagonist agency ----
+ const choiceMarkers = (text.match(/选择|决定|主动|拒绝|坚持|承担|反击|布局|设局|赌|押上|亲自|站出来|不退|不让|迎上|留下|守住/g) || []).length;
+ const passiveMarkers = (text.match(/被迫|只能|不得不|只好|任由|被.*推着|听天由命|无能为力/g) || []).length;
+ const agencyScore = Math.max(0, Math.min(100, 45 + choiceMarkers * 12 - passiveMarkers * 10));
+ if (agencyScore < 60) suggestions.unshift('主角主动性不足——让主角在压力下做一个明确选择，并承担选择后果');
+ else if (agencyScore >= 80) suggestions.unshift('主角主动性强，剧情由选择推动而不是被事件推着走');
+
+ // ---- Cost / consequence ----
+ const gainMarkers = (text.match(/获得|得到|突破|胜利|赢|成功|掌握|晋升|救下|夺回|拿到|找到|觉醒/g) || []).length;
+ const costMarkers = (text.match(/代价|失去|受伤|流血|反噬|后患|追杀|暴露|牺牲|裂痕|误会|欠下|耗尽|昏迷|疼|痛|伤/g) || []).length;
+ const costScore = Math.max(0, Math.min(100, 50 + Math.min(costMarkers, gainMarkers + 2) * 12 - Math.max(0, gainMarkers - costMarkers) * 10));
+ if (gainMarkers > 0 && costScore < 65) suggestions.unshift('胜利代价偏轻——每次获得都要留下伤口、债务、暴露风险或关系裂痕');
+ else if (costScore >= 80 && gainMarkers > 0) suggestions.unshift('代价兑现充分，爽点有后患，读者会相信胜利来之不易');
+
  // ---- Character Personification ----
  const toolPersonWarnings: { character: string; issue: string }[] = [];
  // Extract character names from the text (capitalized 2-3 char Chinese names)
@@ -263,6 +281,8 @@ function analyzeDeep(text: string): DeepMetrics {
  infoDumpRatio,
  povConsistency,
  timelineGaps,
+ agencyScore,
+ costScore,
  toolPersonWarnings,
  bodyReactionLines,
  unreliableDetails,
@@ -277,26 +297,54 @@ function scoreColor(val: number, good: number, bad: number): string {
  return 'text-warn';
 }
 
+function extractDimension(suggestion: string, fallbackIndex: number): string {
+ const dimMatch = suggestion.match(/建议重点提升：(.+)/) || suggestion.match(/发现.*处(.+)/) || suggestion.match(/(.+?)——/);
+ return dimMatch ? dimMatch[1] : `问题${fallbackIndex + 1}`;
+}
+
+export function buildDeepRevisionCritique(chapterNum: number, metrics: DeepMetrics, suggestion: string, index = 0): { dimension: string; critique: string } {
+ const dimension = extractDimension(suggestion, index);
+ const directives = [
+  `重写第${chapterNum}章，重点改进：${dimension}。`,
+  '保持剧情主线、人物关系、已发生事实不变。',
+ ];
+
+ if (metrics.agencyScore < 60 || suggestion.includes('主动性')) {
+  directives.push('补强主角主动性：必须让主角在压力下做一个清晰选择，例如拒绝退让、亲自反击、主动布局、押上关键资源，并写出他为什么承担这个选择。');
+ }
+
+ if (metrics.costScore < 65 || suggestion.includes('代价')) {
+  directives.push('补强胜利代价：每次获得、突破、救下、赢下或拿到线索，都必须留下具体后果，例如受伤流血、欠债、暴露身份、被追杀、关系裂痕或后续麻烦。');
+ }
+
+ directives.push(`诊断原文：${suggestion}`);
+ return { dimension, critique: directives.join('') };
+}
+
 export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?: ChapterMeta[] }) {
  const [selectedCh, setSelectedCh] = useState<number | null>(null);
  const [_content, setContent] = useState('');
  const [metrics, setMetrics] = useState<DeepMetrics | null>(null);
  const [loading, setLoading] = useState(false);
+ const [optimizing, setOptimizing] = useState(false);
 
  const gen = (chapters || []).filter(c => c.word_count > 0);
 
- useEffect(() => {
- if (!selectedCh) return;
+ const loadMetrics = useCallback(async (chapterNum: number) => {
  setLoading(true);
- fetch(`/api/novels/${novelId}/chapters/${selectedCh}`)
- .then(r => r.json())
- .then(d => {
+ try {
+ const d = await api.novels.chapter(novelId, chapterNum);
  setContent(d.content || '');
  setMetrics(analyzeDeep(d.content || ''));
- })
- .catch(() => {})
- .finally(() => setLoading(false));
- }, [selectedCh, novelId]);
+ } finally {
+ setLoading(false);
+ }
+ }, [novelId]);
+
+ useEffect(() => {
+ if (!selectedCh) return;
+ loadMetrics(selectedCh).catch(() => {});
+ }, [selectedCh, loadMetrics]);
 
  if (gen.length < 1) return null;
 
@@ -304,7 +352,7 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
  <div className="p-4 bg-card border border-border rounded-xl">
  <h3 className="font-heading text-base font-semibold text-ink mb-3"><Microscope size={12} className="inline" /> 深度质量分析</h3>
  <p className="text-[11px] text-ink-muted mb-3">
- 展示/讲述比 · 句子多样性 · 对话标签 · 开头力度 · 感官广度 · 重复检测
+ 展示/讲述比 · 主动性 · 代价兑现 · 开头力度 · 感官广度 · 重复检测
  </p>
 
  {/* Chapter selector */}
@@ -341,6 +389,8 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
  { label: '信息密度', value: `${metrics.infoDumpRatio}%`, good: 20, bad: 35, tip: '纯说明段占比' },
  { label: 'POV稳定', value: String(metrics.povConsistency || 100), good: 85, bad: 55, tip: '视角切换频率' },
  { label: '时间标记', value: String(metrics.timelineGaps || 0), good: 8, bad: 15, tip: '时间跳跃次数' },
+ { label: '主角主动性', value: String(metrics.agencyScore), good: 80, bad: 60, tip: '选择/反击/承担后果' },
+ { label: '代价兑现', value: String(metrics.costScore), good: 80, bad: 60, tip: '收益是否伴随后患' },
  { label: '角色人化', value: metrics.toolPersonWarnings.length === 0 ? '' : `${metrics.toolPersonWarnings.length}<AlertTriangle size={12} className="text-warn inline" />`, good: 0.1, bad: 2, tip: '工具人警告数' },
  { label: '身体共鸣', value: String(metrics.bodyReactionLines.length), good: 2, bad: 0.1, tip: '读者身体有反应的句子' },
  { label: '不可靠细节', value: String(metrics.unreliableDetails.length), good: 1, bad: 0.1, tip: '延迟引爆的疑点' },
@@ -439,7 +489,7 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
  <div key={i} className={`flex items-start gap-2 text-[11px] p-2 rounded-lg ${
  s.includes('出色') || s.includes('丰富') || s.includes('继续保持')
  ? 'bg-success-soft/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/30 text-success '
- : 'bg-warn-soft/50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 text-amber-700 '
+ : 'bg-warn-soft/50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 text-amber-700 dark:text-amber-300 '
  }`}>
  <span className="shrink-0">{s.includes('出色') || s.includes('丰富') ? '' : ''}</span>
  <span>{s}</span>
@@ -461,26 +511,32 @@ export function DeepQuality({ novelId, chapters }: { novelId: string; chapters?:
  </p>
  <div className="space-y-1.5">
  {weakItems.slice(0, 3).map((s, i) => {
- const dimMatch = s.match(/建议重点提升：(.+)/) || s.match(/发现.*处(.+)/) || s.match(/(.+?)——/);
- const dim = dimMatch ? dimMatch[1] : `问题${i+1}`;
+ const { dimension: dim, critique: dir } = buildDeepRevisionCritique(selectedCh, metrics, s, i);
  return (
  <button key={i} onClick={async () => {
  const ch = gen.find(c => c.number === selectedCh);
  if (!ch) return;
- const dir = `重写第${selectedCh}章，重点改进：${dim}。保持剧情主线不变。${s}`;
  try {
- await fetch(`/api/novels/${novelId}/generate`, {
- method: 'POST',
- headers: { 'Content-Type': 'application/json' },
- body: JSON.stringify({ direction: dir, quality_threshold: 0.80 }),
- });
- toast.success(`已触发「${dim.slice(0,15)}」优化`);
- } catch { toast.error('优化失败'); }
+ setOptimizing(true);
+ await api.novels.reviseChapter(novelId, selectedCh, dir);
+ toast.info(`已触发第${selectedCh}章「${dim.slice(0,15)}」修订，等待完成...`);
+ await waitForNovelTaskCompletion(
+ () => api.novels.generationStatus(novelId),
+ { intervalMs: 2000, maxPolls: 180 },
+ );
+ await loadMetrics(selectedCh);
+ toast.success(`第${selectedCh}章修订完成，深度分析已刷新`);
+ } catch (e) {
+ toast.error('优化失败: ' + (e as Error).message);
+ } finally {
+ setOptimizing(false);
+ }
  }}
+ disabled={optimizing}
  className="w-full text-left text-[10px] px-3 py-2 rounded-lg bg-accent-soft/20 border border-accent/10 hover:bg-accent-soft/30 transition-colors flex items-center gap-2">
  <span className="text-accent">🔧</span>
  <span className="text-ink flex-1">{dim.slice(0, 60)}</span>
- <span className="text-ink-subtle">优化 →</span>
+ <span className="text-ink-subtle">{optimizing ? '修订中...' : '优化 →'}</span>
  </button>
  );
  })}

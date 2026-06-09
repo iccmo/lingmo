@@ -123,7 +123,10 @@ class NovelService:
             select(func.count()).select_from(Novel).where(Novel.deleted_at.is_(None))
         ).scalar() or 0
         total_chapters = self.session.execute(
-            select(func.count()).select_from(Chapter).join(Novel).where(Novel.deleted_at.is_(None))
+            select(func.count()).select_from(Chapter).join(Novel).where(
+                Novel.deleted_at.is_(None),
+                Chapter.word_count > 0,
+            )
         ).scalar() or 0
         total_words = self.session.execute(
             select(func.sum(Chapter.word_count)).select_from(Chapter).join(Novel).where(Novel.deleted_at.is_(None))
@@ -139,6 +142,11 @@ class NovelService:
     # ── Private ──
 
     def _to_summary(self, novel: Novel) -> NovelSummary:
+        generated_chapters = sorted(
+            (chapter for chapter in novel.chapters if chapter.word_count > 0),
+            key=lambda chapter: chapter.number,
+        )
+        latest = generated_chapters[-1] if generated_chapters else None
         return NovelSummary(
             id=novel.id,
             title=novel.title,
@@ -146,14 +154,23 @@ class NovelService:
             genre=novel.genre,
             status=novel.status,
             mode=novel.mode,
-            total_chapters=len(novel.chapters),
+            total_chapters=len(generated_chapters),
             total_words=sum(ch.word_count for ch in novel.chapters),
             created_at=novel.created_at,
             updated_at=novel.updated_at,
-            latest_chapter=(lambda chs: {'number': chs[-1].number, 'title': chs[-1].title, 'generated_at': chs[-1].generated_at} if [c for c in novel.chapters if c.word_count > 0] else None)(novel.chapters),
+            latest_chapter={
+                "number": latest.number,
+                "title": latest.title,
+                "generated_at": latest.generated_at,
+            } if latest else None,
         )
 
     def _to_detail(self, novel: Novel) -> NovelDetail:
+        generated_chapters = sorted(
+            (chapter for chapter in novel.chapters if chapter.word_count > 0),
+            key=lambda chapter: chapter.number,
+        )
+        latest = generated_chapters[-1] if generated_chapters else None
         return NovelDetail(
             id=novel.id,
             title=novel.title,
@@ -169,10 +186,15 @@ class NovelService:
             main_arc=novel.main_arc,
             current_arc=novel.current_arc,
             arc_chapter_start=novel.arc_chapter_start,
-            total_chapters=len(novel.chapters),
+            total_chapters=len(generated_chapters),
             total_words=sum(ch.word_count for ch in novel.chapters),
             created_at=novel.created_at,
             updated_at=novel.updated_at,
+            latest_chapter={
+                "number": latest.number,
+                "title": latest.title,
+                "generated_at": latest.generated_at,
+            } if latest else None,
             chapters=[self._chapter_to_dict(ch) for ch in novel.chapters],
             characters=[self._character_to_dict(c) for c in novel.characters],
             factions=[],

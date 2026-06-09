@@ -1,4 +1,3 @@
-import type { Theme } from './types';
 import type { LayoutMode } from './layouts';
 
 export interface WritingPreset {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CheckCircle2, XCircle, Loader2, Clock, Zap, Eye, RefreshCw } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, Clock, Eye, RefreshCw } from 'lucide-react';
+import { isActiveGenerationStatus, isCompletedGenerationStatus, isFailedGenerationStatus } from 'src/lib/generation-status';
 
 interface GenStatus {
   status: string;
@@ -41,7 +42,7 @@ export function GenerationStatusBanner({ genStatus, onViewChapter, onRetry }: Pr
 
   // Elapsed timer
   useEffect(() => {
-    if (!genStatus || genStatus.status === 'complete' || genStatus.status === 'error') return;
+    if (!isActiveGenerationStatus(genStatus)) return;
     const t = setInterval(() => setElapsed(Math.round((Date.now() - startTime) / 1000)), 1000);
     return () => clearInterval(t);
   }, [genStatus?.status, startTime]);
@@ -49,9 +50,9 @@ export function GenerationStatusBanner({ genStatus, onViewChapter, onRetry }: Pr
   if (!genStatus || !visible) return null;
 
   const { status, message, progress, overall, grade } = genStatus;
-  const isDone = status === 'complete';
-  const isError = status === 'error';
-  const isRunning = !isDone && !isError;
+  const isDone = isCompletedGenerationStatus(genStatus);
+  const isError = isFailedGenerationStatus(genStatus);
+  const isRunning = isActiveGenerationStatus(genStatus);
 
   // Find current stage index
   const stageIdx = STAGE_ORDER.indexOf(status);
@@ -111,8 +112,6 @@ export function GenerationStatusBanner({ genStatus, onViewChapter, onRetry }: Pr
               const currentIdx = stageIdx >= 0 ? stageIdx : 0;
               const isPast = idx < currentIdx;
               const isCurrent = idx === currentIdx;
-              const isFuture = idx > currentIdx;
-
               return (
                 <div key={stage} className="flex items-center gap-1 flex-1 last:flex-[0.5]">
                   <div className={`

@@ -170,7 +170,7 @@ export function MemoryBank() {
  </CardContent></Card>
  </div>
  {foreshadow.warning && (
- <div className="p-3 rounded-lg bg-warn-soft border border-warn/20 text-xs text-amber-700 ">
+ <div className="p-3 rounded-lg bg-warn-soft border border-warn/20 text-xs text-amber-700 dark:text-amber-300 ">
  <AlertTriangle size={12} className='text-warn mr-0.5 inline' /> {foreshadow.warning}
  </div>
  )}
@@ -197,7 +197,7 @@ export function MemoryBank() {
  <div className="text-center py-16 text-sm text-ink-muted">暂无角色数据</div>
  ) : (
  <div className="space-y-2">
- {novel.characters.map((c: any) => (
+ {novel.characters.map((c) => (
  <Card key={c.id} className="border-border"><CardContent className="p-3">
  <div className="flex items-center gap-2 mb-1">
  <span className="font-heading text-sm font-semibold text-ink">{c.name}</span>

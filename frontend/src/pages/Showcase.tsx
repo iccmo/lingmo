@@ -21,19 +21,19 @@ const FEATURES = [
   { icon: 'PenLine', title: '沉浸写作编辑器', desc: '三栏布局：章节列表+正文+上下文面板。阅读/编辑无缝切换，Markdown渲染，自动保存', tag: '' },
   { icon: 'Wand2', title: '方向预设', desc: '7种快捷方向（打斗/感情/反转/日常/悬疑/伏笔/高潮），点击即可追加到生成指令。也支持自由文本输入', tag: '' },
   { icon: 'Mic', title: '14种作家声音', desc: '金庸·余华·刘慈欣·东野圭吾·海明威·莫言·张爱玲·鲁迅·村上春树·马尔克斯·古龙·汪曾祺·爆款网文·文学实验', tag: '' },
-  { icon: 'BookOpen', title: '24种题材风格', desc: '玄幻/都市/悬疑/科幻/官场/仙侠/武侠/系统流/无限流/女频/历史/游戏...每种独立风格配置', tag: '' },
+  { icon: 'BookOpen', title: '30种题材风格', desc: '玄幻/都市/悬疑/科幻/官场/仙侠/武侠/无限流/四合院/规则怪谈/全民求生/盗墓/电竞/年代文/废土...每种独立质量规则', tag: '' },
   { icon: 'Palette', title: '质量趋势分析', desc: 'SVG图表：质量趋势+节奏曲线+情感弧线+对话密度+情绪配方+章节DNA雷达。任意两章并排对比', tag: '' },
   { icon: 'Network', title: '情节网络图', desc: '力导向角色关系图谱。基于角色表和关系数据自动渲染，可视化叙事结构', tag: '' },
   { icon: 'Dna', title: '反AI痕迹检测', desc: '35种中文AI写作模式的正则检测。随机句长变化+段落打破+结尾钩子保护，降低平台识别风险', tag: '' },
   { icon: 'Telescope', title: '故事圣经', desc: '自动从已生成章节提取：角色状态·伏笔·位置历史·时间线·世界规则·一致性日志·代价账簿', tag: '' },
-  { icon: 'Download', title: 'TXT/EPUB导出', desc: '一键导出完整小说为TXT（可导入番茄作家后台）或EPUB电子书（带封面+目录+样式）', tag: '' },
+  { icon: 'Download', title: 'TXT/EPUB/PDF导出', desc: '一键导出完整小说为TXT/EPUB/PDF。增强版含封面+目录+元数据，可直接上传阅读平台或Kindle', tag: '' },
   { icon: 'Headphones', title: 'AI听书系统', desc: '章节TTS自动生成，多语音选择，可调速（0.5x-2.0x），书签+播放列表+睡眠定时器', tag: '' },
   { icon: 'Timer', title: '专注冲刺计时器', desc: 'Pomodoro风格写作计时器，15/25/45/60分钟可选。实时速率追踪，完成提醒', tag: '' },
   { icon: 'Zap', title: '写作工作台', desc: '实时流式内容预览·大纲侧栏·质量细分面板·分析图表内嵌·生成管道可视化·方向预设·自动保存', tag: '核心' },
   { icon: 'Sparkles', title: '排版自动规范', desc: 'AI生成后自动修复孤儿引号·统一「」引号格式·英文引号转中文·段落方差检测·格式评分', tag: '' },
   { icon: 'Shield', title: '断点续传+防重', desc: '生成中断自动保存进度·双击防重（前后端双锁）·空内容自动报错·模型切换透明提示', tag: '' },
   { icon: 'TrendingUp', title: '自动参数校准', desc: '每5章根据历史质量趋势自动调整StyleProfile参数·对话密度·钩子间隔·段落范围', tag: '' },
-  { icon: 'Globe', title: '免费模型接入', desc: 'FreeLLM集成·13个免费模型（DeepSeek/Kimi/GLM/Qwen等）·代理本地部署·即开即用', tag: '' },
+  { icon: 'Globe', title: '22个模型供应商', desc: 'DeepSeek·OpenAI·Kimi·通义·智谱·豆包·MiniMax·百川·OpenRouter等，设置页配置Key即用', tag: '' },
   { icon: 'Keyboard', title: '键盘快捷键', desc: 'Ctrl+Enter生成·Ctrl+S保存·自动保存（5秒防丢）·J/K切换章节·Ctrl+K命令面板', tag: '' },
   { icon: 'Settings', title: '多模型支持', desc: 'DeepSeek V4·OpenAI·通义千问·Kimi·智谱·豆包·百度·讯飞·MiniMax·Google。设置页配置Key+测试连接', tag: '' },
   { icon: 'Moon', title: '深色模式', desc: '跟随系统自动切换明暗主题，全局0.3s平滑过渡。暖光素笺(#F5F0E8)纸墨感设计', tag: '' },
@@ -41,12 +41,14 @@ const FEATURES = [
   { icon: 'Calendar', title: '写作日历+目标', desc: '7日写作趋势图+每日字数统计。设置日更目标，日历可视化追踪进度', tag: '' },
   { icon: 'TrendingUp', title: '成本追踪', desc: '按小说/模型维度统计API调用成本。Token消耗+费用明细，支持成本预警', tag: '' },
   { icon: 'Lightbulb', title: '备份与恢复', desc: '一键下载全量JSON备份，支持从备份文件恢复。本地优先，数据安全', tag: '' },
+  { icon: 'Shield', title: '全链路正文验收', desc: '生成→保存→修订→格式修复全路径拒绝空/说明/非小说正文。坏输出跳过不污染章节，自动恢复重试', tag: '' },
+  { icon: 'TrendingUp', title: '全链路成本追踪', desc: '每次LLM调用（生成/评审/精修/总结）累计计入章节成本。按小说/模型维度统计Token+费用', tag: '' },
 ];
 
 /* ─── 真实统计数据 ─── */
 const STATS = [
   { value: 30, suffix: '组', label: '灵魂矛盾' },
-  { value: 24, suffix: '种', label: '题材风格' },
+  { value: 30, suffix: '种', label: '题材风格' },
   { value: 32, suffix: '+', label: '专业功能' },
   { value: 8, suffix: '维', label: '质量评审' },
 ];
@@ -63,7 +65,7 @@ const HIGHLIGHTS = [
   {
     icon: '🛡️',
     title: '12步质量管线',
-    desc: '每章经过约束压缩→技巧选择→批量草拟→6维评分→精修→去AI味→硬约束验证→人性化→废话检查→一致性校验→伏笔回收→语音预生成。不达标自动重写。',
+    desc: '每章经过约束压缩→技巧选择→批量草拟→8维评分→精修→去AI味→硬约束验证→人性化→废话检查→一致性校验→伏笔回收→语音预生成。不达标自动重写。',
     gradient: 'from-emerald-500/15 via-accent/5 to-emerald-500/5',
     iconBg: 'bg-success-soft dark:bg-emerald-900/30',
   },
@@ -294,7 +296,7 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
           <div className="relative flex flex-col md:flex-row items-center gap-4 md:gap-0">
             {[
               { name: '构思', desc: '约束压缩\n技巧选择\n批量草拟', color: 'bg-violet-50 dark:bg-violet-900/30' },
-              { name: '评审', desc: '6维LLM评分\n低于0.8重写\n连续3次降级', color: 'bg-warn-soft dark:bg-amber-900/30' },
+              { name: '评审', desc: '8维LLM评分\n低于0.8重写\n连续3次降级', color: 'bg-warn-soft dark:bg-amber-900/30' },
               { name: '打磨', desc: '精修润色\n去AI痕迹\n人性化改写', color: 'bg-info-soft dark:bg-sky-900/30' },
               { name: '校验', desc: '硬约束验证\n一致性检查\n伏笔回收', color: 'bg-success-soft dark:bg-emerald-900/30' },
               { name: '交付', desc: 'TTS语音生成\n成本记录\n追踪归档', color: 'bg-rose-50 dark:bg-rose-900/30' },
@@ -320,7 +322,7 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
       {/* Features grid */}
       <section id="features" className="max-w-6xl mx-auto px-6 pb-20">
         <h2 className="font-heading text-[32px] font-bold text-center mb-2">全部功能</h2>
-        <p className="text-sm text-ink-muted text-center mb-10">27+ 项专为网文作者打造的专业功能</p>
+        <p className="text-sm text-ink-muted text-center mb-10">32+ 项专为网文作者打造的专业功能</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {FEATURES.map((f, i) => {
@@ -357,7 +359,7 @@ export function Showcase({ onEnter }: { onEnter?: () => void }) {
           <div className="relative">
             <h2 className="font-heading text-[32px] md:text-[40px] font-bold mb-3 text-white">开始写你的神作</h2>
             <p className="text-white/70 mb-8 max-w-md mx-auto text-base leading-relaxed">
-              30组灵魂矛盾 · 12步质量管线 · 金庸级角色设计 · 6维LLM评审 · 35种AI痕迹检测 · 批量生成 · TXT导出
+              30组灵魂矛盾 · 12步质量管线 · 金庸级角色设计 · 8维LLM评审 · 35种AI痕迹检测 · 批量生成 · EPUB/PDF导出
             </p>
             <button onClick={handleEnter}
               className="px-10 py-4 rounded-xl bg-white text-accent hover:bg-white/95 transition-all font-bold text-lg shadow-2xl active:scale-95">

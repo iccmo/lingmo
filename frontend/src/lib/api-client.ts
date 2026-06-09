@@ -5,11 +5,13 @@
  *   const novels = await api.novels.list();  // 自动推断返回类型
  */
 
+import { responseErrorMessage } from './api-error';
+
 const BASE = '';
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path);
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -19,7 +21,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
@@ -29,13 +31,13 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 
 async function del<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path, { method: 'DELETE' });
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+  if (!res.ok) throw new Error(await responseErrorMessage(res));
   return res.json();
 }
 

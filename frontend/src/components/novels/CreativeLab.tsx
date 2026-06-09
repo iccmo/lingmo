@@ -132,7 +132,6 @@ export function CreativeLab({ chapters, genre: _genre, novelId }: { chapters?: C
  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
 
  const gen = (chapters || []).filter(c => c.word_count > 0);
- if (gen.length < 1) return null;
 
  const persona = READER_PERSONAS[personaIdx];
  const selectedCh = selectedChapter ? gen.find(c => c.number === selectedChapter) : gen[gen.length - 1];
@@ -144,6 +143,8 @@ export function CreativeLab({ chapters, genre: _genre, novelId }: { chapters?: C
  return paragraphReactions(s.split('\n'));
  }, [selectedCh]);
  const advice = useMemo(() => publishingAdvice(gen), [gen]);
+
+ if (gen.length < 1) return null;
 
  const tabs = [
  { key: 'reader' as const, label: 'AI读者', desc: '角色扮演' },

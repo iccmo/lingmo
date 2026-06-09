@@ -358,7 +358,7 @@ export function MiniPlayer() {
  {loading ? (
  <div className="w-12 h-12 flex items-center justify-center"><span className="text-xl animate-spin">⏳</span></div>
  ) : (
- <button onClick={togglePause} className="relative w-12 h-12 flex items-center justify-center group mx-1">
+ <button aria-label="播放/暂停" onClick={togglePause} className="relative w-12 h-12 flex items-center justify-center group mx-1">
  <svg className="absolute inset-0 -rotate-90" width={48} height={48}>
  <circle cx={24} cy={24} r={21} fill="none" stroke="currentColor" strokeWidth="2.5" className="text-border" />
  <circle cx={24} cy={24} r={21} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
@@ -384,7 +384,7 @@ export function MiniPlayer() {
  className="text-[9px] px-2 py-0.5 rounded border border-border text-ink-muted hover:text-ink disabled:opacity-20" title="回退30秒">↩30s</button>
  <button onClick={() => undoSkip()}
  className="text-[9px] px-2 py-0.5 rounded border border-border text-ink-muted hover:text-ink" title="回到切歌前位置">↶返回</button>
- <button onClick={stop} className="text-[9px] px-2 py-0.5 rounded border border-destructive/20 text-destructive hover:text-destructive ">⏹ 停止</button>
+ <button aria-label="停止" onClick={stop} className="text-[9px] px-2 py-0.5 rounded border border-destructive/20 text-destructive hover:text-destructive ">⏹ 停止</button>
  <button onClick={() => addBookmark()} disabled={loading}
  className="text-[9px] px-2 py-0.5 rounded border border-warn/20 text-warn hover:text-warn disabled:opacity-20">🔖 标记</button>
  {autoContinue && !radioMode && <span className="text-[8px] text-accent/60 ml-1">连播中</span>}

@@ -1,5 +1,4 @@
 """Database CRUD tests — isolated per test via tmp_path fixture"""
-import json
 import pytest
 
 from novel_writer.database import Database
@@ -113,6 +112,30 @@ def test_add_and_get_chapter(db):
     assert novel["total_chapters"] == 1
     assert novel["total_words"] == 2500
     assert novel["latest_chapter"]["title"] == "第一章"
+
+
+def test_outline_placeholders_do_not_count_as_generated_chapters(db):
+    db.create_novel(id="outline-stats", title="大纲统计")
+    db.add_chapter("outline-stats", number=1, title="第一章", word_count=1200, content="正文")
+    db.add_chapter("outline-stats", number=2, title="第二章大纲", word_count=0, summary="计划")
+    db.add_chapter("outline-stats", number=3, title="第三章大纲", word_count=0, summary="计划")
+
+    novel = db.get_novel("outline-stats")
+    listed = next(item for item in db.list_novels() if item["id"] == "outline-stats")
+
+    assert novel["total_chapters"] == 1
+    assert novel["latest_chapter"]["number"] == 1
+    assert listed["total_chapters"] == 1
+    assert listed["latest_chapter"]["number"] == 1
+
+
+def test_next_chapter_number_appends_after_latest_generated(db):
+    db.create_novel(id="next-number", title="下一章号")
+    db.add_chapter("next-number", number=1, title="第一章", word_count=1200, content="正文")
+    db.add_chapter("next-number", number=2, title="第二章大纲", word_count=0, summary="计划")
+    db.add_chapter("next-number", number=3, title="第三章", word_count=1300, content="正文")
+
+    assert db.get_next_chapter_number("next-number") == 4
 
 
 # --- Audio Data ---
@@ -270,6 +293,20 @@ def test_save_foreshadowing(db):
     assert active[0]["status"] == "active"
 
 
+def test_get_active_foreshadowing_includes_overdue_threads(db):
+    db.create_novel(id="f-overdue", title="逾期伏笔")
+    db.save_foreshadowing("f-overdue", 1, description="青铜铃会在月圆夜响起", due_by=3)
+    fs_id = db.get_active_foreshadowing("f-overdue")[0]["id"]
+    with db.conn() as conn:
+        conn.execute("UPDATE foreshadowing_tracker SET status='overdue' WHERE id=?", (fs_id,))
+
+    active = db.get_active_foreshadowing("f-overdue")
+
+    assert len(active) == 1
+    assert active[0]["description"] == "青铜铃会在月圆夜响起"
+    assert active[0]["status"] == "overdue"
+
+
 def test_resolve_foreshadowing(db):
     db.create_novel(id="f2", title="伏笔收束")
     db.save_foreshadowing("f2", 1, description="神秘符文", due_by=5)
@@ -336,6 +373,17 @@ def test_log_consistency_issue(db):
     assert log[1]["check_type"] == "character"
 
 
+def test_log_consistency_issue_is_idempotent(db):
+    db.create_novel(id="c1", title="一致性测试")
+    db.log_consistency_issue("c1", 1, "character", "error", "角色状态不一致", "修正")
+    db.log_consistency_issue("c1", 1, "character", "error", "角色状态不一致", "另一条建议")
+    db.log_consistency_issue("c1", 1, "character", "warning", "角色状态不一致")
+
+    log = db.get_consistency_log("c1")
+    assert len(log) == 2
+    assert {item["severity"] for item in log} == {"error", "warning"}
+
+
 def test_mark_consistency_fixed(db):
     db.create_novel(id="c2", title="修复标记")
     db.log_consistency_issue("c2", 1, "character", "error", "问题描述")
@@ -386,6 +434,82 @@ def test_save_cost_entry(db):
     assert ledger[0]["character_name"] == "叶凡"
     assert ledger[0]["gain"] == "获得灵丹"
     assert ledger[1]["is_immediate"] == 0
+
+
+def test_clear_story_bible_chapter(db):
+    db.create_novel(id="clear-bible", title="清理圣经")
+    db.save_character_state("clear-bible", 1, "叶凡", emotion="愤怒")
+    db.save_character_state("clear-bible", 2, "叶凡", emotion="平静")
+    db.save_foreshadowing("clear-bible", 1, "旧伏笔", due_by=3)
+    db.save_foreshadowing("clear-bible", 0, "前文伏笔", due_by=2)
+    prior_thread = db.get_active_foreshadowing("clear-bible")[0]
+    db.resolve_foreshadowing(prior_thread["id"], 1, "本章回收")
+    db.save_location_history("clear-bible", 1, "青云山")
+    db.save_timeline_event("clear-bible", 1, event_summary="旧事件")
+    db.save_world_state("clear-bible", 1, "旧规则")
+    db.save_cost_entry("clear-bible", 1, "叶凡", gain="旧收获", loss="")
+    db.log_consistency_issue("clear-bible", 1, "character", "error", "旧问题")
+
+    db.clear_story_bible_chapter("clear-bible", 1)
+
+    assert db.get_character_state("clear-bible", 1) == []
+    assert len(db.get_character_state("clear-bible", 2)) == 1
+    foreshadowing = db.get_active_foreshadowing("clear-bible")
+    assert len(foreshadowing) == 1
+    assert foreshadowing[0]["description"] == "前文伏笔"
+    assert foreshadowing[0]["resolved_chapter"] is None
+    assert db.get_location_history("clear-bible") == []
+    assert db.get_timeline("clear-bible") == []
+    assert db.get_world_state("clear-bible") == []
+    assert db.get_cost_ledger("clear-bible") == []
+    assert db.get_consistency_log("clear-bible") == []
+
+
+def test_delete_chapter_clears_chapter_artifacts(db):
+    db.create_novel(id="delete-artifacts", title="删除章级产物")
+    db.add_chapter("delete-artifacts", number=1, title="第一章", content="正文", word_count=2)
+    db.save_chapter_summary("delete-artifacts", 1, "第一章摘要")
+    db.save_chapter_trace({
+        "novel_id": "delete-artifacts",
+        "chapter_num": 1,
+        "steps": [{"name": "draft"}],
+        "final_quality": 0.8,
+        "total_duration_ms": 10,
+        "total_cost": 0.01,
+    })
+    db.log_cost("delete-artifacts", 1, "deepseek-test", 10, 20, 30, 0.01)
+
+    db.delete_chapter("delete-artifacts", 1)
+
+    assert db.get_chapter("delete-artifacts", 1) is None
+    assert db.get_chapter_summaries("delete-artifacts") == []
+    assert db.get_chapter_traces("delete-artifacts") == []
+    assert db.get_cost_summary("delete-artifacts")["total_calls"] == 0
+
+
+def test_save_chapter_trace_replaces_same_chapter(db):
+    db.create_novel(id="trace1", title="Trace 测试")
+    db.save_chapter_trace({
+        "novel_id": "trace1",
+        "chapter_num": 1,
+        "steps": [{"name": "draft"}],
+        "final_quality": 0.5,
+        "total_duration_ms": 10,
+        "total_cost": 0.01,
+    })
+    db.save_chapter_trace({
+        "novel_id": "trace1",
+        "chapter_num": 1,
+        "steps": [{"name": "polish"}],
+        "final_quality": 0.9,
+        "total_duration_ms": 20,
+        "total_cost": 0.02,
+    })
+
+    traces = db.get_chapter_traces("trace1")
+    assert len(traces) == 1
+    assert traces[0]["steps"] == [{"name": "polish"}]
+    assert traces[0]["final_quality"] == 0.9
 
 
 def test_get_character_location(db):
@@ -440,6 +564,79 @@ def test_save_chapter_summary(db):
     summaries = db.get_chapter_summaries("sum1")
     assert len(summaries) == 2
     assert summaries[0]["summary_text"] == "叶凡在山巅觉醒灵力。"
+
+
+def test_chapter_narrative_facts_round_trip(db):
+    db.create_novel(id="mem1", title="记忆测试")
+    db.add_chapter(
+        "mem1",
+        number=1,
+        title="月下锈剑",
+        word_count=1200,
+        summary="林逸发现锈剑异变。",
+        key_events='["锈剑吸收月光"]',
+        revelations='["锈剑与月光有关"]',
+        narrative_facts='["林逸已经知道锈剑会吸收月光"]',
+    )
+
+    novel = db.get_novel("mem1")
+
+    assert novel is not None
+    chapter = novel["chapters"][0]
+    assert "锈剑吸收月光" in chapter["key_events"]
+    assert "锈剑与月光有关" in chapter["revelations"]
+    assert "锈剑会吸收月光" in chapter["narrative_facts"]
+
+
+def test_get_novel_chapters_include_content(db):
+    db.create_novel(id="ctx1", title="上下文测试")
+    db.add_chapter(
+        "ctx1",
+        number=1,
+        title="第一章",
+        word_count=1200,
+        summary="摘要",
+        content="这是上一章完整正文，下一章必须能看到。",
+    )
+
+    novel = db.get_novel("ctx1")
+
+    assert novel is not None
+    assert novel["chapters"][0]["content"] == "这是上一章完整正文，下一章必须能看到。"
+
+
+def test_load_state_keeps_plain_string_chapter_metadata(db):
+    from novel_writer.routers import deps
+    from novel_writer.routers.novel.revision_service import _load_state
+    from novel_writer.state import GenerationState
+
+    old_db = deps._db
+    old_gen_state = deps._gen_state
+    try:
+        deps.init_deps(db, GenerationState())
+        db.create_novel(id="ctx2", title="元数据兼容")
+        db.add_chapter(
+            "ctx2",
+            number=1,
+            title="第一章",
+            word_count=1200,
+            summary="摘要",
+            content="正文",
+            key_events="锈剑吸收月光；林逸决定隐瞒",
+            revelations="锈剑与月光有关",
+            narrative_facts="林逸已经知道锈剑会吸收月光",
+        )
+
+        state = _load_state("ctx2")
+
+        assert state is not None
+        chapter = state.chapters[0]
+        assert chapter.key_events == ["锈剑吸收月光", "林逸决定隐瞒"]
+        assert chapter.revelations == ["锈剑与月光有关"]
+        assert chapter.narrative_facts == ["林逸已经知道锈剑会吸收月光"]
+    finally:
+        deps._db = old_db
+        deps._gen_state = old_gen_state
 
 
 def test_get_chapter_summaries_filtered(db):

@@ -201,7 +201,7 @@ export function Settings() {
  </div>
  <div>
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">默认题材</label>
- <select
+ <select aria-label="选项"
  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
  defaultValue={localStorage.getItem('default-genre') || '玄幻'}
  onChange={e => localStorage.setItem('default-genre', e.target.value)}>
@@ -212,7 +212,7 @@ export function Settings() {
  </div>
  <div>
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">默认 AI 模型</label>
- <select
+ <select aria-label="选项"
  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
  defaultValue={localStorage.getItem('default-provider') || 'deepseek'}
  onChange={e => localStorage.setItem('default-provider', e.target.value)}>
@@ -336,7 +336,7 @@ export function Settings() {
  <div className="space-y-4">
  <div>
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">画图引擎</label>
- <select
+ <select aria-label="选项"
  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
  value={filmSettings.image_provider}
  onChange={e => setFilmSettings({ ...filmSettings, image_provider: e.target.value })}
@@ -486,7 +486,7 @@ export function Settings() {
  )}
  <div className="pt-3 mt-1 border-t border-border">
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">配乐引擎</label>
- <select
+ <select aria-label="选项"
  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
  value={filmSettings.music_provider}
  onChange={e => setFilmSettings({ ...filmSettings, music_provider: e.target.value })}
@@ -538,7 +538,7 @@ export function Settings() {
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">字号</label>
  <input
  type="range"
- min="20" max="60" step="2"
+ aria-label="字号" min="20" max="60" step="2"
  className="w-full mt-1.5"
  value={subtitleStyle.subtitle_font_size}
  onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_font_size: e.target.value })}
@@ -547,7 +547,7 @@ export function Settings() {
  </div>
  <div>
  <label className="text-xs font-semibold text-ink-muted uppercase tracking-wide">位置</label>
- <select
+ <select aria-label="选项"
  className="w-full mt-1.5 rounded-md border border-input bg-card text-ink text-sm px-3 py-2"
  value={subtitleStyle.subtitle_position}
  onChange={e => setSubtitleStyle({ ...subtitleStyle, subtitle_position: e.target.value })}
@@ -689,7 +689,7 @@ export function Settings() {
  📦 导出全部数据（含配置）
  </button>
  <button onClick={() => {
- if (confirm('确定清除所有本地数据？包括小说配置、灵魂设定、角色设计等。此操作不可撤销。')) {
+ if (window.confirm('确定清除所有本地数据？包括小说配置、灵魂设定、角色设计等。此操作不可撤销。')) {
  localStorage.clear();
  toast.success('数据已清除');
  window.location.reload();

@@ -1,0 +1,124 @@
+<h2>UX + AI 深度 · 现状与改进方向</h2>
+<p class="subtitle">基于代码深入分析后的发现</p>
+
+<div class="section">
+  <h3>🎨 UX 体验 — 当前状态</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">WriterView 写作界面 ✅</div>
+      <div class="mockup-body" style="font-size:13px;line-height:1.8">
+        <div class="mock-nav">← 返回 | 小说标题 | 第3章 Q:0.82</div>
+        <div style="display:flex;height:200px">
+          <div class="mock-sidebar" style="width:80px;font-size:10px">章节目录<br/>Ch1 ✓<br/>Ch2 ✓<br/><b>Ch3 →</b><br/>Ch4</div>
+          <div class="mock-content" style="font-size:11px;overflow-y:auto;">
+            <p>第一节...</p>
+            <p>段落文字内容展示...</p>
+            <p>——</p>
+            <p>第二节开始，主角...</p>
+            <div style="position:absolute;top:8px;right:8px;font-size:9px;border:1px solid #555;border-radius:4px;padding:1px 4px">✏ 编辑</div>
+          </div>
+          <div class="mock-sidebar" style="width:100px;font-size:10px">上下文<br/>前章钩子<br/>技法指导<br/>质量评分</div>
+        </div>
+        <div style="border-top:1px solid #333;padding:8px;display:flex;gap:8px;align-items:center">
+          <span style="font-size:10px">第4章</span>
+          <div class="mock-button" style="background:#6366f1;flex:1;text-align:center">✨ 生成下一章</div>
+          <span style="font-size:10px">目标2500字</span>
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">问题分析 🔍</div>
+      <div class="mockup-body" style="font-size:12px;line-height:1.6">
+        <p style="color:#f87171">❌ 编辑是纯 textarea，无 AI 辅助</p>
+        <p style="color:#fbbf24">⚠ 质量分析在独立页面，写作时不显示</p>
+        <p style="color:#fbbf24">⚠ 大纲联动缺失——写作时看不到大纲</p>
+        <p style="color:#fbbf24">⚠ 上下文面板信息密度低</p>
+        <p style="color:#f87171">❌ 移动端只是 select 下拉选择章节</p>
+        <p style="color:#f87171">❌ 无 AI 改写建议/一键润色</p>
+        <p style="color:#fbbf24">⚠ 生成等待时只有进度条，无实时预览</p>
+        <p style="color:#fbbf24">⚠ 7个方向预设标签，无自定义引导</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🧠 AI 创作深度 — 当前状态</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0">
+    <div style="border:1px solid #22c55e33;border-radius:8px;padding:12px">
+      <span style="font-size:10px;color:#22c55e;font-weight:700">已实现</span>
+      <ul style="font-size:12px;margin:4px 0 0;padding-left:16px;color:#a3a3a3">
+        <li>Classic 模式：5次重试质量门槛</li>
+        <li>TechniqueAdvisor：场景感知技法注入</li>
+        <li>DeslopFilter：AI 套路检测</li>
+        <li>ConsistencyChecker：跨章一致性</li>
+        <li>ForeshadowingResolver：伏笔解析</li>
+        <li>EditorReview：规则版审稿</li>
+        <li>StyleProfile：30+ 参数自动演化</li>
+      </ul>
+    </div>
+    <div style="border:1px solid #f8717133;border-radius:8px;padding:12px">
+      <span style="font-size:10px;color:#f87171;font-weight:700">未实现 / 薄弱</span>
+      <ul style="font-size:12px;margin:4px 0 0;padding-left:16px;color:#a3a3a3">
+        <li><strong>ChapterWriter 是 stub</strong>（3行代码）</li>
+        <li>无大纲→章节自动分解</li>
+        <li>无多线并行叙事管理</li>
+        <li>无读者模拟反馈环</li>
+        <li>无角色发展弧线追踪</li>
+        <li>无"分支选择"（A/B走向）</li>
+        <li>无风格迁移/模仿</li>
+        <li>LLM 审稿在 server.py 但未接入管线</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🚀 改进方向提案</h3>
+  <div class="options">
+    <div class="option" data-choice="ux-writer" onclick="toggleSelect(this)">
+      <div class="letter">1</div>
+      <div class="content">
+        <h3>写作工作台 2.0</h3>
+        <p>AI 辅助编辑（改写建议、一键润色、语气调整）、大纲侧栏实时可见、质量评分内嵌写作区、生成实时流式预览</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ai-arc" onclick="toggleSelect(this)">
+      <div class="letter">2</div>
+      <div class="content">
+        <h3>叙事弧线引擎</h3>
+        <p>大纲自动分解为章节 · 多线并行管理 · 角色弧线追踪 · 情绪曲线自动规划 · 高潮/过渡自动编排</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ai-reader" onclick="toggleSelect(this)">
+      <div class="letter">3</div>
+      <div class="content">
+        <h3>读者模拟反馈环</h3>
+        <p>每章生成后 AI 读者模拟阅读 · 输出"哪一段想跳过""哪一段想截图分享" · 驱动自动改写</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ai-branch" onclick="toggleSelect(this)">
+      <div class="letter">4</div>
+      <div class="content">
+        <h3>分支创作 + 对比选择</h3>
+        <p>每章生成 2-3 个走向 · 可视化对比 · 支持混合（A的开头+B的结尾）· 读者测试投票</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ux-mobile" onclick="toggleSelect(this)">
+      <div class="letter">5</div>
+      <div class="content">
+        <h3>移动端写作体验</h3>
+        <p>手机端完整写作流 · 语音输入 · 阅读模式/写作模式切换 · 离线缓存 · PWA</p>
+      </div>
+    </div>
+    <div class="option" data-choice="ux-dashboard" onclick="toggleSelect(this)">
+      <div class="letter">6</div>
+      <div class="content">
+        <h3>创意仪表盘</h3>
+        <p>全书情绪曲线可视化 · 角色出场热力图 · 节奏分析 · 质量趋势 · 与大纲的偏离度追踪</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">👆 选 2-3 个你最想先做的方向</p>

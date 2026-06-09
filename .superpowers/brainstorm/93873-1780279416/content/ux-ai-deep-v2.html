@@ -1,0 +1,100 @@
+<h2>UX + AI 深度 · 现状与改进</h2>
+<p class="subtitle">修正：ReaderSim 已存在（前端规则引擎），但可升级为 AI 驱动的反馈环</p>
+
+<div class="section">
+  <h3>🎨 UX 体验</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>写作工作台 2.0</h3>
+        <p>AI 辅助编辑（改写建议、一键润色）· 大纲侧栏 · 质量评分内嵌 · 实时流式预览</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>改什么</h4><ul><li>编辑从 textarea → 富文本+AI辅助</li><li>上下文面板信息密度提升</li><li>大纲实时可见</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>创意仪表盘</h3>
+        <p>全书情绪曲线 · 角色出场热力图 · 节奏分析 · 质量趋势 · 大纲偏离度</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>已有基础</h4><ul><li>EmotionalArc · PacingCurve · QualityTrend</li><li>CharacterGraph · PlotNetwork</li><li>需要：统一仪表盘 + 写作时可见</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>移动端写作</h3>
+        <p>手机端完整写作流 · 语音输入 · 离线缓存 · PWA</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>现状</h4><ul><li>MobileReadingMode 已有</li><li>WriterView 移动端只做了 select 下拉</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>🧠 AI 创作深度</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>叙事弧线引擎</h3>
+        <p>大纲→章节自动分解 · 多线并行管理 · 角色弧线追踪 · 情绪曲线自动规划 · 高潮编排</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>痛点</h4><ul><li>ChapterWriter 是 3 行 stub</li><li>生成逻辑在 generator.py（3329行）</li><li>大纲和生成脱节</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>分支创作 + 对比</h3>
+        <p>每章 2-3 走向 · 可视化对比 · 混合拼接 · A/B 测试</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>已有基础</h4><ul><li>DraftOption 数据结构已在 generator.py</li><li>前端无分支选择 UI</li></ul></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>ReaderSim 升级</h3>
+        <p>从规则引擎 → LLM 驱动的深度阅读反馈</p>
+        <div class="pros-cons">
+          <div class="pros"><h4>现有 vs 升级</h4><ul><li>✅ 已有：基于质量分/钩子/字数的留存模拟</li><li>🔧 升级：LLM 真实"阅读" → 段落级反馈</li><li>🔧 升级：输出可驱动自动改写</li></ul></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📍 优先级投票</h3>
+  <div class="options" data-multiselect>
+    <div class="option" data-choice="arc" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content"><h3>叙事弧线引擎</h3><p>大纲分解 · 多线并行 · 角色弧 · ChapterWriter 实现</p></div>
+    </div>
+    <div class="option" data-choice="writer2" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content"><h3>写作工作台 2.0</h3><p>AI 辅助编辑 · 质量内嵌 · 大纲侧栏 · 流式预览</p></div>
+    </div>
+    <div class="option" data-choice="branch" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content"><h3>分支创作</h3><p>多走向生成 · 对比选择 · 混合拼接</p></div>
+    </div>
+    <div class="option" data-choice="reader" onclick="toggleSelect(this)">
+      <div class="letter">D</div>
+      <div class="content"><h3>ReaderSim 升级</h3><p>规则→LLM 驱动 · 段落反馈 · 驱动改写</p></div>
+    </div>
+    <div class="option" data-choice="dashboard" onclick="toggleSelect(this)">
+      <div class="letter">E</div>
+      <div class="content"><h3>创意仪表盘</h3><p>统一可视化 · 写作时可见 · 情绪/角色/节奏</p></div>
+    </div>
+    <div class="option" data-choice="mobile" onclick="toggleSelect(this)">
+      <div class="letter">F</div>
+      <div class="content"><h3>移动端写作</h3><p>完整写作流 · 语音输入 · PWA</p></div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px">👆 选 2-3 个你最想先做的</p>
